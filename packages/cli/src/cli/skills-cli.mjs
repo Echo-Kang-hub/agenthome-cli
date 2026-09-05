@@ -77,9 +77,14 @@ function parseScopeArguments(argumentsList) {
   };
 }
 
-async function resolveCatalogSource(options) {
+// Resolve the catalog for the install context. The project lock pins the catalog
+// commit for cross-device reproducibility; a refresh (bare `agent skills` syncs the
+// configured Packs) intentionally bypasses the pin to pick up the latest catalog.
+async function resolveCatalogSource(options, { refresh = false } = {}) {
   const spec = await loadDefaultCatalogSpec(options.environment);
-  const catalogInfo = await ensureCatalog(spec, {
+  const context = createInstallContext(options.global ?? false, options);
+  const pinnedSpec = refresh ? spec : await pinnedCatalogSpec(spec, context);
+  const catalogInfo = await ensureCatalog(pinnedSpec, {
     environment: options.environment,
     io: options.io ?? console,
   });
@@ -89,13 +94,28 @@ async function resolveCatalogSource(options) {
   return { ...catalogInfo, packageMetadata };
 }
 
+async function pinnedCatalogSpec(spec, context) {
+  if (!existsSync(context.lockFile)) {
+    return spec;
+  }
+  const lock = await readJson(context.lockFile);
+  const { repository, revision } = lock.catalog ?? {};
+  if (!repository || !revision) {
+    return spec;
+  }
+  if (parseCatalogSpec(spec).repository !== repository) {
+    return spec;
+  }
+  return `${repository}#${revision}`;
+}
+
 async function commandInstall(explicitPacks = [], options = {}) {
   const io = options.io ?? console;
   const context = createInstallContext(options.global ?? false, options);
   if (!options.global && isCatalogDirectory(options.cwd ?? process.cwd())) {
     fail("Run installation from a work project, not from the AgentHome catalog");
   }
-  const catalogInfo = await resolveCatalogSource(options);
+  const catalogInfo = await resolveCatalogSource(options, { refresh: explicitPacks.length === 0 });
   const sourceConfig = await loadSources(catalogInfo.catalogRoot);
   const catalog = await buildCatalog(sourceConfig, path.join(catalogInfo.catalogRoot, "skills"));
   const packs = await loadPacks(catalogInfo.catalogRoot);
@@ -925,23 +945,27 @@ export async function dispatchSkills(argumentsList, options = {}) {
     return;
   }
 
+  // Known subcommands resolve the catalog themselves; handle them before any
+  // network work so typos in the command position never trigger a fetch.
+  switch (command) {
+    case "packs":
+      await commandPacks(commandOptions);
+      return;
+    case "tree":
+      await commandTree(remainingArguments, commandOptions);
+      return;
+    case "uninstall":
+      await commandUninstall(remainingArguments, commandOptions);
+      return;
+  }
+
+  // Anything else is a Pack id (ids are user-defined, so the catalog is the
+  // only source of truth for telling Packs from typos).
   const catalogInfo = await resolveCatalogSource(commandOptions);
   const packs = await loadPacks(catalogInfo.catalogRoot);
   if (packs.has(command)) {
     await commandInstall([command, ...remainingArguments], commandOptions);
     return;
   }
-  switch (command) {
-    case "packs":
-      await commandPacks(commandOptions);
-      break;
-    case "tree":
-      await commandTree(remainingArguments, commandOptions);
-      break;
-    case "uninstall":
-      await commandUninstall(remainingArguments, commandOptions);
-      break;
-    default:
-      fail(`Unknown command or Pack: ${command}`);
-  }
+  fail(`Unknown command or Pack: ${command}`);
 }

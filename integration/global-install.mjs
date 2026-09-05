@@ -113,6 +113,49 @@ async function verifySkills(environment) {
   assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "alpha", "SKILL.md")), true);
   const lock = JSON.parse(await readFile(path.join(projectRoot, ".agent-skills.lock.json"), "utf8"));
   assert.equal(lock.catalog.revision, revision);
+
+  // Global scope: the same catalog installs into user-level directories.
+  const globalInstalled = runLauncher(agentLauncher, ["skills", "-g", "common"], projectRoot, skillsEnvironment);
+  assert.match(globalInstalled.stdout, /Installation complete/);
+  assert.equal(existsSync(path.join(home, ".claude", "skills", "alpha", "SKILL.md")), true);
+  assert.equal(existsSync(path.join(home, ".agents", "skills", "alpha", "SKILL.md")), true);
+  const globalLock = JSON.parse(await readFile(path.join(stateDirectory, "lock.json"), "utf8"));
+  assert.equal(globalLock.catalog.revision, revision);
+
+  // The lock's pinned catalog revision must be consumed on explicit installs:
+  // advancing the catalog must not change a pinned reinstall.
+  const installedSkillFile = path.join(projectRoot, ".agents", "skills", "alpha", "SKILL.md");
+  const installedBefore = await readFile(installedSkillFile, "utf8");
+  const skillFile = path.join(catalogRoot, "skills", "test-source", "alpha", "SKILL.md");
+  await writeFile(skillFile, `${await readFile(skillFile, "utf8")}updated\n`);
+  // A real catalog update also bumps the pinned source revision in sources.lock.json.
+  const sourcesLock = JSON.parse(await readFile(path.join(catalogRoot, "sources.lock.json"), "utf8"));
+  sourcesLock.sources[0].revision = "b".repeat(40);
+  await writeFile(path.join(catalogRoot, "sources.lock.json"), `${JSON.stringify(sourcesLock, null, 2)}\n`);
+  git(catalogRoot, ["add", "-A"]);
+  git(catalogRoot, ["-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "-m", "advance"]);
+  const advancedRevision = git(catalogRoot, ["rev-parse", "HEAD"]);
+
+  const pinned = runLauncher(agentLauncher, ["skills", "common"], projectRoot, skillsEnvironment);
+  assert.match(pinned.stdout, /Installation complete/);
+  const pinnedLock = JSON.parse(await readFile(path.join(projectRoot, ".agent-skills.lock.json"), "utf8"));
+  assert.equal(pinnedLock.catalog.revision, revision, "explicit install must stay on the locked catalog revision");
+  assert.equal(
+    await readFile(installedSkillFile, "utf8"),
+    installedBefore,
+    "pinned reinstall must not change installed content",
+  );
+
+  // A bare `agent skills` syncs the configured Packs from the latest catalog.
+  const refreshed = runLauncher(agentLauncher, ["skills"], projectRoot, skillsEnvironment);
+  assert.match(refreshed.stdout, /Installation complete/);
+  const refreshedLock = JSON.parse(await readFile(path.join(projectRoot, ".agent-skills.lock.json"), "utf8"));
+  assert.equal(refreshedLock.catalog.revision, advancedRevision, "bare install must refresh to the latest catalog revision");
+  assert.equal(
+    (await readFile(installedSkillFile, "utf8")).replaceAll("\r\n", "\n"),
+    "---\nname: alpha\n---\nupdated\n",
+    "refreshed install must update installed content",
+  );
 }
 
 try {
