@@ -7,6 +7,8 @@ const REQUIRED_RULES = [
   ".agents/skills/",
   ".agents/local/",
   ".agents/tmp/",
+  ".agents/direct/",
+  ".agents/licenses/",
 ];
 const SESSIONS_RULE = ".agents/sessions/";
 

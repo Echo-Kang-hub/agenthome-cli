@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import {
+  addDirectSkills,
   addSkillsToPacks,
   assertSafeId,
   assertSafeSkillName,
@@ -28,10 +29,12 @@ import {
   previousManagedState,
   printTree,
   pruneCatalogSkills,
+  readDirectState,
   readJson,
   registerSource,
   remoteHead,
   removeAllManagedSkills,
+  removeDirectSkills,
   removeEmptyDirectory,
   removeInstallationFiles,
   removeSkillDirectories,
@@ -112,6 +115,30 @@ async function commandInstall(explicitPacks = [], options = {}) {
   io.log(`Lock:   ${context.lockFile}`);
 }
 
+async function commandAddDirect(argumentsList, options = {}) {
+  const io = options.io ?? console;
+  const context = createInstallContext(options.global ?? false, options);
+  if (!options.global && isCatalogDirectory(options.cwd ?? process.cwd())) {
+    fail("Run installation from a work project, not from the AgentHome catalog");
+  }
+  const [sourceReference, ...skillNames] = argumentsList;
+  if (!sourceReference) {
+    fail("Usage: agent skills add <owner/repo> [skill...] [-g]");
+  }
+  const unknownOption = argumentsList.find((argument) => argument.startsWith("-"));
+  if (unknownOption) {
+    fail(`Unknown option: ${unknownOption}`);
+  }
+  const result = await addDirectSkills(context, sourceReference, skillNames, { io });
+  if (result.alreadyInstalled) {
+    return;
+  }
+  io.log(`\nInstalled direct Skills: ${result.names.join(", ")}`);
+  io.log(`Source: ${result.sourceId} @ ${result.revision.slice(0, 8)}`);
+  io.log(`Config: ${context.configFile}`);
+  io.log(`Lock:   ${context.lockFile}`);
+}
+
 async function commandUninstall(packArguments, options = {}) {
   const io = options.io ?? console;
   const context = createInstallContext(options.global ?? false, options);
@@ -123,6 +150,12 @@ async function commandUninstall(packArguments, options = {}) {
 
   if (packArguments.length === 0) {
     const managed = await previousManagedState(context);
+    const directState = await readDirectState(context);
+    const directNames = directState.directSources.flatMap((source) => source.skills);
+    if (directNames.length > 0) {
+      await removeDirectSkills(context, directNames);
+      await removeSkillDirectories(context, directNames, io);
+    }
     const total = await removeAllManagedSkills(context, managed, io);
     await removeInstallationFiles(context);
     if (options.global) {
@@ -182,8 +215,13 @@ async function commandUninstallSkill(skillArguments, options = {}) {
     );
   }
 
+  const directRemoved = await removeDirectSkills(context, skillNames);
   const total = await removeSkillDirectories(context, skillNames, io);
-  io.log(total > 0 ? `Removed external Skills: ${skillNames.join(", ")}` : `Already absent: ${skillNames.join(", ")}`);
+  io.log(
+    total > 0 || directRemoved.length > 0
+      ? `Removed external Skills: ${skillNames.join(", ")}`
+      : `Already absent: ${skillNames.join(", ")}`,
+  );
 }
 
 async function commandTree(packArguments, options = {}) {
@@ -696,6 +734,7 @@ Install Skills:
   agenthome uninstall                 Remove all managed Skills and installation metadata
   agenthome uninstall <pack...>       Remove Packs and unneeded managed Skills
   agenthome uninstall-skill <skill...> Remove external, unmanaged Skills
+  agenthome add <owner/repo> [skill...] Install Skills directly from a public source
   agenthome -g [pack...]              Install or sync in the global user scope
   agenthome packs                     List available Packs
   agenthome tree [pack...]            Show source -> Skill tree
@@ -834,6 +873,10 @@ export async function dispatchSkills(argumentsList, options = {}) {
   const [firstArgument, ...remainingArguments] = scope.argumentsList;
   const command = firstArgument ?? "install";
   const commandOptions = { ...options, global: scope.global };
+  if (command === "add") {
+    await commandAddDirect(remainingArguments, commandOptions);
+    return;
+  }
   const maintenanceCommands = new Set([
     "doctor",
     "update",

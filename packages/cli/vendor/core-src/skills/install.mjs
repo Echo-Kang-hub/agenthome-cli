@@ -32,6 +32,8 @@ export function createInstallContext(global, options = {}) {
   if (global) {
     return {
       configFile: globalConfigFile(environment),
+      environment,
+      global: true,
       label: "Global",
       lockFile: globalLockFile(environment),
       root: environment.USERPROFILE || environment.HOME || os.homedir(),
@@ -40,6 +42,8 @@ export function createInstallContext(global, options = {}) {
   }
   return {
     configFile: path.join(cwd, PROJECT_CONFIG_FILE),
+    environment,
+    global: false,
     label: "Project",
     legacyProfileFile: path.join(cwd, LEGACY_PROFILE_FILE),
     lockFile: path.join(cwd, PROJECT_LOCK_FILE),

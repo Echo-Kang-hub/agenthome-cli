@@ -1,0 +1,186 @@
+import { existsSync } from "node:fs";
+import { cp, mkdir, readdir, rm } from "node:fs/promises";
+import path from "node:path";
+import { fail } from "../util/fail.mjs";
+import { isInside, removeEmptyDirectory } from "../util/fs.mjs";
+import { readJson, writeJson } from "../util/json.mjs";
+import { cloneHead, deriveSourceId, git, normalizeRepositoryInput } from "./git.mjs";
+import { assertSafeSkillName } from "./ids.mjs";
+import { previousManagedState } from "./install.mjs";
+import { stateRoot } from "./paths.mjs";
+import { detectSkillRoot, discoverSourceSkills } from "./sources.mjs";
+
+export function directRoot(context) {
+  return context.global
+    ? path.join(stateRoot(context.environment), "direct")
+    : path.join(context.root, ".agents", "direct");
+}
+
+export function directLicensesRoot(context) {
+  return context.global
+    ? path.join(stateRoot(context.environment), "licenses")
+    : path.join(context.root, ".agents", "licenses");
+}
+
+export async function readDirectState(context) {
+  if (!existsSync(context.lockFile)) {
+    return { directSources: [] };
+  }
+  const lock = await readJson(context.lockFile);
+  return { directSources: lock.directSources ?? [] };
+}
+
+export async function writeDirectState(context, state) {
+  await mkdir(path.dirname(context.lockFile), { recursive: true });
+  const previousLock = existsSync(context.lockFile) ? await readJson(context.lockFile) : {};
+  const lock = { ...previousLock, schemaVersion: 3, directSources: state.directSources };
+  await writeJson(context.lockFile, lock);
+  const previousConfig = existsSync(context.configFile) ? await readJson(context.configFile) : {};
+  const config = {
+    ...previousConfig,
+    schemaVersion: 3,
+    direct: state.directSources.map((source) => ({
+      source: source.repository,
+      skills: source.skills,
+    })),
+  };
+  await writeJson(context.configFile, config);
+}
+
+async function ensureDirectClone(repository, directory) {
+  if (existsSync(path.join(directory, ".git"))) {
+    git(["-C", directory, "fetch", "--depth", "1", "origin"], { capture: true });
+    git(["-C", directory, "checkout", "--quiet", "--detach", "FETCH_HEAD"], { capture: true });
+  } else {
+    await cloneHead({ repository }, directory);
+  }
+  return git(["-C", directory, "rev-parse", "HEAD"], { capture: true });
+}
+
+async function findLicenseFile(cloneDirectory) {
+  const entries = await readdir(cloneDirectory, { withFileTypes: true });
+  return (
+    entries.find((entry) => entry.isFile() && /^licen[cs]e(?:\.|$)/i.test(entry.name))?.name ?? null
+  );
+}
+
+export async function addDirectSkills(context, sourceReference, skillNames, options = {}) {
+  const io = options.io ?? console;
+  const repository = normalizeRepositoryInput(sourceReference);
+  const sourceId = deriveSourceId(repository);
+  const state = await readDirectState(context);
+  const existing = state.directSources.find((source) => source.id === sourceId);
+  const directory = path.join(directRoot(context), sourceId);
+  const revision = await ensureDirectClone(repository, directory);
+
+  const source = {
+    id: sourceId,
+    name: sourceReference.replace(/\.git$/i, ""),
+    repository,
+    revision,
+    skillRoot: existing?.skillRoot,
+  };
+  if (!source.skillRoot) {
+    source.skillRoot = await detectSkillRoot(directory);
+  }
+  const discovered = await discoverSourceSkills(source, directory);
+  const requestedNames = [...new Set(skillNames.length > 0 ? skillNames : discovered.names)];
+  requestedNames.forEach(assertSafeSkillName);
+  for (const name of requestedNames) {
+    if (!discovered.names.includes(name)) {
+      fail(`Skill not found upstream: ${name}`);
+    }
+  }
+
+  const managed = await previousManagedState(context);
+  const managedNames = requestedNames.filter((name) => managed.has(name));
+  if (managedNames.length > 0) {
+    fail(
+      `Managed by configured Packs: ${managedNames.join(", ")}. Uninstall the Pack or remove the Skill from the Catalog`,
+    );
+  }
+  for (const other of state.directSources.filter((item) => item.id !== sourceId)) {
+    const conflicts = requestedNames.filter((name) => other.skills.includes(name));
+    if (conflicts.length > 0) {
+      fail(`Skill ${conflicts.join(", ")} already belongs to source ${other.id}`);
+    }
+  }
+
+  if (
+    existing &&
+    existing.revision === revision &&
+    requestedNames.every((name) => existing.skills.includes(name))
+  ) {
+    io.log(
+      `Already installed: ${sourceId} (${requestedNames.length} Skill${requestedNames.length === 1 ? "" : "s"})`,
+    );
+    return { names: requestedNames, sourceId, revision, alreadyInstalled: true };
+  }
+
+  for (const targetConfig of context.targets) {
+    const destination = targetConfig.destination;
+    await mkdir(destination, { recursive: true });
+    for (const name of requestedNames) {
+      const target = path.join(destination, name);
+      if (!isInside(destination, target)) {
+        fail(`Install path escaped its target: ${target}`);
+      }
+      await rm(target, { recursive: true, force: true });
+      const upstreamPath = source.skillPaths?.[name] ?? name;
+      await cp(path.join(directory, source.skillRoot, upstreamPath), target, { recursive: true });
+    }
+    io.log(`✓ ${targetConfig.label}`);
+    io.log(`  Path: ${destination}`);
+    io.log(`  Added ${requestedNames.length} direct Skill${requestedNames.length === 1 ? "" : "s"}`);
+  }
+
+  const licenseName = await findLicenseFile(directory);
+  if (licenseName) {
+    const licenseDirectory = path.join(directLicensesRoot(context), sourceId);
+    await mkdir(licenseDirectory, { recursive: true });
+    await cp(path.join(directory, licenseName), path.join(licenseDirectory, "LICENSE"));
+  }
+
+  const combined = {
+    ...source,
+    skillRoot: source.skillRoot.replace(/\\/g, "/"),
+    skills: [...new Set([...(existing?.skills ?? []), ...requestedNames])],
+  };
+  if (source.skillPaths) {
+    combined.skillPaths = source.skillPaths;
+  }
+  const directSources = [...state.directSources.filter((item) => item.id !== sourceId), combined];
+  await writeDirectState(context, { directSources });
+  return { names: requestedNames, sourceId, revision };
+}
+
+export async function removeDirectSkills(context, skillNames) {
+  if (skillNames.length === 0) {
+    return [];
+  }
+  const state = await readDirectState(context);
+  const removedNames = new Set();
+  const keptSources = [];
+  const removedSources = [];
+  for (const source of state.directSources) {
+    const removed = source.skills.filter((name) => skillNames.includes(name));
+    removed.forEach((name) => removedNames.add(name));
+    const remaining = source.skills.filter((name) => !skillNames.includes(name));
+    if (remaining.length > 0) {
+      keptSources.push({ ...source, skills: remaining });
+    } else if (removed.length > 0) {
+      removedSources.push(source);
+    }
+  }
+  if (removedNames.size === 0) {
+    return [];
+  }
+  await writeDirectState(context, { directSources: keptSources });
+  for (const source of removedSources) {
+    await rm(path.join(directRoot(context), source.id), { recursive: true, force: true });
+    await rm(path.join(directLicensesRoot(context), source.id), { recursive: true, force: true });
+  }
+  await removeEmptyDirectory(directRoot(context));
+  await removeEmptyDirectory(directLicensesRoot(context));
+  return [...removedNames];
+}

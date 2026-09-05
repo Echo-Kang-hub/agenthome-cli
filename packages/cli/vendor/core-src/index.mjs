@@ -77,6 +77,14 @@ export {
   parseCatalogSpec,
   setDefaultCatalogSpec,
 } from "./skills/catalog.mjs";
+export {
+  addDirectSkills,
+  directLicensesRoot,
+  directRoot,
+  readDirectState,
+  removeDirectSkills,
+  writeDirectState,
+} from "./skills/direct.mjs";
 export { printTree } from "./skills/ui.mjs";
 export {
   buildCatalog,
