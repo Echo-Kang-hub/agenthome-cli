@@ -9,4 +9,5 @@ const target = path.join(root, "packages", "cli", "vendor", "core-src");
 await rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 await mkdir(target, { recursive: true });
 await cp(source, target, { recursive: true });
-console.log(`core synced -> ${target}`);
+// stderr: `npm pack --json` must stay machine-readable on stdout.
+console.error(`core synced -> ${target}`);

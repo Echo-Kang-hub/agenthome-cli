@@ -17,7 +17,7 @@ import {
   spawnExecutableSync,
   validateAuthMode,
 } from "#core";
-import { dispatchCatalog } from "./skills-cli.mjs";
+import { dispatchCatalog, dispatchSkills } from "./skills-cli.mjs";
 import { updateAgentHome } from "./self-update.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -280,9 +280,11 @@ async function dispatchSessions(argumentsList) {
   return 0;
 }
 
-function dispatchSkills(argumentsList) {
-  return launchExecutable(process.execPath, [path.join(packageRoot, "scripts", "skills.mjs"), ...argumentsList], {
+async function dispatchSkillsCommand(argumentsList) {
+  return dispatchSkills(argumentsList, {
+    io: console,
     cwd: process.cwd(),
+    environment: process.env,
   });
 }
 
@@ -301,7 +303,7 @@ export async function runCli(options = {}) {
     return dispatchAgent(command, remainingArguments);
   }
   if (command === "skills") {
-    return dispatchSkills(remainingArguments);
+    return dispatchSkillsCommand(remainingArguments);
   }
   if (command === "catalog") {
     return dispatchCatalog(remainingArguments, {
