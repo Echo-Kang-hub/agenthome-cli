@@ -93,7 +93,7 @@ agent catalog default                  # 查看当前 spec
 agent skills add <owner/repo> [skill...] [-g]
 ```
 
-从任意公开仓库直接安装 Skill（递归发现 Skill 目录），clone 缓存于 `.agents/direct/`，许可证保存于 `.agents/licenses/`（均已 gitignore）。与 Pack 管理的 Skill 重名会被拒绝；`uninstall-skill` 会同步清理直接源状态。
+从任意公开仓库直接安装 Skill（递归发现 Skill 目录），克隆保存在 `.agents/direct/`，许可证保存在 `.agents/licenses/`（均已 gitignore）。与 Pack 管理的 Skill 重名会被拒绝；`uninstall-skill` 会同步清理直接源状态。
 
 ## 维护 Catalog
 
@@ -144,14 +144,15 @@ test/                单元与 fixture 测试（catalog 用例全部本地 git f
 
 ```bash
 npm login
-# 编辑 packages/cli/package.json：把 "private": true 改为 false
+# 编辑 packages/cli/package.json：
+#   把 "private": true 改为 false
+#   把 agentHome.packageSpec 改为 "agenthome-cli@latest"（发布后 agent update 指向 registry）
 cd packages/cli && npm publish
 ```
 
-> 仓库根 package.json 故意**不带 `workspaces` 字段**：npm 11 对 git 简写安装会把 node_modules 链接到 pacote 解包临时目录，`workspaces` 会让 pacote 在该目录里再跑一次嵌套 `npm install`，Windows 上两者竞争会把解包目录改残（bin 报 MODULE_NOT_FOUND）。本包零依赖，无需 workspaces（`test/packaging.test.mjs` 守护此约束）。
-```
+> 仓库根 package.json 故意**不带 `workspaces` 字段，也没有任何 install 生命周期脚本**（postinstall/build/preinstall/install/prepack/prepare）：npm 11 对 git 简写安装会把 node_modules 链接到 pacote 解包临时目录，`workspaces` 或这些脚本会让 pacote 在该目录里再跑一次嵌套 `npm install`，Windows 上两者竞争会把解包目录改残（bin 报 MODULE_NOT_FOUND）。本包零依赖，无需 workspaces（`test/packaging.test.mjs` 守护此约束）。
 
-发布后恢复 `"private": true` 再提交，避免误发。
+发布后恢复 `"private": true` 再提交（`agentHome.packageSpec` 保持 registry 值），避免误发。
 
 ## 安全边界
 

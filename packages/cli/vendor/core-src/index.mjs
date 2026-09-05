@@ -1,5 +1,4 @@
 // Public API of @agenthome/core.
-// Skills modules are added in later tasks.
 
 export { AGENTS, getAgent } from "./runtime/agents.mjs";
 export {
@@ -46,9 +45,6 @@ export {
   assertSafeRelativePath,
 } from "./skills/ids.mjs";
 export {
-  GLOBAL_CONFIG_FILE,
-  GLOBAL_LOCK_FILE,
-  GLOBAL_STATE_DIRECTORY,
   GLOBAL_TARGETS,
   LEGACY_PROFILE_FILE,
   PROJECT_CONFIG_FILE,

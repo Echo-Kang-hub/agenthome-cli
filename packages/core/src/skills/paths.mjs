@@ -24,9 +24,6 @@ export function stateRoot(environment = process.env) {
   );
 }
 
-export const GLOBAL_STATE_DIRECTORY = stateRoot();
-export const GLOBAL_CONFIG_FILE = path.join(GLOBAL_STATE_DIRECTORY, "config.json");
-export const GLOBAL_LOCK_FILE = path.join(GLOBAL_STATE_DIRECTORY, "lock.json");
 export const GLOBAL_TARGETS = [
   {
     agents: ["claude-code"],

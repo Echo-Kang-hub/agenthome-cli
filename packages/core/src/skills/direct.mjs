@@ -66,6 +66,11 @@ async function findLicenseFile(cloneDirectory) {
 
 export async function addDirectSkills(context, sourceReference, skillNames, options = {}) {
   const io = options.io ?? console;
+  if (sourceReference.includes("#")) {
+    fail(
+      `Refs are not supported for direct sources: ${sourceReference}. Add the source to the catalog to pin a revision.`,
+    );
+  }
   const repository = normalizeRepositoryInput(sourceReference);
   const sourceId = deriveSourceId(repository);
   const state = await readDirectState(context);

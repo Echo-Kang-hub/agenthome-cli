@@ -133,3 +133,31 @@ test("skills add refuses skills managed by catalog Packs", async () => {
     assert.match(refused.stderr, /Managed by configured Packs/);
   });
 });
+
+test("skills add rejects refs on direct sources instead of a git error", async () => {
+  await withTemp("direct-ref-", async (root) => {
+    const project = path.join(root, "project");
+    const state = path.join(root, "state");
+    await mkdir(project);
+    const refused = runAgent(project, ["skills", "add", "example/skills#main"], {
+      AGENTHOME_STATE_DIR: state,
+    });
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /Refs are not supported/);
+  });
+});
+
+test("skills add fails clearly when upstream has no Skills", async () => {
+  await withTemp("direct-empty-", async (root) => {
+    const project = path.join(root, "project");
+    const state = path.join(root, "state");
+    const upstream = path.join(root, "upstream");
+    await mkdir(project);
+    await mkdir(upstream);
+    await writeFile(path.join(upstream, "README.md"), "empty upstream\n");
+    await commitAll(upstream, "empty");
+    const refused = runAgent(project, ["skills", "add", upstream], { AGENTHOME_STATE_DIR: state });
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /No Skill/);
+  });
+});
