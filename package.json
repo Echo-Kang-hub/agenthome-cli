@@ -3,10 +3,6 @@
   "version": "5.5.0",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "packages/core",
-    "packages/cli"
-  ],
   "bin": {
     "agenthome": "packages/cli/scripts/skills.mjs",
     "agent-skills": "packages/cli/scripts/skills.mjs",
