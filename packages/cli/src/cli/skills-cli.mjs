@@ -13,14 +13,17 @@ import {
   createTempDirectory,
   deriveSourceId,
   discoverSourceSkills,
+  ensureCatalog,
   fail,
   findSource,
   installCopies,
   installedPackIds,
   isCatalogDirectory,
   isInside,
+  loadDefaultCatalogSpec,
   loadPacks,
   loadSources,
+  parseCatalogSpec,
   parsePackArguments,
   previousManagedState,
   printTree,
@@ -38,6 +41,7 @@ import {
   resolvePack,
   resolvePacks,
   saveSources,
+  setDefaultCatalogSpec,
   skillCoveredByPacks,
   stageSource,
   stateRoot,
@@ -71,15 +75,15 @@ function parseScopeArguments(argumentsList) {
 }
 
 async function resolveCatalogSource(options) {
-  const spec = options.environment?.AGENTHOME_CATALOG_SPEC;
-  if (!spec) {
-    fail("No catalog available: configure one with `agent catalog use <spec>` and run `agent catalog sync`");
-  }
-  const catalogRoot = path.resolve(options.cwd ?? process.cwd(), spec);
-  const packageMetadata = existsSync(path.join(catalogRoot, "package.json"))
-    ? await readJson(path.join(catalogRoot, "package.json"))
+  const spec = await loadDefaultCatalogSpec(options.environment);
+  const catalogInfo = await ensureCatalog(spec, {
+    environment: options.environment,
+    io: options.io ?? console,
+  });
+  const packageMetadata = existsSync(path.join(catalogInfo.catalogRoot, "package.json"))
+    ? await readJson(path.join(catalogInfo.catalogRoot, "package.json"))
     : null;
-  return { catalogRoot, spec: null, repository: null, revision: null, packageMetadata };
+  return { ...catalogInfo, packageMetadata };
 }
 
 async function commandInstall(explicitPacks = [], options = {}) {
@@ -700,6 +704,11 @@ Install Skills:
 Scope options:
   -g, --global                        Use global user directories
 
+Configure the catalog:
+  agent catalog use <spec>               Set the catalog source (owner/repo[#ref], URL, or local path)
+  agent catalog sync                     Fetch or update the cached catalog
+  agent catalog default                  Show the configured catalog spec
+
 Maintain this private catalog (run inside its Git clone):
   agent catalog doctor
   agent catalog update [source] [--check]
@@ -742,10 +751,61 @@ async function runMaintenanceCommand(command, argumentsList, catalogRoot, io) {
   }
 }
 
+async function commandCatalogSync(options = {}) {
+  const io = options.io ?? console;
+  const spec = await loadDefaultCatalogSpec(options.environment);
+  const catalogInfo = await ensureCatalog(spec, {
+    environment: options.environment,
+    io,
+  });
+  io.log("Catalog sync\n");
+  io.log(`Catalog   ${catalogInfo.spec}`);
+  io.log(`Cache     ${catalogInfo.catalogRoot}`);
+  io.log(`Revision  ${catalogInfo.revision}`);
+}
+
+async function commandCatalogUse(argumentsList, options = {}) {
+  const io = options.io ?? console;
+  const [spec] = argumentsList;
+  if (!spec || argumentsList.length !== 1) {
+    fail("Usage: agent catalog use <spec>");
+  }
+  parseCatalogSpec(spec);
+  await setDefaultCatalogSpec(options.environment, spec);
+  io.log(`Default catalog: ${spec}`);
+  io.log("Run: agent catalog sync");
+}
+
+async function commandCatalogDefault(options = {}) {
+  const io = options.io ?? console;
+  io.log(`Default catalog: ${await loadDefaultCatalogSpec(options.environment)}`);
+}
+
 export async function dispatchCatalog(argumentsList, options = {}) {
   const io = options.io ?? console;
   const scope = parseScopeArguments(argumentsList);
   const [command, ...remainingArguments] = scope.argumentsList;
+  if (command === "sync") {
+    if (scope.global || remainingArguments.length > 0) {
+      fail("Usage: agent catalog sync");
+    }
+    await commandCatalogSync(options);
+    return;
+  }
+  if (command === "use") {
+    if (scope.global) {
+      fail("agent catalog use does not accept a global scope");
+    }
+    await commandCatalogUse(remainingArguments, options);
+    return;
+  }
+  if (command === "default") {
+    if (scope.global || remainingArguments.length > 0) {
+      fail("Usage: agent catalog default");
+    }
+    await commandCatalogDefault(options);
+    return;
+  }
   const maintenanceCommands = new Set([
     "doctor",
     "update",
@@ -756,7 +816,7 @@ export async function dispatchCatalog(argumentsList, options = {}) {
     "source-add",
   ]);
   if (!command || !maintenanceCommands.has(command)) {
-    fail("Usage: agent catalog <doctor|update|add|remove|pack-add|pack-remove|source-add>");
+    fail("Usage: agent catalog <sync|use|default|doctor|update|add|remove|pack-add|pack-remove|source-add>");
   }
   if (scope.global) {
     fail(`${command} does not accept a global scope`);

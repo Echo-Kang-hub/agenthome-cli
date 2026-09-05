@@ -67,7 +67,7 @@ Usage:
   agent <claude|codex|opencode> [official CLI arguments...]
   agent skills [pack...]
   agent skills add <owner/repo> [skill...] [-g]
-  agent catalog <doctor|update|add|remove|pack-add|pack-remove|source-add>
+  agent catalog <sync|use|default|doctor|update|add|remove|pack-add|pack-remove|source-add>
   agent sessions git [on|off|status]
   agent update
   agent status

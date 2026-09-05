@@ -71,6 +71,12 @@ export {
   repositoryIdentity,
   run,
 } from "./skills/git.mjs";
+export {
+  ensureCatalog,
+  loadDefaultCatalogSpec,
+  parseCatalogSpec,
+  setDefaultCatalogSpec,
+} from "./skills/catalog.mjs";
 export { printTree } from "./skills/ui.mjs";
 export {
   buildCatalog,
