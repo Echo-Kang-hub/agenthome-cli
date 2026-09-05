@@ -145,7 +145,10 @@ test/                单元与 fixture 测试（catalog 用例全部本地 git f
 ```bash
 npm login
 # 编辑 packages/cli/package.json：把 "private": true 改为 false
-npm publish --workspace packages/cli
+cd packages/cli && npm publish
+```
+
+> 仓库根 package.json 故意**不带 `workspaces` 字段**：npm 11 对 git 简写安装会把 node_modules 链接到 pacote 解包临时目录，`workspaces` 会让 pacote 在该目录里再跑一次嵌套 `npm install`，Windows 上两者竞争会把解包目录改残（bin 报 MODULE_NOT_FOUND）。本包零依赖，无需 workspaces（`test/packaging.test.mjs` 守护此约束）。
 ```
 
 发布后恢复 `"private": true` 再提交，避免误发。

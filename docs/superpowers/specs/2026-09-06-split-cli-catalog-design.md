@@ -18,7 +18,7 @@
 
 | 决策点 | 选择 |
 |---|---|
-| 仓库拓扑 | 双仓库 monorepo：现有仓库私有化为 catalog（改名 `agenthome-catalog`）；新建 public `agenthome-cli`（npm workspaces，全新 git 历史，只含 CLI 代码） |
+| 仓库拓扑 | 双仓库 monorepo：现有仓库私有化为 catalog（改名 `agenthome-catalog`）；新建 public `agenthome-cli`（packages 目录布局、**根 package.json 不带 workspaces 字段**——见 §6.3，全新 git 历史，只含 CLI 代码） |
 | npm 包名 | `agenthome-cli`（unscoped）。发布动作留给用户（需先 npm login） |
 | project auth 桥接 | 本次仅拆仓。保持现有 `throw not implemented` 行为；架构预留 adapter 接口，桥接作为后续独立增量 |
 | catalog 传输 | git 拉取 + 全局缓存 + 项目锁固定 commit；认证完全委托 git/gh（HTTPS+credential helper 或 SSH），CLI 不处理 token |
@@ -32,7 +32,7 @@
 ### 3.1 仓库布局
 
 ```text
-public:  agenthome-cli (全新历史, npm workspaces)
+public:  agenthome-cli (全新历史, packages 布局, 无 workspaces 字段)
 ├─ packages/core     ← 纯逻辑库：零 CLI/console 耦合
 │  └─ src/  runtime/ (config·gitignore·project-root·process·sessions·agents·adapters)
 │           skills/  (catalog·sources·packs·install·vendor)
@@ -142,6 +142,7 @@ agent catalog add/remove/update/pack-add/pack-remove/source-add/doctor
 - 唯一发布物：`packages/cli`（包名 `agenthome-cli`）。
 - **core 同步拷贝（主方案）**：`packages/cli/vendor/core-src/` 是 `packages/core/src/` 的同步副本（**提交进 git**），cli 通过 package.json `imports`（`#core` → `./vendor/core-src/index.mjs`）引用；`sync-core` 脚本在 `pretest`/`prepack` 时刷新，并有测试守护新旧一致。原因：GitHub 简写安装安装的是仓库根 package，workspace 裸模块名解析在全局安装下不可靠；相对 vendor 路径在「GitHub 根安装」与「registry tarball 安装」两种模式下都成立。
 - 仓库根 package.json（`agenthome-cli-monorepo`，private）持有同样六件套 bin 指向 `packages/cli/...`，支持发布前的 GitHub 安装；`files: ["packages/", "README.md"]`。
+- **根 package.json 不带 `workspaces` 字段，也没有 install 生命周期脚本**：npm 11 的 git 简写安装会把 node_modules 链接到 pacote 解包临时目录；`workspaces` 或 postinstall/prepack 等脚本会让 pacote 在该目录里再跑一次嵌套 `npm install`（pacote git.js `#prepareDir`），Windows 上嵌套 reify 与全局安装竞争会把解包目录改残（bin 报 MODULE_NOT_FOUND）。本包零运行时依赖，不需要嵌套安装；`test/packaging.test.mjs` 守护此约束。
 - `private: true` 保持到发布时翻转；发布前需 `npm login`（均为用户操作）。
 - bin 六件套全保留。
 
