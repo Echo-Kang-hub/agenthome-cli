@@ -1,0 +1,34 @@
+{
+  "name": "agenthome-cli",
+  "version": "5.5.0",
+  "private": true,
+  "description": "Portable Skills, runtime configuration, and sessions for coding agents",
+  "type": "module",
+  "imports": {
+    "#core": "./vendor/core-src/index.mjs",
+    "#core/*": "./vendor/core-src/*"
+  },
+  "bin": {
+    "agenthome": "scripts/skills.mjs",
+    "agent-skills": "scripts/skills.mjs",
+    "agent": "bin/agent.mjs",
+    "ac": "bin/ac.mjs",
+    "ax": "bin/ax.mjs",
+    "ao": "bin/ao.mjs"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/sync-core.mjs"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "src/",
+    "vendor/core-src/"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "agentHome": {
+    "packageSpec": "Echo-Kang-hub/agenthome-cli#main"
+  }
+}

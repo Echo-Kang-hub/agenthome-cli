@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test and package check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Sync core
+        run: npm run sync-core
+      - name: Unit tests
+        run: npm test
+      - name: Global install integration
+        run: npm run test:install
+      - name: Registry tarball dry run
+        run: npm run pack:cli
+      - name: GitHub root package dry run
+        run: npm pack --dry-run --json

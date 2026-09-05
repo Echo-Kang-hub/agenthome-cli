@@ -1,0 +1,36 @@
+{
+  "name": "agenthome-cli-monorepo",
+  "version": "5.5.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/cli"
+  ],
+  "bin": {
+    "agenthome": "packages/cli/scripts/skills.mjs",
+    "agent-skills": "packages/cli/scripts/skills.mjs",
+    "agent": "packages/cli/bin/agent.mjs",
+    "ac": "packages/cli/bin/ac.mjs",
+    "ax": "packages/cli/bin/ax.mjs",
+    "ao": "packages/cli/bin/ao.mjs"
+  },
+  "scripts": {
+    "sync-core": "node scripts/sync-core.mjs",
+    "pretest": "npm run sync-core",
+    "test": "node --test test/",
+    "test:install": "npm run sync-core && node integration/global-install.mjs",
+    "pack:cli": "cd packages/cli && npm pack --dry-run --json"
+  },
+  "files": [
+    "packages/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Echo-Kang-hub/agenthome-cli.git"
+  }
+}
