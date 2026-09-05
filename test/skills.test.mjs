@@ -1,0 +1,185 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const agentBin = path.join(packageRoot, "packages", "cli", "bin", "agent.mjs");
+
+function runAgent(cwd, argumentsList, environment = {}) {
+  return spawnSync(process.execPath, [agentBin, ...argumentsList], {
+    cwd,
+    encoding: "utf8",
+    windowsHide: true,
+    env: { ...process.env, ...environment },
+  });
+}
+
+function gitQuiet(cwd, argumentsList) {
+  const result = spawnSync("git", ["-C", cwd, ...argumentsList], { encoding: "utf8", windowsHide: true });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
+async function withTempDirectory(prefix, run) {
+  const directory = await mkdtemp(path.join(os.tmpdir(), prefix));
+  try {
+    await run(directory);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function commitAll(root, message) {
+  await gitQuiet(root, ["init", "--quiet", "-b", "main"]);
+  await gitQuiet(root, ["add", "-A"]);
+  await gitQuiet(root, ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", message]);
+}
+
+async function createCatalogFixture(root) {
+  await mkdir(path.join(root, "packs"), { recursive: true });
+  await mkdir(path.join(root, "licenses"), { recursive: true });
+  await writeFile(
+    path.join(root, "package.json"),
+    `${JSON.stringify({ name: "fixture-catalog", version: "1.0.0", private: true, agentSkills: { packageSpec: "fixture#main" } }, null, 2)}\n`,
+  );
+  await writeFile(
+    path.join(root, "sources.lock.json"),
+    `${JSON.stringify({ schemaVersion: 1, sources: [{ id: "test-source", name: "Test Source", repository: "https://github.com/example/test.git", skillRoot: "skills", revision: "a".repeat(40), skillPaths: { beta: "nested/beta" }, licenseFile: "licenses/test-source-LICENSE" }] }, null, 2)}\n`,
+  );
+  await writeFile(path.join(root, "licenses", "test-source-LICENSE"), "license\n");
+  for (const skillName of ["alpha", "beta", "gamma"]) {
+    const directory = path.join(root, "skills", "test-source", skillName);
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, "SKILL.md"), `---\nname: ${skillName}\n---\n`);
+  }
+  const common = { schemaVersion: 1, id: "common", name: "Common", sources: [{ source: "test-source", skills: ["alpha"] }] };
+  const development = { schemaVersion: 1, id: "development", name: "Development", sources: [{ source: "test-source", skills: ["beta", "gamma"] }] };
+  await writeFile(path.join(root, "packs", "common.json"), `${JSON.stringify(common, null, 2)}\n`);
+  await writeFile(path.join(root, "packs", "development.json"), `${JSON.stringify(development, null, 2)}\n`);
+  await commitAll(root, "fixture catalog");
+}
+
+function catalogEnvironment(catalogRoot, stateRoot) {
+  return { AGENTHOME_CATALOG_SPEC: catalogRoot, AGENTHOME_STATE_DIR: stateRoot };
+}
+
+test("Pack uninstall prunes only Skills no longer selected", async () => {
+  await withTempDirectory("agenthome-skills-", async (projectRoot) => {
+    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        const installed = runAgent(projectRoot, ["skills", "development"], environment);
+        assert.equal(installed.status, 0, installed.stderr);
+
+        const protectedSkill = runAgent(projectRoot, ["skills", "uninstall-skill", "beta"], environment);
+        assert.equal(protectedSkill.status, 1);
+        assert.match(protectedSkill.stderr, /Managed by configured Packs/);
+        assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "beta")), true);
+
+        const removed = runAgent(projectRoot, ["skills", "uninstall", "development"], environment);
+        assert.equal(removed.status, 0, removed.stderr);
+        const config = JSON.parse(await readFile(path.join(projectRoot, ".agent-skills.json"), "utf8"));
+        assert.deepEqual(config.packs, ["common"]);
+        assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "beta")), false);
+        assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "gamma")), false);
+        assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "alpha")), true);
+
+        const before = await readFile(path.join(projectRoot, ".agent-skills.json"), "utf8");
+        const repeated = runAgent(projectRoot, ["skills", "uninstall", "development"], environment);
+        assert.equal(repeated.status, 0, repeated.stderr);
+        assert.match(repeated.stdout, /Already absent: development/);
+        assert.equal(await readFile(path.join(projectRoot, ".agent-skills.json"), "utf8"), before);
+      });
+    });
+  });
+});
+
+test("External Skill uninstall is multi-value and idempotent", async () => {
+  await withTempDirectory("agenthome-external-", async (projectRoot) => {
+    for (const root of [".claude", ".agents"]) {
+      for (const skillName of ["external-one", "external-two"]) {
+        const directory = path.join(projectRoot, root, "skills", skillName);
+        await mkdir(directory, { recursive: true });
+        await writeFile(path.join(directory, "SKILL.md"), "external\n");
+      }
+    }
+    const removed = runAgent(projectRoot, ["skills", "uninstall-skill", "external-one", "external-two"]);
+    assert.equal(removed.status, 0, removed.stderr);
+    assert.match(removed.stdout, /Removed external Skills/);
+    assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "external-one")), false);
+    assert.equal(existsSync(path.join(projectRoot, ".claude", "skills", "external-two")), false);
+
+    const repeated = runAgent(projectRoot, ["skills", "uninstall-skill", "external-one", "external-two"]);
+    assert.equal(repeated.status, 0, repeated.stderr);
+    assert.match(repeated.stdout, /Already absent/);
+  });
+});
+
+test("Skills uninstall without Packs removes all managed state", async () => {
+  await withTempDirectory("agenthome-project-", async (projectRoot) => {
+    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        const installed = runAgent(projectRoot, ["skills", "common"], environment);
+        assert.equal(installed.status, 0, installed.stderr);
+        const external = path.join(projectRoot, ".agents", "skills", "external", "SKILL.md");
+        await mkdir(path.dirname(external), { recursive: true });
+        await writeFile(external, "external\n");
+
+        const removed = runAgent(projectRoot, ["skills", "uninstall"], environment);
+        assert.equal(removed.status, 0, removed.stderr);
+        assert.equal(existsSync(path.join(projectRoot, ".agent-skills.json")), false);
+        assert.equal(existsSync(path.join(projectRoot, ".agent-skills.lock.json")), false);
+        assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "alpha")), false);
+        assert.equal(existsSync(external), true);
+
+        const repeated = runAgent(projectRoot, ["skills", "uninstall"], environment);
+        assert.equal(repeated.status, 0, repeated.stderr);
+        assert.match(repeated.stdout, /No managed project Skills installation found/);
+      });
+    });
+  });
+});
+
+test("Catalog removes multiple Skills and Packs without orphan files", async () => {
+  await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+    await createCatalogFixture(catalogRoot);
+    const cloneRoot = `${catalogRoot}-work`;
+    await gitQuiet(catalogRoot, ["clone", "--quiet", catalogRoot, cloneRoot]);
+    const before = await readFile(path.join(cloneRoot, "packs", "development.json"), "utf8");
+    const invalid = runAgent(cloneRoot, ["catalog", "remove", "test-source", "beta", "--park", "development"]);
+    assert.equal(invalid.status, 1);
+    assert.equal(await readFile(path.join(cloneRoot, "packs", "development.json"), "utf8"), before);
+    assert.equal(existsSync(path.join(cloneRoot, "skills", "test-source", "beta")), true);
+
+    const removed = runAgent(cloneRoot, ["catalog", "remove", "test-source", "beta", "gamma", "--pack", "development"]);
+    assert.equal(removed.status, 0, removed.stderr);
+    assert.equal(existsSync(path.join(cloneRoot, "skills", "test-source", "beta")), false);
+    assert.equal(existsSync(path.join(cloneRoot, "skills", "test-source", "gamma")), false);
+    assert.equal(existsSync(path.join(cloneRoot, "skills", "test-source", "alpha")), true);
+    const sourceConfig = JSON.parse(await readFile(path.join(cloneRoot, "sources.lock.json"), "utf8"));
+    assert.equal(sourceConfig.sources[0].skillPaths, undefined);
+
+    const repeated = runAgent(cloneRoot, ["catalog", "remove", "test-source", "beta", "gamma", "--pack", "development"]);
+    assert.equal(repeated.status, 0, repeated.stderr);
+    assert.match(repeated.stdout, /Already absent/);
+
+    const protectedPack = runAgent(cloneRoot, ["catalog", "pack-remove", "common", "development"]);
+    assert.equal(protectedPack.status, 1);
+    assert.equal(existsSync(path.join(cloneRoot, "packs", "development.json")), true);
+
+    const packRemoved = runAgent(cloneRoot, ["catalog", "pack-remove", "development"]);
+    assert.equal(packRemoved.status, 0, packRemoved.stderr);
+    assert.equal(existsSync(path.join(cloneRoot, "packs", "development.json")), false);
+    const packRepeated = runAgent(cloneRoot, ["catalog", "pack-remove", "development"]);
+    assert.equal(packRepeated.status, 0, packRepeated.stderr);
+    assert.match(packRepeated.stdout, /Already absent/);
+  });
+});

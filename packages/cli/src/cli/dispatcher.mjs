@@ -17,6 +17,7 @@ import {
   spawnExecutableSync,
   validateAuthMode,
 } from "#core";
+import { dispatchCatalog } from "./skills-cli.mjs";
 import { updateAgentHome } from "./self-update.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -65,6 +66,8 @@ Usage:
   agent <claude|codex|opencode> sessions [import|restore|status]
   agent <claude|codex|opencode> [official CLI arguments...]
   agent skills [pack...]
+  agent skills add <owner/repo> [skill...] [-g]
+  agent catalog <doctor|update|add|remove|pack-add|pack-remove|source-add>
   agent sessions git [on|off|status]
   agent update
   agent status
@@ -299,6 +302,13 @@ export async function runCli(options = {}) {
   }
   if (command === "skills") {
     return dispatchSkills(remainingArguments);
+  }
+  if (command === "catalog") {
+    return dispatchCatalog(remainingArguments, {
+      io: console,
+      cwd: process.cwd(),
+      environment: process.env,
+    });
   }
   if (command === "sessions") {
     return dispatchSessions(remainingArguments);
