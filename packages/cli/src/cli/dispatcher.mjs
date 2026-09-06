@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
   AGENTS,
   acquireSessionLease,
+  agentExecutableAvailable,
   clearLocalAuth,
   deinitializeAgent,
   effectiveAgentConfig,
@@ -38,14 +39,6 @@ function launchExecutable(executable, argumentsList, options = {}) {
     throw new Error(`Unable to launch ${executable}: ${result.error.message}`);
   }
   return result.status ?? 1;
-}
-
-function executableAvailable(executable) {
-  try {
-    return launchExecutable(executable, ["--version"], { capture: true }) === 0;
-  } catch {
-    return false;
-  }
 }
 
 function takeOption(argumentsList, option) {
@@ -115,7 +108,7 @@ function printAgentStatus(agent, projectRoot, state) {
     console.log(`Effective auth      ${config.auth}`);
     console.log(`Sessions            ${config.sessions === "global" ? "Global (native)" : "Project (portable)"}`);
   }
-  console.log(`Official CLI        ${executableAvailable(agent.executable) ? "Available" : "Not found"}`);
+  console.log(`Official CLI        ${agentExecutableAvailable(agent.id) ? "Available" : "Not found"}`);
 }
 
 async function dispatchAgent(agentId, argumentsList) {
@@ -335,7 +328,7 @@ async function dispatchDoctor() {
   console.log(`Runtime config     ${state.runtime.agents ? "OK" : "ERROR"}`);
   for (const agentId of Object.keys(AGENTS)) {
     const agent = getAgent(agentId);
-    console.log(`${agent.displayName.padEnd(18)} ${executableAvailable(agent.executable) ? "OK" : "NOT FOUND"}`);
+    console.log(`${agent.displayName.padEnd(18)} ${agentExecutableAvailable(agent.id) ? "OK" : "NOT FOUND"}`);
   }
   return 0;
 }
