@@ -208,6 +208,17 @@ test("project root falls back to runtime markers", async () => {
   });
 });
 
+test("project root falls back to project config markers (.avenic.json primary, legacy compat)", async () => {
+  await withTempProject(async (projectRoot) => {
+    await mkdir(path.join(projectRoot, "src", "nested"), { recursive: true });
+    await writeFile(path.join(projectRoot, ".avenic.json"), "{}\n");
+    assert.equal(locateProjectRoot(path.join(projectRoot, "src", "nested")), projectRoot);
+    await rm(path.join(projectRoot, ".avenic.json"));
+    await writeFile(path.join(projectRoot, ".agent-skills.json"), "{}\n");
+    assert.equal(locateProjectRoot(path.join(projectRoot, "src", "nested")), projectRoot);
+  });
+});
+
 test("full and short commands share one runtime configuration", async () => {
   await withTempProject(async (projectRoot) => {
     const full = runCli(projectRoot, "agenthome.mjs", ["claude", "init", "--auth", "global"]);

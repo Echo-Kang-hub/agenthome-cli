@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { LEGACY_PROJECT_CONFIG_FILE, PROJECT_CONFIG_FILE } from "../skills/paths.mjs";
 
 function findMarker(startDirectory, relativeMarker) {
   let current = path.resolve(startDirectory);
@@ -34,7 +35,8 @@ export function locateProjectRoot(startDirectory = process.cwd()) {
   return (
     findGitRoot(start) ??
     findMarker(start, path.join(".agents", "runtime.json")) ??
-    findMarker(start, ".agent-skills.json") ??
+    findMarker(start, PROJECT_CONFIG_FILE) ??
+    findMarker(start, LEGACY_PROJECT_CONFIG_FILE) ??
     start
   );
 }

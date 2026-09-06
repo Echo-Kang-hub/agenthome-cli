@@ -115,7 +115,7 @@ async function verifySkills(environment) {
   assert.match(installed.stdout, /Installation complete/);
   assert.equal(existsSync(path.join(projectRoot, ".claude", "skills", "alpha", "SKILL.md")), true);
   assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "alpha", "SKILL.md")), true);
-  const lock = JSON.parse(await readFile(path.join(projectRoot, ".agent-skills.lock.json"), "utf8"));
+  const lock = JSON.parse(await readFile(path.join(projectRoot, ".avenic.lock.json"), "utf8"));
   assert.equal(lock.catalog.revision, revision);
 
   // Global scope: the same catalog installs into user-level directories.
@@ -142,7 +142,7 @@ async function verifySkills(environment) {
 
   const pinned = runLauncher(agentLauncher, ["skills", "common"], projectRoot, skillsEnvironment);
   assert.match(pinned.stdout, /Installation complete/);
-  const pinnedLock = JSON.parse(await readFile(path.join(projectRoot, ".agent-skills.lock.json"), "utf8"));
+  const pinnedLock = JSON.parse(await readFile(path.join(projectRoot, ".avenic.lock.json"), "utf8"));
   assert.equal(pinnedLock.catalog.revision, revision, "explicit install must stay on the locked catalog revision");
   assert.equal(
     await readFile(installedSkillFile, "utf8"),
@@ -153,7 +153,7 @@ async function verifySkills(environment) {
   // A bare `avenic skills` syncs the configured Packs from the latest catalog.
   const refreshed = runLauncher(agentLauncher, ["skills"], projectRoot, skillsEnvironment);
   assert.match(refreshed.stdout, /Installation complete/);
-  const refreshedLock = JSON.parse(await readFile(path.join(projectRoot, ".agent-skills.lock.json"), "utf8"));
+  const refreshedLock = JSON.parse(await readFile(path.join(projectRoot, ".avenic.lock.json"), "utf8"));
   assert.equal(refreshedLock.catalog.revision, advancedRevision, "bare install must refresh to the latest catalog revision");
   assert.equal(
     (await readFile(installedSkillFile, "utf8")).replaceAll("\r\n", "\n"),
