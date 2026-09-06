@@ -4,7 +4,7 @@ import { spawnExecutableSync } from "#core";
 
 export async function agentHomePackageSpec(packageRoot) {
   const metadata = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8"));
-  return metadata.agentHome?.packageSpec ?? "Echo-Kang-hub/agenthome-cli#main";
+  return metadata.avenic?.packageSpec ?? "Echo-Kang-hub/avenic#main";
 }
 
 export async function updateAgentHome(packageRoot, options = {}) {

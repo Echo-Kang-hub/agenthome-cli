@@ -787,12 +787,12 @@ test("self update reinstalls the published npm package globally", async () => {
     },
   });
 
-  assert.equal(result, "agenthome-cli@latest");
+  assert.equal(result, "avenic@latest");
   assert.equal(packageSpec, result);
   assert.deepEqual(calls, [
     {
       executable: "npm",
-      argumentsList: ["install", "--global", "agenthome-cli@latest"],
+      argumentsList: ["install", "--global", "avenic@latest"],
     },
   ]);
 });

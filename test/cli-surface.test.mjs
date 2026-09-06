@@ -379,7 +379,7 @@ test("skills doctor and update fall back to runtime meanings outside a catalog",
       const update = runAgent(projectRoot, ["skills", "update"], environment);
       assert.equal(update.status, 0, update.stderr);
       assert.match(update.stdout, /AgentHome update complete/);
-      assert.match(await readFile(logFile, "utf8"), /install --global agenthome-cli@latest/);
+      assert.match(await readFile(logFile, "utf8"), /install --global avenic@latest/);
     });
   });
 });
