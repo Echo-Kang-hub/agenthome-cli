@@ -71,9 +71,9 @@ function catalogEnvironment(catalogRoot, stateRoot) {
 }
 
 test("Pack uninstall prunes only Skills no longer selected", async () => {
-  await withTempDirectory("agenthome-skills-", async (projectRoot) => {
-    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
-      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+  await withTempDirectory("avenic-skills-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
         await createCatalogFixture(catalogRoot);
         const environment = catalogEnvironment(catalogRoot, stateRoot);
         const installed = runAgent(projectRoot, ["skills", "development"], environment);
@@ -103,7 +103,7 @@ test("Pack uninstall prunes only Skills no longer selected", async () => {
 });
 
 test("External Skill uninstall is multi-value and idempotent", async () => {
-  await withTempDirectory("agenthome-external-", async (projectRoot) => {
+  await withTempDirectory("avenic-external-", async (projectRoot) => {
     for (const root of [".claude", ".agents"]) {
       for (const skillName of ["external-one", "external-two"]) {
         const directory = path.join(projectRoot, root, "skills", skillName);
@@ -124,9 +124,9 @@ test("External Skill uninstall is multi-value and idempotent", async () => {
 });
 
 test("Skills uninstall without Packs removes all managed state", async () => {
-  await withTempDirectory("agenthome-project-", async (projectRoot) => {
-    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
-      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+  await withTempDirectory("avenic-project-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
         await createCatalogFixture(catalogRoot);
         const environment = catalogEnvironment(catalogRoot, stateRoot);
         const installed = runAgent(projectRoot, ["skills", "common"], environment);
@@ -151,7 +151,7 @@ test("Skills uninstall without Packs removes all managed state", async () => {
 });
 
 test("Catalog removes multiple Skills and Packs without orphan files", async () => {
-  await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+  await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
     await createCatalogFixture(catalogRoot);
     const cloneRoot = `${catalogRoot}-work`;
     await gitQuiet(catalogRoot, ["clone", "--quiet", catalogRoot, cloneRoot]);

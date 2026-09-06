@@ -40,8 +40,8 @@ async function withTemp(prefix, run) {
 }
 
 test("parseCatalogSpec handles owner/repo and pinned refs", () => {
-  assert.deepEqual(parseCatalogSpec("Echo-Kang-hub/agenthome-catalog"), {
-    repository: "https://github.com/Echo-Kang-hub/agenthome-catalog.git",
+  assert.deepEqual(parseCatalogSpec("Echo-Kang-hub/avenic-catalog"), {
+    repository: "https://github.com/Echo-Kang-hub/avenic-catalog.git",
     ref: "main",
   });
   const pinned = parseCatalogSpec("owner/repo#abc123");

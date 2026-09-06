@@ -41,7 +41,7 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const cliPackageRoot = path.join(packageRoot, "packages", "cli");
 
 function runCli(projectRoot, entry, argumentsList, environment) {
-  return spawnSync(process.execPath, [path.join(packageRoot, "packages", "cli", entry === "agenthome.mjs" ? "scripts" : "bin", entry === "agenthome.mjs" ? "skills.mjs" : entry), ...argumentsList], {
+  return spawnSync(process.execPath, [path.join(packageRoot, "packages", "cli", entry === "skills.mjs" ? "scripts" : "bin", entry), ...argumentsList], {
     cwd: projectRoot,
     encoding: "utf8",
     env: environment ?? process.env,
@@ -183,7 +183,7 @@ test("session Git sync can be disabled without deleting sessions", async () => {
     await writeFile(sessionFile, "session\n");
     spawnSync("git", ["add", "--force", ".agents/sessions"], { cwd: projectRoot });
 
-    const disabled = runCli(projectRoot, "agenthome.mjs", ["sessions", "git", "off"]);
+    const disabled = runCli(projectRoot, "skills.mjs", ["sessions", "git", "off"]);
     assert.equal(disabled.status, 0, disabled.stderr);
     assert.equal(await sessionsGitIgnored(projectRoot), true);
     assert.equal(existsSync(sessionFile), true);
@@ -194,7 +194,7 @@ test("session Git sync can be disabled without deleting sessions", async () => {
     assert.equal(tracked.stdout.trim(), "");
     assert.match(await readFile(path.join(projectRoot, ".gitignore"), "utf8"), new RegExp(SESSIONS_RULE.replaceAll("/", "\\/")));
 
-    const repeated = runCli(projectRoot, "agenthome.mjs", ["sessions", "git", "off"]);
+    const repeated = runCli(projectRoot, "skills.mjs", ["sessions", "git", "off"]);
     assert.equal(repeated.status, 0, repeated.stderr);
     assert.match(repeated.stdout, /Git ignore Unchanged/);
   });
@@ -221,9 +221,9 @@ test("project root falls back to project config markers (.avenic.json primary, l
 
 test("full and short commands share one runtime configuration", async () => {
   await withTempProject(async (projectRoot) => {
-    const full = runCli(projectRoot, "agenthome.mjs", ["claude", "init", "--auth", "global"]);
-    const short = runCli(projectRoot, "agenthome.mjs", ["codex", "init", "--auth", "project"]);
-    const status = runCli(projectRoot, "agenthome.mjs", ["claude", "status"]);
+    const full = runCli(projectRoot, "skills.mjs", ["claude", "init", "--auth", "global"]);
+    const short = runCli(projectRoot, "skills.mjs", ["codex", "init", "--auth", "project"]);
+    const status = runCli(projectRoot, "skills.mjs", ["claude", "status"]);
 
     assert.equal(full.status, 0, full.stderr);
     assert.equal(short.status, 0, short.stderr);
@@ -237,7 +237,7 @@ test("full and short commands share one runtime configuration", async () => {
 
 test("repeated init is a no-op when the project structure is intact", async () => {
   await withTempProject(async (projectRoot) => {
-    const first = runCli(projectRoot, "agenthome.mjs", ["claude", "init", "--auth", "project"]);
+    const first = runCli(projectRoot, "skills.mjs", ["claude", "init", "--auth", "project"]);
     assert.equal(first.status, 0, first.stderr);
     assert.match(first.stdout, /Configuration   Updated/);
 
@@ -246,7 +246,7 @@ test("repeated init is a no-op when the project structure is intact", async () =
     const runtimeBefore = await readFile(runtimeFile, "utf8");
     const gitignoreBefore = await readFile(gitignoreFile, "utf8");
 
-    const second = runCli(projectRoot, "agenthome.mjs", ["claude", "init"]);
+    const second = runCli(projectRoot, "skills.mjs", ["claude", "init"]);
     assert.equal(second.status, 0, second.stderr);
     assert.match(second.stdout, /Configuration   Unchanged/);
     assert.match(second.stdout, /Git ignore      Unchanged/);
@@ -261,7 +261,7 @@ test("repeated init is a no-op when the project structure is intact", async () =
 
 test("init incrementally repairs missing directories without touching existing state", async () => {
   await withTempProject(async (projectRoot) => {
-    const first = runCli(projectRoot, "agenthome.mjs", ["claude", "init", "--auth", "project"]);
+    const first = runCli(projectRoot, "skills.mjs", ["claude", "init", "--auth", "project"]);
     assert.equal(first.status, 0, first.stderr);
 
     const sessionsDir = path.join(projectRoot, ".agents", "sessions", "claude");
@@ -276,7 +276,7 @@ test("init incrementally repairs missing directories without touching existing s
     const runtimeBefore = await readFile(runtimeFile, "utf8");
     const gitignoreBefore = await readFile(gitignoreFile, "utf8");
 
-    const repaired = runCli(projectRoot, "agenthome.mjs", ["claude", "init"]);
+    const repaired = runCli(projectRoot, "skills.mjs", ["claude", "init"]);
     assert.equal(repaired.status, 0, repaired.stderr);
     assert.equal(existsSync(sessionsDir), true);
     assert.equal(existsSync(localDir), true);
@@ -291,7 +291,7 @@ test("init incrementally repairs missing directories without touching existing s
 
 test("init reports the created structure and how to use it", async () => {
   await withTempProject(async (projectRoot) => {
-    const first = runCli(projectRoot, "agenthome.mjs", ["claude", "init", "--auth", "project"]);
+    const first = runCli(projectRoot, "skills.mjs", ["claude", "init", "--auth", "project"]);
     assert.equal(first.status, 0, first.stderr);
     assert.match(first.stdout, /Changed:/);
     assert.match(first.stdout, /\.agents\/runtime\.json/);
@@ -311,7 +311,7 @@ test("init is fully decoupled from the catalog and network", async () => {
     const emptyBin = path.join(projectRoot, "empty-bin");
     await mkdir(emptyBin);
     const environment = { ...process.env, PATH: emptyBin, Path: emptyBin };
-    const init = runCli(projectRoot, "agenthome.mjs", ["claude", "init", "--auth", "project"], environment);
+    const init = runCli(projectRoot, "skills.mjs", ["claude", "init", "--auth", "project"], environment);
     assert.equal(init.status, 0, init.stderr);
     assert.match(init.stdout, /Changed:/);
     assert.doesNotMatch(`${init.stdout}${init.stderr}`, /catalog|Unable to fetch|git failed/i);
@@ -320,12 +320,12 @@ test("init is fully decoupled from the catalog and network", async () => {
 
 test("help works from the main and agent positions", async () => {
   await withTempProject(async (projectRoot) => {
-    const main = runCli(projectRoot, "agenthome.mjs", ["--help"]);
+    const main = runCli(projectRoot, "skills.mjs", ["--help"]);
     assert.equal(main.status, 0, main.stderr);
     assert.match(main.stdout, /avenic <claude\|codex\|opencode> init/);
     assert.match(main.stdout, /shorthand: ave/);
     assert.match(main.stdout, /self-update/);
-    const agent = runCli(projectRoot, "agenthome.mjs", ["claude", "--help"]);
+    const agent = runCli(projectRoot, "skills.mjs", ["claude", "--help"]);
     assert.equal(agent.status, 0, agent.stderr);
     assert.match(agent.stdout, /Agent runtimes/);
   });
@@ -709,9 +709,9 @@ test("project auth launches the agent with a project-scoped config home", async 
       PATH: `${binDirectory}${path.delimiter}${process.env.PATH}`,
       OUT_FILE: outFile,
     };
-    const initialized = runCli(projectRoot, "agenthome.mjs", ["claude", "init", "--auth", "project"], environment);
+    const initialized = runCli(projectRoot, "skills.mjs", ["claude", "init", "--auth", "project"], environment);
     assert.equal(initialized.status, 0, initialized.stderr);
-    const launched = runCli(projectRoot, "agenthome.mjs", ["claude", "-p", "hello"], environment);
+    const launched = runCli(projectRoot, "skills.mjs", ["claude", "-p", "hello"], environment);
     assert.equal(launched.status, 0, launched.stderr);
     const output = await readFile(outFile, "utf8");
     const expected = path.join(projectRoot, ".agents", "local", "claude");
@@ -735,16 +735,16 @@ test("global sessions leave native storage untouched on launch", async () => {
       CODEX_HOME: codexHome,
       OUT_FILE: path.join(projectRoot, "launch.txt"),
     };
-    const initialized = runCli(projectRoot, "agenthome.mjs", ["codex", "init", "--sessions", "global"], environment);
+    const initialized = runCli(projectRoot, "skills.mjs", ["codex", "init", "--sessions", "global"], environment);
     assert.equal(initialized.status, 0, initialized.stderr);
-    const launched = runCli(projectRoot, "agenthome.mjs", ["codex", "exec"], environment);
+    const launched = runCli(projectRoot, "skills.mjs", ["codex", "exec"], environment);
     assert.equal(launched.status, 0, launched.stderr);
     const portable = path.join(projectRoot, ".agents", "sessions", "codex");
     assert.equal((await listFiles(portable)).length, 0, "global sessions must not create portable copies");
 
     // Switching back to project sessions restores the portable sync on launch.
-    runCli(projectRoot, "agenthome.mjs", ["codex", "init", "--sessions", "project"], environment);
-    runCli(projectRoot, "agenthome.mjs", ["codex", "exec"], environment);
+    runCli(projectRoot, "skills.mjs", ["codex", "init", "--sessions", "project"], environment);
+    runCli(projectRoot, "skills.mjs", ["codex", "exec"], environment);
     assert.ok((await listFiles(portable)).length > 0, "project sessions must capture native sessions");
   });
 });
@@ -765,9 +765,9 @@ test("project sessions revert native storage after launch", async () => {
       CODEX_HOME: codexHome,
       PROJECT_ROOT: projectRoot,
     };
-    const initialized = runCli(projectRoot, "agenthome.mjs", ["codex", "init"], environment);
+    const initialized = runCli(projectRoot, "skills.mjs", ["codex", "init"], environment);
     assert.equal(initialized.status, 0, initialized.stderr);
-    const launched = runCli(projectRoot, "agenthome.mjs", ["codex", "exec"], environment);
+    const launched = runCli(projectRoot, "skills.mjs", ["codex", "exec"], environment);
     assert.equal(launched.status, 0, launched.stderr);
 
     // The session written during the run was captured into the project...
