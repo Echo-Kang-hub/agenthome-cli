@@ -3,7 +3,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import {
   AGENTS,
-  acquireSessionLock,
+  acquireSessionLease,
   clearLocalAuth,
   deinitializeAgent,
   effectiveAgentConfig,
@@ -13,6 +13,7 @@ import {
   loadRuntime,
   locateProjectRoot,
   projectAuthEnvironment,
+  sessionLeasePath,
   sessionsGitIgnored,
   setLocalAuth,
   setSessionsGitIgnored,
@@ -248,28 +249,45 @@ async function dispatchAgent(agentId, argumentsList) {
     : process.env;
   const adapter = getSessionAdapter(agentId);
   const portableSessions = config.sessions !== "global";
-  let releaseLock = null;
-  let nativeSnapshot = null;
+  // Sessions created during a run live only in the project: the first launch
+  // of a project+agent group snapshots the native storage and the last exit
+  // reverts it. Launches of the same project+agent may run concurrently.
+  // opencode's storage is managed by the official CLI, so it captures without
+  // snapshotting or reverting.
+  const isolatesNative = typeof adapter.snapshotNative === "function"
+    && typeof adapter.revertNative === "function";
+  let leaveLaunchGroup = null;
+  if (portableSessions && isolatesNative) {
+    const snapshotRoot = path.join(sessionLeasePath(agentId, projectRoot), "snapshot");
+    leaveLaunchGroup = await acquireSessionLease(agentId, projectRoot, {
+      onFirst: async (recovering) => {
+        if (recovering) {
+          // A previous launch group died without exiting: move its sessions
+          // into the project and restore the pre-launch native state first.
+          await adapter.capture(projectRoot, { environment });
+          await adapter.revertNative(snapshotRoot, projectRoot, { environment });
+        }
+        await adapter.snapshotNative(projectRoot, snapshotRoot, { environment });
+      },
+      onLast: async () => {
+        await adapter.revertNative(snapshotRoot, projectRoot, { environment });
+      },
+    });
+  }
   if (portableSessions) {
     // Project session records take priority on launch: conflicting native
     // copies are overwritten silently. Native storage is never written to
     // proactively; only `agenthome <agent> sessions writeback` writes
     // project records back to native storage.
-    releaseLock = await acquireSessionLock(agentId, projectRoot);
-    const isolatesNative = typeof adapter.snapshotNative === "function"
-      && typeof adapter.revertNative === "function";
     try {
-      if (isolatesNative) {
-        nativeSnapshot = await adapter.snapshotNative(projectRoot, { environment });
-      }
       await adapter.restore(projectRoot, { environment });
     } catch (error) {
-      try {
-        if (nativeSnapshot !== null) {
-          await adapter.revertNative(nativeSnapshot, projectRoot, { environment });
-        }
-      } finally {
-        await releaseLock();
+      if (leaveLaunchGroup) {
+        // Leaving the group reverts native storage when this was the only
+        // launch in it.
+        try {
+          await leaveLaunchGroup();
+        } catch {}
       }
       throw error;
     }
@@ -282,15 +300,8 @@ async function dispatchAgent(agentId, argumentsList) {
       try {
         await adapter.capture(projectRoot, { environment });
       } finally {
-        try {
-          // Sessions created during the run live only in the project: the
-          // native storage returns to its pre-launch state, so global
-          // sessions are never touched by an agenthome launch.
-          if (nativeSnapshot !== null) {
-            await adapter.revertNative(nativeSnapshot, projectRoot, { environment });
-          }
-        } finally {
-          await releaseLock();
+        if (leaveLaunchGroup) {
+          await leaveLaunchGroup();
         }
       }
     }

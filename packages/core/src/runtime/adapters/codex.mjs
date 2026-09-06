@@ -9,9 +9,9 @@ import {
   mergeFiles,
   readFirstJsonLine,
   replaceDirectory,
-  revertPath,
+  revertFrom,
   samePath,
-  snapshotPath,
+  snapshotInto,
   transformJsonLines,
 } from "../sessions.mjs";
 
@@ -126,19 +126,17 @@ export async function status(projectRoot) {
   return { count: (await listFiles(path.join(portable, "sessions"))).filter((file) => file.endsWith(".jsonl")).length };
 }
 
-// Save the native sessions directory and session index so the launch flow
-// can restore them after the run: sessions created by `agenthome codex` must
-// live only in the project, never in the global native storage.
-export async function snapshotNative(projectRoot, options = {}) {
+// Save the native sessions directory and session index into the shared launch
+// state so the last exit can restore them: sessions created by `agenthome
+// codex` must live only in the project, never in the global native storage.
+export async function snapshotNative(projectRoot, snapshotRoot, options = {}) {
   const { codexHome, nativeSessions } = locations(projectRoot, options.environment);
-  return {
-    sessions: await snapshotPath(nativeSessions),
-    index: await snapshotPath(path.join(codexHome, "session_index.jsonl")),
-  };
+  await snapshotInto(nativeSessions, path.join(snapshotRoot, "sessions"));
+  await snapshotInto(path.join(codexHome, "session_index.jsonl"), path.join(snapshotRoot, "index.jsonl"));
 }
 
-export async function revertNative(snapshot, projectRoot, options = {}) {
+export async function revertNative(snapshotRoot, projectRoot, options = {}) {
   const { codexHome, nativeSessions } = locations(projectRoot, options.environment);
-  await revertPath(snapshot.index, path.join(codexHome, "session_index.jsonl"));
-  await revertPath(snapshot.sessions, nativeSessions);
+  await revertFrom(path.join(snapshotRoot, "index.jsonl"), path.join(codexHome, "session_index.jsonl"));
+  await revertFrom(path.join(snapshotRoot, "sessions"), nativeSessions);
 }

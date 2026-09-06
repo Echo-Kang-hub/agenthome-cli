@@ -28,10 +28,11 @@ import * as opencodeSessions from "../packages/core/src/runtime/adapters/opencod
 import { agentHomePackageSpec, updateAgentHome } from "../packages/cli/src/cli/self-update.mjs";
 import {
   PROJECT_ROOT_TOKEN,
-  acquireSessionLock,
+  acquireSessionLease,
   listFiles,
-  revertPath,
-  snapshotPath,
+  revertFrom,
+  sessionLeasePath,
+  snapshotInto,
 } from "../packages/core/src/runtime/sessions.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -445,37 +446,77 @@ test("Codex restore keeps portable sessions over divergent local copies", async 
 test("snapshot and revert restore native storage exactly", async () => {
   await withTempProject(async (projectRoot) => {
     const target = path.join(projectRoot, "native");
+    const snapshotRoot = path.join(projectRoot, "snapshot");
     const file = path.join(target, "sub", "session.jsonl");
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, "before\n");
 
-    const snapshot = await snapshotPath(target);
+    await snapshotInto(target, snapshotRoot);
     await writeFile(file, "after\n");
     await writeFile(path.join(target, "sub", "new.jsonl"), "new\n");
-    await revertPath(snapshot, target);
+    await revertFrom(snapshotRoot, target);
     assert.equal(await readFile(file, "utf8"), "before\n");
     assert.equal(existsSync(path.join(target, "sub", "new.jsonl")), false);
 
-    // A path that did not exist before stays absent after revert.
+    // A path that did not exist at snapshot time stays absent after revert.
     const absent = path.join(projectRoot, "absent");
-    const none = await snapshotPath(absent);
-    assert.equal(none, null);
+    const empty = path.join(projectRoot, "empty-snapshot");
+    await snapshotInto(absent, empty);
+    assert.equal(existsSync(empty), false);
     await mkdir(absent, { recursive: true });
-    await revertPath(none, absent);
+    await revertFrom(empty, absent);
     assert.equal(existsSync(absent), false);
   });
 });
 
-test("session launch lock blocks concurrent launches and releases", async () => {
+test("session leases allow concurrent launches and revert on the last exit", async () => {
   await withTempProject(async (projectRoot) => {
-    const release = await acquireSessionLock("codex", projectRoot);
-    await assert.rejects(acquireSessionLock("codex", projectRoot), /already running/);
-    // Other agents are not blocked.
-    const otherAgent = await acquireSessionLock("claude", projectRoot);
-    await otherAgent();
-    await release();
-    const again = await acquireSessionLock("codex", projectRoot);
-    await again();
+    const events = [];
+    const callbacks = {
+      onFirst: (recovering) => events.push(`first:${recovering}`),
+      onLast: () => events.push("last"),
+    };
+    const leaveFirst = await acquireSessionLease("codex", projectRoot, callbacks);
+    assert.deepEqual(events, ["first:false"]);
+    // A second launch of the same project+agent joins the group without a
+    // new snapshot.
+    const leaveSecond = await acquireSessionLease("codex", projectRoot, callbacks);
+    assert.deepEqual(events, ["first:false"]);
+    // Other agents have their own group.
+    const leaveClaude = await acquireSessionLease("claude", projectRoot, {
+      onFirst: () => events.push("claude-first"),
+      onLast: () => events.push("claude-last"),
+    });
+    assert.deepEqual(events, ["first:false", "claude-first"]);
+    await leaveClaude();
+    assert.deepEqual(events, ["first:false", "claude-first", "claude-last"]);
+    await leaveFirst();
+    assert.deepEqual(events, ["first:false", "claude-first", "claude-last"], "not the last codex launch");
+    await leaveSecond();
+    assert.deepEqual(events, ["first:false", "claude-first", "claude-last", "last"]);
+    assert.equal(existsSync(sessionLeasePath("codex", projectRoot)), false, "group state is removed with the last exit");
+  });
+});
+
+test("session leases salvage the sessions of a crashed launch group", async () => {
+  await withTempProject(async (projectRoot) => {
+    // Simulate a launch group that died without exiting: the shared state
+    // holds a completed snapshot and only a dead pid record.
+    const stateDir = sessionLeasePath("codex", projectRoot);
+    await mkdir(path.join(stateDir, "snapshot"), { recursive: true });
+    await writeFile(path.join(stateDir, "snapshot", "marker"), "saved\n");
+    await writeFile(path.join(stateDir, "snapshot.ok"), "");
+    await mkdir(path.join(stateDir, "pids"), { recursive: true });
+    await writeFile(path.join(stateDir, "pids", "2147483647"), "");
+    const events = [];
+    const leave = await acquireSessionLease("codex", projectRoot, {
+      onFirst: (recovering) => events.push(`first:${recovering}`),
+      onLast: () => events.push("last"),
+    });
+    assert.deepEqual(events, ["first:true"], "the next launch must see the crashed group");
+    await leave();
+    assert.deepEqual(events, ["first:true", "last"]);
+    assert.equal(existsSync(stateDir), false);
   });
 });
 
@@ -485,17 +526,23 @@ test("Claude native snapshot and revert restore the pre-launch state", async () 
     try {
       const environment = { CLAUDE_CONFIG_DIR: claudeHome };
       const native = path.join(claudeHome, "projects", claudeSessions.claudeProjectKey(projectRoot));
+      const snapshotRoot = path.join(projectRoot, "snapshot");
       const sessionFile = path.join(native, "session.jsonl");
       await mkdir(native, { recursive: true });
       await writeFile(sessionFile, "global\n");
 
-      const snapshot = await claudeSessions.snapshotNative(projectRoot, { environment });
+      await claudeSessions.snapshotNative(projectRoot, snapshotRoot, { environment });
       await writeFile(sessionFile, "project\n");
       await writeFile(path.join(native, "new.jsonl"), "new\n");
-      await claudeSessions.revertNative(snapshot, projectRoot, { environment });
+      await claudeSessions.revertNative(snapshotRoot, projectRoot, { environment });
 
       assert.equal(await readFile(sessionFile, "utf8"), "global\n");
       assert.equal(existsSync(path.join(native, "new.jsonl")), false);
+
+      // When the native directory did not exist at snapshot time it stays
+      // absent after revert.
+      await claudeSessions.revertNative(path.join(projectRoot, "empty-snapshot"), projectRoot, { environment });
+      assert.equal(existsSync(native), false);
     } finally {
       await rm(claudeHome, { recursive: true, force: true });
     }
@@ -507,6 +554,7 @@ test("Codex native snapshot and revert cover sessions and the index", async () =
     const codexHome = await mkdtemp(path.join(os.tmpdir(), "agent-runtime-codex-snap-"));
     try {
       const environment = { CODEX_HOME: codexHome };
+      const snapshotRoot = path.join(projectRoot, "snapshot");
       const sessionDir = path.join(codexHome, "sessions", "2026", "09", "06");
       const sessionFile = path.join(sessionDir, "rollout-1.jsonl");
       const indexFile = path.join(codexHome, "session_index.jsonl");
@@ -514,15 +562,20 @@ test("Codex native snapshot and revert cover sessions and the index", async () =
       await writeFile(sessionFile, "global\n");
       await writeFile(indexFile, `${JSON.stringify({ id: "sess-1" })}\n`);
 
-      const snapshot = await codexSessions.snapshotNative(projectRoot, { environment });
+      await codexSessions.snapshotNative(projectRoot, snapshotRoot, { environment });
       await writeFile(sessionFile, "project\n");
       await writeFile(path.join(sessionDir, "new.jsonl"), "new\n");
       await writeFile(indexFile, `${JSON.stringify({ id: "sess-1" })}\n${JSON.stringify({ id: "sess-new" })}\n`);
-      await codexSessions.revertNative(snapshot, projectRoot, { environment });
+      await codexSessions.revertNative(snapshotRoot, projectRoot, { environment });
 
       assert.equal(await readFile(sessionFile, "utf8"), "global\n");
       assert.equal(existsSync(path.join(sessionDir, "new.jsonl")), false);
       assert.equal(await readFile(indexFile, "utf8"), `${JSON.stringify({ id: "sess-1" })}\n`);
+
+      // Absent storage at snapshot time stays absent after revert.
+      await codexSessions.revertNative(path.join(projectRoot, "empty-snapshot"), projectRoot, { environment });
+      assert.equal(existsSync(sessionDir), false);
+      assert.equal(existsSync(indexFile), false);
     } finally {
       await rm(codexHome, { recursive: true, force: true });
     }

@@ -6,10 +6,10 @@ import {
   PROJECT_ROOT_TOKEN,
   listFiles,
   mergeFiles,
-  revertPath,
+  revertFrom,
   samePath,
   snapshotFiles,
-  snapshotPath,
+  snapshotInto,
   transformJsonLines,
 } from "../sessions.mjs";
 
@@ -67,15 +67,15 @@ export async function status(projectRoot) {
   return { count: files.filter((file) => file.endsWith(".jsonl") && !file.includes(`${path.sep}subagents${path.sep}`)).length };
 }
 
-// Save the native project directory so the launch flow can restore it after
-// the run: sessions created by `agenthome claude` must live only in the
-// project, never in the global native storage.
-export async function snapshotNative(projectRoot, options = {}) {
+// Save the native project directory into the shared launch state so the last
+// exit can restore it: sessions created by `agenthome claude` must live only
+// in the project, never in the global native storage.
+export async function snapshotNative(projectRoot, snapshotRoot, options = {}) {
   const { native } = locations(projectRoot, options.environment);
-  return snapshotPath(native);
+  await snapshotInto(native, snapshotRoot);
 }
 
-export async function revertNative(snapshot, projectRoot, options = {}) {
+export async function revertNative(snapshotRoot, projectRoot, options = {}) {
   const { native } = locations(projectRoot, options.environment);
-  await revertPath(snapshot, native);
+  await revertFrom(snapshotRoot, native);
 }

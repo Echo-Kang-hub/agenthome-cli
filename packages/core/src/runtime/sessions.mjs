@@ -180,32 +180,25 @@ async function copyPath(source, destination) {
   }
 }
 
-// Save a byte-for-byte copy of a file or directory outside the tree it lives
-// in, so the launch flow can restore the agent's native storage after the
-// run. Returns null when the path does not exist.
-export async function snapshotPath(source) {
+// Copy a file or directory into destination, which must not exist; when the
+// source is absent the destination is removed instead, so a path that did not
+// exist at snapshot time disappears again on revert.
+export async function snapshotInto(source, destination) {
   if (!existsSync(source)) {
-    return null;
-  }
-  const temporary = path.join(
-    os.tmpdir(),
-    `agenthome-snapshot-${createHash("sha256").update(path.resolve(source)).digest("hex").slice(0, 12)}-${process.pid}-${Date.now()}`,
-  );
-  await rm(temporary, { recursive: true, force: true });
-  await copyPath(source, temporary);
-  return temporary;
-}
-
-// Restore the pre-launch state saved by snapshotPath: the path returns to
-// its snapshot content, or disappears entirely when it did not exist before.
-export async function revertPath(snapshot, source) {
-  if (snapshot === null) {
-    await rm(source, { recursive: true, force: true });
+    await rm(destination, { recursive: true, force: true });
     return;
   }
+  await rm(destination, { recursive: true, force: true });
+  await copyPath(source, destination);
+}
+
+// Restore the pre-launch state saved by snapshotInto: the source path returns
+// to its snapshot content, or disappears entirely when the snapshot is absent.
+export async function revertFrom(snapshot, source) {
   await rm(source, { recursive: true, force: true });
-  await copyPath(snapshot, source);
-  await rm(snapshot, { recursive: true, force: true });
+  if (existsSync(snapshot)) {
+    await copyPath(snapshot, source);
+  }
 }
 
 function processAlive(pid) {
@@ -217,26 +210,93 @@ function processAlive(pid) {
   }
 }
 
-// One agenthome launch per project+agent at a time: the launch flow snapshots
-// and reverts the agent's native storage, and concurrent launches would
-// overwrite each other's state. The lock lives in the OS temp directory and
-// is stolen when the recorded process is gone (crashed or killed).
-export async function acquireSessionLock(agentId, projectRoot) {
+// Shared state for concurrent agenthome launches of one agent in one project.
+export function sessionLeasePath(agentId, projectRoot) {
   const key = createHash("sha256").update(`${path.resolve(projectRoot)}\n${agentId}`).digest("hex").slice(0, 16);
-  const lockFile = path.join(os.tmpdir(), `agenthome-launch-${key}.lock`);
-  let owner = null;
-  try {
-    owner = Number.parseInt((await readFile(lockFile, "utf8")).trim(), 10);
-  } catch {}
-  if (owner !== null && Number.isInteger(owner) && processAlive(owner)) {
-    throw new Error(`Another agenthome ${agentId} session is already running in this project`);
-  }
-  await writeFile(lockFile, `${process.pid}\n`, "utf8");
-  return async () => {
+  return path.join(os.tmpdir(), `agenthome-launch-${key}`);
+}
+
+// Serialize the short bookkeeping sections of acquire/release. The lock file
+// is created exclusively, holds the owner pid, and is stolen when that
+// process is gone (crashed or killed).
+async function withLaunchLock(stateDir, run) {
+  await mkdir(stateDir, { recursive: true });
+  const lockFile = path.join(stateDir, ".lock");
+  const deadline = Date.now() + 60000;
+  for (;;) {
     try {
-      if ((await readFile(lockFile, "utf8")).trim() === `${process.pid}`) {
-        await rm(lockFile, { force: true });
+      await writeFile(lockFile, `${process.pid}\n`, { encoding: "utf8", flag: "wx" });
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST") {
+        throw error;
       }
-    } catch {}
+      let owner = null;
+      try {
+        owner = Number.parseInt((await readFile(lockFile, "utf8")).trim(), 10);
+      } catch {}
+      if (!(Number.isInteger(owner) && processAlive(owner))) {
+        await rm(lockFile, { force: true });
+        continue;
+      }
+      if (Date.now() > deadline) {
+        throw new Error("Timed out waiting for another agenthome launch in this project");
+      }
+      await delay(100);
+    }
+  }
+  try {
+    return await run();
+  } finally {
+    await rm(lockFile, { force: true });
+  }
+}
+
+async function aliveLeasePids(stateDir) {
+  let names = [];
+  try {
+    names = await readdir(path.join(stateDir, "pids"));
+  } catch {}
+  return names
+    .map((name) => Number.parseInt(name.split("-", 1)[0], 10))
+    .filter((pid) => Number.isInteger(pid) && processAlive(pid));
+}
+
+let leaseMemberSequence = 0;
+
+// Join a launch group for one project+agent. Any number of launches can be
+// active at once; the first one snapshots the agent's native storage (or, when
+// a previous group died without finishing, salvages it via onFirst(true)
+// first) and the last one to exit reverts it via onLast, so sessions created
+// by agenthome launches live only in the project. The returned function
+// leaves the group.
+export async function acquireSessionLease(agentId, projectRoot, callbacks = {}) {
+  const stateDir = sessionLeasePath(agentId, projectRoot);
+  const snapshotMarker = path.join(stateDir, "snapshot.ok");
+  // One member file per launch: two launches of the same process (tests) must
+  // count separately, while the pid records whether the owner is still alive.
+  const member = `${process.pid}-${Date.now()}-${leaseMemberSequence++}`;
+  await withLaunchLock(stateDir, async () => {
+    if ((await aliveLeasePids(stateDir)).length === 0) {
+      // First launch of the group, or every previous launch died: the marker
+      // records that a completed snapshot exists to recover from.
+      await callbacks.onFirst?.(existsSync(snapshotMarker));
+      await writeFile(snapshotMarker, "", { encoding: "utf8" });
+    }
+    await mkdir(path.join(stateDir, "pids"), { recursive: true });
+    await writeFile(path.join(stateDir, "pids", member), "", { encoding: "utf8" });
+  });
+  return async () => {
+    await withLaunchLock(stateDir, async () => {
+      await rm(path.join(stateDir, "pids", member), { force: true });
+      if ((await aliveLeasePids(stateDir)).length > 0) {
+        return;
+      }
+      try {
+        await callbacks.onLast?.();
+      } finally {
+        await rm(stateDir, { recursive: true, force: true });
+      }
+    });
   };
 }

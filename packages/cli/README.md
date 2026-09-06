@@ -81,7 +81,7 @@ agenthome sessions git on|off|status # 项目会话记录的 Git 同步开关
 
 项目内的会话记录不会自动回写本机原生存储；需要回写时显式执行 `agenthome <agent> sessions writeback`：原生存储中该项目的会话记录会被项目内记录覆盖；原生存储中没有该项目的会话记录时，则按 Agent 的原生目录结构创建后放入会话，效果与直接用官方 CLI 产生的会话一致。
 
-同一项目同一 Agent 同时只能启动一个 `agenthome` 会话（不同项目、不同 Agent 互不影响）。若 Agent 进程被强制中断，本机原生存储可能残留本次会话，下次启动时会以项目内记录为准并恢复。
+同一项目同一 Agent 可同时启动多个 `agenthome` 会话：第一个启动时保存原生存储快照，最后一个退出时回滚。若 Agent 被强制中断（进程没有正常退出），回滚不会执行，本机原生存储会残留本次会话；下次启动 `agenthome` 时检测到残留会自动把会话收进项目并恢复原生存储原状。系统重启后临时目录被清理时无法自动补救，残留会话留在原生存储里，可手动执行 `agenthome <agent> sessions import` 收进项目。
 
 > OpenCode 例外：其会话存储由官方 CLI 自行管理，`agenthome opencode` 启动后原生存储仍保留本次运行产生的会话，不受上述回滚保护。
 
@@ -91,51 +91,17 @@ agenthome sessions git on|off|status # 项目会话记录的 Git 同步开关
 
 ### Catalog
 
-Catalog 是一个 git 仓库：`skills/<source-id>/<skill-name>/SKILL.md` 存放 Skills，`packs/*.json` 定义 Pack，`sources.lock.json` 锁定上游 commit。公开或私有均可；私有仓库的访问使用本机 git 认证（gh、SSH 或 credential helper）。
-
-```bash
-agenthome catalog add <owner/repo>    # 导入 catalog 源（owner/repo[#ref]、URL 或本地路径），并打印 Pack 预览树
-agenthome catalog select [name|spec]  # 从已注册 catalog 中上下键选择当前 catalog（无终端时打印列表）
-agenthome catalog list                # 列出已注册 catalog（> 标记当前）
-agenthome catalog sync                # 拉取或更新缓存（~/.config/agent-skills/catalog/）
-agenthome catalog default             # 查看当前 catalog
-```
-
-```bash
-agenthome skills install                        # 安装/同步配置的 Packs（默认 common）
-agenthome skills install development research   # 一次安装多个 Pack；common 自动包含
-agenthome skills -g development                 # 安装到全局作用域（skills <pack> 为 install 的简写）
-agenthome skills uninstall development          # 卸载 Pack
-agenthome skills uninstall                      # 移除全部受管理 Skills
-agenthome skills add <owner/repo> [skill...]    # 从仓库直接安装外部 Skills
-agenthome skills remove <name...>               # 移除外部 Skills
-agenthome skills tree [pack...]                 # 查看 catalog 内容树
-agenthome skills packs                          # 列出可用 Packs
-agenthome skills status [-g]                    # 当前安装状态
-```
-
-每次安装会把 catalog commit 写入项目锁 `.agent-skills.lock.json`，跨设备可复现。
-
-> 默认 catalog 为维护者提供的示例；使用前请通过 `agenthome catalog add <owner/repo>` 指向自己的 catalog。
-
-#### Catalog 结构：源 → Pack → Skill
-
-Catalog 按三层组织：
-
-- **源（source）**：Skill 的上游仓库，登记在 `sources.lock.json`（仓库地址、锁定的 commit、许可证位置）。一个 catalog 可同时聚合任意多个上游源。
-- **Pack**：`packs/*.json`，声明"从哪些源选取哪些 Skill"，是导入的基本单位；`common` 为默认 Pack，安装时自动包含。
-- **Skill**：`skills/<source-id>/<skill-name>/SKILL.md`，按源归档的副本；安装 Pack 时复制进项目。
+Catalog 是一个 git 仓库，公开或私有均可；私有仓库使用本机 git 认证（gh、SSH 或 credential helper），CLI 不接触 token。标准结构：
 
 ```
 my-catalog/
-├── package.json              # 标识 catalog 仓库（可选）
-├── sources.lock.json         # 上游源登记：id、仓库、锁定 commit、许可证
+├── sources.lock.json                    # 上游源登记：id、仓库地址、锁定 commit、Skill 根目录、许可证
 ├── packs/
-│   ├── common.json           # Pack 定义
+│   ├── common.json                      # Pack 定义（common 为默认 Pack，安装时自动包含）
 │   └── development.json
-├── skills/                   # 按源归档的 Skill 副本
+├── skills/                              # 按源归档的 Skill 副本
 │   └── <source-id>/<skill-name>/SKILL.md
-└── licenses/                 # 上游许可证（登记源时自动保存）
+└── licenses/                            # 上游许可证（登记源时自动保存）
 ```
 
 Pack 定义示例（`packs/development.json`）：
@@ -150,41 +116,64 @@ Pack 定义示例（`packs/development.json`）：
 }
 ```
 
-`description` 说明 Pack 的用途，会在 `catalog add` 的预览树中显示。
+一个 catalog 可聚合多个上游源；Pack 从这些源挑选 Skill（可跨源），`description` 是 Pack 的用途说明，会显示在 `catalog add` 的预览树中。
 
-#### 构造自己的 catalog
+#### 使用
 
-初始化仓库骨架，登记上游源、创建 Pack，校验后推送（公开或私有均可）：
+```bash
+agenthome catalog add <owner/repo>         # 导入 catalog（owner/repo[#ref]、URL 或本地路径），成功后打印 Pack 预览树
+agenthome skills install                   # 安装默认 Pack（common）
+agenthome skills install development       # 安装多个 Pack；common 自动包含
+agenthome skills uninstall development     # 卸载 Pack（不带参数移除全部受管理 Skills）
+agenthome skills -g development            # 安装到全局作用域（skills <pack> 是 install 的简写）
+agenthome skills tree [pack...]            # 查看 catalog 内容树
+agenthome skills packs                     # 列出可用 Packs
+agenthome skills status [-g]               # 当前安装状态
+```
+
+`catalog add` 拉取失败不影响源保存，之后 `agenthome catalog sync` 重试。可反复 `add` 注册多个 catalog，同一时间生效一个（该 catalog 聚合的多个上游源共享所有 Pack）：
+
+```bash
+agenthome catalog select [name|spec]       # ↑/↓ 选择当前 catalog（无终端时打印列表）
+agenthome catalog list                     # 列出已注册 catalog（> 标记当前）
+agenthome catalog default                  # 查看当前 catalog
+agenthome catalog sync                     # 拉取或更新缓存（~/.config/agent-skills/catalog/）
+```
+
+每次安装把 catalog commit 写入项目锁 `.agent-skills.lock.json`，跨设备可复现。
+
+> 默认 catalog 为维护者提供的示例；使用前请通过 `agenthome catalog add <owner/repo>` 指向自己的 catalog。
+
+#### 构造与维护 catalog
+
+初始化骨架、登记上游、建 Pack、校验后推送：
 
 ```bash
 mkdir my-catalog && cd my-catalog
 git init
 mkdir -p packs skills
 echo '{"schemaVersion":1,"sources":[]}' > sources.lock.json
-
-agenthome catalog pack-add common --name Common                  # 新建 Pack
-agenthome catalog skill-add <owner/repo> --pack common          # 登记第一个上游源并收录其全部 Skill
+agenthome catalog pack-add common --name Common                        # 新建 Pack
+agenthome catalog skill-add <owner/repo> --pack common                 # 登记第一个上游源并收录其全部 Skill
 agenthome catalog pack-add development --name Development
-agenthome catalog skill-add <owner/repo> skill-a skill-b --pack development   # 挑选 Skill 进其他 Pack
-agenthome catalog doctor                                         # 校验结构
-
+agenthome catalog skill-add <owner/repo> skill-a skill-b --pack development
+agenthome catalog doctor                                               # 校验结构
 git add -A && git commit -m "catalog" && git push
 ```
 
-`skill-add` 会自动登记未收录的上游源（锁定 commit、保存许可证）；省略 `[skill...]` 收录该源全部 Skill；可反复 `skill-add` 聚合多个上游源，Pack 可跨源挑选。
+`skill-add` 自动登记未收录的上游源（锁定 commit、保存许可证）；省略 `[skill...]` 收录该源全部 Skill；可反复 `skill-add` 聚合多个上游源。
 
-#### 导入 catalog 源与 Pack
+维护命令（在 catalog 克隆内运行）：
 
 ```bash
-agenthome catalog add <owner/repo>     # 导入 catalog 源：保存源并立即打印 Pack 预览树
-agenthome skills install               # 按 Pack 导入 Skills（默认 common）
-agenthome skills install development research   # 一次导入多个 Pack
-agenthome skills -g development        # 导入到全局作用域
+agenthome catalog skill-add <source-id|owner/repo> [skill...] [--pack <pack,pack>]
+agenthome catalog remove <source-id|owner/repo> <skill...> [--pack <pack,pack>]   # 从 Pack 移除 Skill；无 Pack 引用时删除副本
+agenthome catalog pack-add <id> [--name <name>] [--description <text>]
+agenthome catalog pack-remove <pack...>                                          # 删除 Pack（common 不可删），无引用 Skill 一并清理
+agenthome catalog source-add <id> <repo> [--name <name>] [--skill-root <path>] [--license <path>]
+agenthome catalog update [source] [--check]                                      # 跟进上游更新，锁定新 commit
+agenthome catalog doctor                                                         # 校验 catalog
 ```
-
-`catalog add` 拉取成功后会在终端打印该源的预览树（Pack 名称 + 用途描述），一眼看清可导入内容；拉取失败不影响源保存，之后 `agenthome catalog sync` 重试。
-
-每次 `catalog add` 都会把该源记入已注册列表；可反复 `add` 导入多个 catalog，用 `agenthome catalog select` 上下键切换当前 catalog（`select <name|spec>` 可直接指定），`catalog list` 查看全部。同一时间生效一个 catalog，该 catalog 内聚合的多个上游仓库共享所有 Pack。
 
 #### 连接私有 Skills 仓库
 
@@ -205,17 +194,6 @@ agenthome skills install                                 # 4. 安装默认 Pack�
 | `schannel: failed to receive handshake / SSL/TLS connection failed` | 网络或代理阻断了到 github.com 的 TLS 连接，与认证无关；检查代理/VPN，或改用 SSH 地址 |
 | `Unable to fetch catalog` + `Check your GitHub authentication` | git 没有该私有仓库的访问权限；先运行 `gh auth status` 或 `ssh -T git@github.com` |
 | 换回其他 catalog | 已注册的直接 `agenthome catalog select` 切换；未注册的再次 `agenthome catalog add <spec>` |
-
-#### 维护 catalog
-
-在 catalog 克隆内运行：
-
-```bash
-agenthome catalog source-add <id> <repo> [--name <name>] [--skill-root <path>]
-agenthome catalog skill-add <owner/repo> [skill...] [--pack <pack>]   # 登记上游、固定 commit、保存许可证
-agenthome catalog update [source] [--check]                     # 跟进上游更新
-agenthome catalog doctor                                        # 校验 catalog
-```
 
 ### 直接源
 
