@@ -1,8 +1,8 @@
 {
   "name": "agenthome-cli",
-  "license": "MIT",
   "version": "5.5.0",
-  "private": true,
+  "private": false,
+  "license": "MIT",
   "description": "Portable Skills, runtime configuration, and sessions for coding agents",
   "type": "module",
   "imports": {
@@ -30,6 +30,6 @@
     "node": ">=18.17"
   },
   "agentHome": {
-    "packageSpec": "Echo-Kang-hub/agenthome-cli#main"
+    "packageSpec": "agenthome-cli@latest"
   }
 }
