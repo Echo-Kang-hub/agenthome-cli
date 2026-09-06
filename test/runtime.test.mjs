@@ -319,7 +319,7 @@ test("OpenCode uses native export and imports each portable version once", async
   });
 });
 
-test("self update reinstalls the GitHub main branch globally", async () => {
+test("self update reinstalls the published npm package globally", async () => {
   const calls = [];
   const packageSpec = await agentHomePackageSpec(cliPackageRoot);
   const result = await updateAgentHome(cliPackageRoot, {
@@ -328,12 +328,13 @@ test("self update reinstalls the GitHub main branch globally", async () => {
       return { status: 0 };
     },
   });
-  assert.equal(result, "Echo-Kang-hub/agenthome-cli#main");
+
+  assert.equal(result, "agenthome-cli@latest");
   assert.equal(packageSpec, result);
   assert.deepEqual(calls, [
     {
       executable: "npm",
-      argumentsList: ["install", "--global", "Echo-Kang-hub/agenthome-cli#main"],
+      argumentsList: ["install", "--global", "agenthome-cli@latest"],
     },
   ]);
 });
