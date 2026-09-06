@@ -1,6 +1,6 @@
 {
-  "name": "agenthome-cli",
-  "version": "5.8.0",
+  "name": "avenic",
+  "version": "1.0.0",
   "private": false,
   "license": "MIT",
   "description": "Portable Skills, runtime configuration, and sessions for coding agents",
@@ -10,8 +10,8 @@
     "#core/*": "./vendor/core-src/*"
   },
   "bin": {
-    "agenthome": "scripts/skills.mjs",
-    "ah": "scripts/skills.mjs"
+    "avenic": "scripts/skills.mjs",
+    "ave": "scripts/skills.mjs"
   },
   "scripts": {
     "prepack": "node ../../scripts/sync-core.mjs"
@@ -24,7 +24,7 @@
   "engines": {
     "node": ">=18.17"
   },
-  "agentHome": {
-    "packageSpec": "agenthome-cli@latest"
+  "avenic": {
+    "packageSpec": "avenic@latest"
   }
 }
