@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { createInstallContext, installPacks, resolveInstallSource, setDefaultCatalogSpec, skillsInstallationStatus } from "../packages/core/src/index.mjs";
+import { createInstallContext, installPacks, installedPackIds, resolveInstallSource, setDefaultCatalogSpec, skillsInstallationStatus, uninstallPacks } from "../packages/core/src/index.mjs";
 import { readJson, writeJson } from "../packages/core/src/util/json.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -212,9 +212,12 @@ async function fixtureCatalog(root) {
   // Catalog layout: vendored Skills live in skills/<source-id>/<skill-name>/;
   // buildCatalog walks the directories inside skills/<source-id>.
   await mkdir(path.join(root, "skills", "s", "s"), { recursive: true });
+  await mkdir(path.join(root, "skills", "s", "s2"), { recursive: true });
   await mkdir(path.join(root, "packs"), { recursive: true });
   await writeFile(path.join(root, "skills", "s", "s", "SKILL.md"), "---\nname: s\n---\nv1\n");
+  await writeFile(path.join(root, "skills", "s", "s2", "SKILL.md"), "---\nname: s2\n---\nv1\n");
   await writeFile(path.join(root, "packs", "common.json"), `${JSON.stringify({ schemaVersion: 1, id: "common", name: "Common", sources: [{ source: "s", skills: ["s"] }] })}\n`);
+  await writeFile(path.join(root, "packs", "development.json"), `${JSON.stringify({ schemaVersion: 1, id: "development", name: "Development", sources: [{ source: "s", skills: ["s2"] }] })}\n`);
   await writeFile(path.join(root, "sources.lock.json"), `${JSON.stringify({ schemaVersion: 1, sources: [{ id: "s", name: "S", repository: "https://github.com/example/s.git", skillRoot: "skills", revision: "a".repeat(40) }] })}\n`);
   await gitQuiet(root, ["init", "--quiet", "-b", "main"]);
   await gitQuiet(root, ["add", "-A"]);
@@ -265,6 +268,37 @@ test("installPacks installs the resolved packs and writes metadata", async () =>
     assert.equal(lock.catalog.revision.length, 40);
     assert.equal(lock.packs[0].id, "common");
     await assert.rejects(() => installPacks(createInstallContext(false, { cwd: catalog, environment }), [], { io: { log() {} } }), /not from the AgentHome catalog/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("uninstallPacks keeps common and reinstalls remaining packs", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "uninstall-packs-"));
+  try {
+    const state = path.join(root, "state");
+    const catalog = path.join(root, "catalog");
+    await fixtureCatalog(catalog);
+    const environment = { ...process.env, AGENTHOME_STATE_DIR: state };
+    await setDefaultCatalogSpec(environment, catalog);
+    const context = createInstallContext(false, { cwd: root, environment });
+    await installPacks(context, ["development"], { io: { log() {} } });
+    assert.equal((await installedPackIds(context)).includes("development"), true);
+
+    const nothing = await uninstallPacks(context, ["common"], { io: { log() {} } });
+    assert.equal(nothing.changed, false);
+    assert.equal(nothing.skippedCommon, true);
+    const missing = await uninstallPacks(context, ["unknown-pack"], { io: { log() {} } });
+    assert.equal(missing.changed, false);
+    assert.deepEqual(missing.absent, ["unknown-pack"]);
+
+    const result = await uninstallPacks(context, ["development"], { io: { log() {} } });
+    assert.equal(result.changed, true);
+    assert.deepEqual(result.removed, ["development"]);
+    const lock = await readJson(context.lockFile);
+    assert.deepEqual(lock.packs.map((pack) => pack.id), ["common"]);
+    assert.equal(existsSync(path.join(context.targets[0].destination, "s2")), false);
+    assert.equal(existsSync(path.join(context.targets[0].destination, "s", "SKILL.md")), true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

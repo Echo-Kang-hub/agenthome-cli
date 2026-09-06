@@ -7,7 +7,7 @@ import { fail } from "../util/fail.mjs";
 import { isInside, removeEmptyDirectory } from "../util/fs.mjs";
 import { readJson, writeJson } from "../util/json.mjs";
 import { ensureCatalog, loadDefaultCatalogSpec, parseCatalogSpec } from "./catalog.mjs";
-import { assertSafeSkillName } from "./ids.mjs";
+import { assertSafeId, assertSafeSkillName } from "./ids.mjs";
 import { loadPacks, resolvePacks } from "./packs.mjs";
 import { buildCatalog, loadSources } from "./sources.mjs";
 import { normalizePackIds, parsePackArguments } from "./packs.mjs";
@@ -316,4 +316,40 @@ export async function installPacks(context, explicitPacks = [], options = {}) {
   await installCopies(context, resolvedPacks, io);
   await writeInstallMetadata(context, resolvedPacks, catalogInfo);
   return { catalogInfo, packIds, resolvedPacks };
+}
+
+// Uninstall Packs from a scope: validate the request, reinstall the
+// remaining Packs (common is always included and can never be removed),
+// and rewrite the metadata. The no-argument full cleanup stays in the CLI.
+export async function uninstallPacks(context, packArguments = [], options = {}) {
+  const io = options.io ?? console;
+  const requested = parsePackArguments(packArguments);
+  requested.forEach((packId) => assertSafeId(packId, "Pack id"));
+  const current = await installedPackIds(context);
+  if (!current) {
+    io.log(`No managed ${context.label.toLowerCase()} skills installation found`);
+    return { changed: false, removed: [], absent: requested, skippedCommon: false, current: null };
+  }
+  const removable = new Set(requested.filter((packId) => packId !== "common"));
+  const removed = current.filter((packId) => removable.has(packId));
+  const absent = requested.filter((packId) => packId !== "common" && !current.includes(packId));
+  const skippedCommon = requested.includes("common");
+  if (removed.length === 0) {
+    return { changed: false, removed: [], absent, skippedCommon, current };
+  }
+  const catalogInfo = await resolveInstallSource({
+    global: context.global,
+    cwd: context.root,
+    environment: context.environment,
+    io,
+  });
+  const sourceConfig = await loadSources(catalogInfo.catalogRoot);
+  const catalog = await buildCatalog(sourceConfig, path.join(catalogInfo.catalogRoot, "skills"));
+  const packs = await loadPacks(catalogInfo.catalogRoot);
+  const remaining = current.filter((packId) => !removable.has(packId));
+  const resolvedPacks = resolvePacks(catalog, sourceConfig, packs, remaining);
+  await options.onPlan?.(resolvedPacks, removed);
+  await installCopies(context, resolvedPacks, io);
+  await writeInstallMetadata(context, resolvedPacks, catalogInfo);
+  return { changed: true, removed, absent, skippedCommon, current, resolvedPacks };
 }

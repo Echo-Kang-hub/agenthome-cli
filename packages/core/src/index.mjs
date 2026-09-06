@@ -137,5 +137,6 @@ export {
   resolveInstallPacks,
   resolveInstallSource,
   skillsInstallationStatus,
+  uninstallPacks,
   writeInstallMetadata,
 } from "./skills/install.mjs";
