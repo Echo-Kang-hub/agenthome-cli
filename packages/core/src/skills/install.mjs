@@ -235,3 +235,24 @@ export async function removeInstallationFiles(context) {
     await rm(context.legacyProfileFile, { force: true });
   }
 }
+
+// Structured `skills status` data: the manifest's packs and per-target
+// presence counts. Returns null when nothing is installed.
+export async function skillsInstallationStatus(context) {
+  if (!existsSync(context.lockFile)) {
+    return null;
+  }
+  const manifest = await readJson(context.lockFile);
+  const groups = (manifest.sources ?? []).map((source) => ({
+    source,
+    skills: (source.skills ?? []).map((name) => ({ name })),
+  }));
+  const manifestPacks = manifest.packs ?? (manifest.pack ? [manifest.pack] : []);
+  const names = groups.flatMap((group) => group.skills.map((skill) => skill.name));
+  const targets = context.targets.map((targetConfig) => {
+    const directory = targetConfig.destination;
+    const present = names.filter((name) => existsSync(path.join(directory, name, "SKILL.md"))).length;
+    return { ...targetConfig, present, total: names.length, complete: present === names.length };
+  });
+  return { groups, packs: manifestPacks, names, targets };
+}

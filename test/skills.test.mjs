@@ -6,6 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { createInstallContext, skillsInstallationStatus } from "../packages/core/src/index.mjs";
+import { writeJson } from "../packages/core/src/util/json.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const agentBin = path.join(packageRoot, "packages", "cli", "scripts", "skills.mjs");
@@ -182,4 +184,26 @@ test("Catalog removes multiple Skills and Packs without orphan files", async () 
     assert.equal(packRepeated.status, 0, packRepeated.stderr);
     assert.match(packRepeated.stdout, /Already absent/);
   });
+});
+
+test("skillsInstallationStatus reports manifest packs and target presence", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "skills-status-"));
+  try {
+    const context = createInstallContext(false, { cwd: root, environment: process.env });
+    assert.equal(await skillsInstallationStatus(context), null);
+    await writeJson(context.lockFile, {
+      schemaVersion: 3,
+      packs: [{ id: "common", name: "Common" }],
+      sources: [{ id: "s-source", name: "S", repository: "https://github.com/example/s.git", revision: "a".repeat(40), skills: ["s"] }],
+    });
+    await mkdir(path.join(context.targets[0].destination, "s"), { recursive: true });
+    await writeFile(path.join(context.targets[0].destination, "s", "SKILL.md"), "---\nname: s\n---\n");
+    const status = await skillsInstallationStatus(context);
+    assert.equal(status.names.length, 1);
+    assert.equal(status.packs[0].id, "common");
+    assert.equal(status.targets[0].complete, true);
+    assert.equal(status.targets[1].complete, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
