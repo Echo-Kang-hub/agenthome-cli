@@ -13,5 +13,6 @@
     }
   },
   "files": ["src/", "index.d.ts", "LICENSE"],
+  "publishConfig": { "access": "public" },
   "engines": { "node": ">=18.17" }
 }
