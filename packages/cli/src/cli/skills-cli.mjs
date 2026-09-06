@@ -30,7 +30,6 @@ import {
   loadKnownCatalogs,
   loadPacks,
   loadSources,
-  parseCatalogSpec,
   parsePackArguments,
   previousManagedState,
   printTree,
@@ -57,6 +56,7 @@ import {
   skillsInstallationStatus,
   stageSource,
   stateRoot,
+  uninstallPacks,
   writeInstallMetadata,
   writeJson,
 } from "#core";
@@ -84,38 +84,6 @@ function parseScopeArguments(argumentsList) {
     argumentsList: argumentsList.filter((argument) => !globalFlags.has(argument)),
     global,
   };
-}
-
-// Resolve the catalog for the install context. The project lock pins the catalog
-// commit for cross-device reproducibility; a refresh (bare `agenthome skills` syncs the
-// configured Packs) intentionally bypasses the pin to pick up the latest catalog.
-async function resolveCatalogSource(options, { refresh = false } = {}) {
-  const spec = await loadDefaultCatalogSpec(options.environment);
-  const context = createInstallContext(options.global ?? false, options);
-  const pinnedSpec = refresh ? spec : await pinnedCatalogSpec(spec, context);
-  const catalogInfo = await ensureCatalog(pinnedSpec, {
-    environment: options.environment,
-    io: options.io ?? console,
-  });
-  const packageMetadata = existsSync(path.join(catalogInfo.catalogRoot, "package.json"))
-    ? await readJson(path.join(catalogInfo.catalogRoot, "package.json"))
-    : null;
-  return { ...catalogInfo, packageMetadata };
-}
-
-async function pinnedCatalogSpec(spec, context) {
-  if (!existsSync(context.lockFile)) {
-    return spec;
-  }
-  const lock = await readJson(context.lockFile);
-  const { repository, revision } = lock.catalog ?? {};
-  if (!repository || !revision) {
-    return spec;
-  }
-  if (parseCatalogSpec(spec).repository !== repository) {
-    return spec;
-  }
-  return `${repository}#${revision}`;
 }
 
 async function commandInstall(explicitPacks = [], options = {}) {
@@ -187,38 +155,29 @@ async function commandUninstall(packArguments, options = {}) {
     return;
   }
 
-  const requested = parsePackArguments(packArguments);
-  requested.forEach((packId) => assertSafeId(packId, "Pack id"));
-
-  const removable = new Set(requested.filter((packId) => packId !== "common"));
-  const removed = current.filter((packId) => removable.has(packId));
-  const absent = requested.filter((packId) => packId !== "common" && !current.includes(packId));
-  if (requested.includes("common")) {
+  const result = await uninstallPacks(context, packArguments, {
+    io,
+    onPlan: (resolved, removedPacks) => {
+      printTree(resolved.groups, "Skill Uninstall Plan", [
+        `Remove Packs: ${removedPacks.join(" + ")}`,
+        `Keep Packs: ${resolved.packs.map((pack) => pack.name).join(" + ")}`,
+        `Scope: ${context.label}`,
+        `Root: ${context.root}`,
+      ], io);
+    },
+  });
+  if (result.current === null) return;
+  if (result.skippedCommon) {
     io.log("Skipped: common is always included");
   }
-  if (absent.length > 0) {
-    io.log(`Already absent: ${absent.join(", ")}`);
+  if (result.absent.length > 0) {
+    io.log(`Already absent: ${result.absent.join(", ")}`);
   }
-  if (removed.length === 0) {
+  if (!result.changed) {
     io.log("No Pack changes");
     return;
   }
-
-  const catalogInfo = await resolveCatalogSource(options);
-  const sourceConfig = await loadSources(catalogInfo.catalogRoot);
-  const catalog = await buildCatalog(sourceConfig, path.join(catalogInfo.catalogRoot, "skills"));
-  const packs = await loadPacks(catalogInfo.catalogRoot);
-  const remaining = current.filter((packId) => !removable.has(packId));
-  const resolvedPacks = resolvePacks(catalog, sourceConfig, packs, remaining);
-  printTree(resolvedPacks.groups, "Skill Uninstall Plan", [
-    `Remove Packs: ${removed.join(" + ")}`,
-    `Keep Packs: ${resolvedPacks.packs.map((pack) => pack.name).join(" + ")}`,
-    `Scope: ${context.label}`,
-    `Root: ${context.root}`,
-  ], io);
-  await installCopies(context, resolvedPacks, io);
-  await writeInstallMetadata(context, resolvedPacks, catalogInfo);
-  io.log(`\nUninstall complete: ${removed.join(", ")}`);
+  io.log(`\nUninstall complete: ${result.removed.join(", ")}`);
 }
 
 async function commandUninstallSkill(skillArguments, options = {}) {
