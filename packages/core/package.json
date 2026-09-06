@@ -1,5 +1,5 @@
 {
-  "name": "@agenthome/core",
+  "name": "@agenthome-cli/core",
   "version": "5.8.0",
   "license": "MIT",
   "type": "module",

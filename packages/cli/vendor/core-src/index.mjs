@@ -1,4 +1,4 @@
-// Public API of @agenthome/core.
+// Public API of @agenthome-cli/core.
 
 export { AGENTS, agentExecutableAvailable, getAgent } from "./runtime/agents.mjs";
 export {

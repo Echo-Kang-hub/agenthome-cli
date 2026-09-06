@@ -39,7 +39,7 @@ cd packages/cli && npm publish
 
 - `agentHome.packageSpec` 保持 `agenthome-cli@latest`（`agent update` 自更新源）。
 - registry 包 `private` 保持 `false`。
-- 发布物是 `packages/cli`（包名 `agenthome-cli`）与 `packages/core`（包名 `@agenthome/core`，见下）。
+- 发布物是 `packages/cli`（包名 `agenthome-cli`）与 `packages/core`（包名 `@agenthome-cli/core`，见下；原拟 `@agenthome/core`，该 scope 已被其他 npm 账号占用）。
 
 ## core 发布纪律
 

@@ -40,7 +40,7 @@ test("published bin names avoid shell collisions", async () => {
 
 test("core manifest is configured for public publishing", async () => {
   const manifest = JSON.parse(await readFile(path.join(packageRoot, "packages", "core", "package.json"), "utf8"));
-  assert.equal(manifest.name, "@agenthome/core");
+  assert.equal(manifest.name, "@agenthome-cli/core");
   assert.equal(manifest.private, undefined);
   assert.equal(manifest.license, "MIT");
   assert.equal(manifest.version, "5.8.0");
