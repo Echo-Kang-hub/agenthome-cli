@@ -66,3 +66,11 @@ test("core type declarations cover the extension contract", async () => {
     assert.match(dts, new RegExp(`\\b${name}\\b`), name);
   }
 });
+
+test("root manifest carries the internal avenic-repo identity", async () => {
+  const manifest = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8"));
+  assert.equal(manifest.name, "avenic-repo");
+  assert.equal(manifest.version, "1.0.0");
+  assert.deepEqual(Object.keys(manifest.bin).sort(), ["ave", "avenic"]);
+  assert.equal(manifest.repository.url, "git+https://github.com/Echo-Kang-hub/avenic.git");
+});

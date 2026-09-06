@@ -1,12 +1,12 @@
 {
-  "name": "agenthome-cli-monorepo",
+  "name": "avenic-repo",
   "license": "MIT",
-  "version": "5.7.7",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "bin": {
-    "agenthome": "packages/cli/scripts/skills.mjs",
-    "ah": "packages/cli/scripts/skills.mjs"
+    "avenic": "packages/cli/scripts/skills.mjs",
+    "ave": "packages/cli/scripts/skills.mjs"
   },
   "scripts": {
     "sync-core": "node scripts/sync-core.mjs",
@@ -24,6 +24,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Echo-Kang-hub/agenthome-cli.git"
+    "url": "git+https://github.com/Echo-Kang-hub/avenic.git"
   }
 }
