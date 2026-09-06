@@ -8,7 +8,7 @@ import { git, normalizeRepositoryInput, repositoryIdentity } from "./git.mjs";
 import { loadPacks } from "./packs.mjs";
 import { catalogCacheRoot, defaultCatalogFile, deprecatedEnvironmentValue, knownCatalogsFile } from "./paths.mjs";
 
-const DEFAULT_CATALOG_SPEC = "Echo-Kang-hub/agenthome-catalog#main";
+const DEFAULT_CATALOG_SPEC = "Echo-Kang-hub/avenic-catalog#main";
 
 export function parseCatalogSpec(spec) {
   if (typeof spec !== "string" || spec.length === 0) {

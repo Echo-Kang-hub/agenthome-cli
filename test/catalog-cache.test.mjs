@@ -90,7 +90,7 @@ test("ensureCatalog failure message mentions gh auth login", async () => {
 test("catalog spec storage and sync manage the default spec", async () => {
   await withTemp("catalog-default-", async (root) => {
     const environment = { AVENIC_STATE_DIR: root };
-    assert.equal(await loadDefaultCatalogSpec(environment), "Echo-Kang-hub/agenthome-catalog#main");
+    assert.equal(await loadDefaultCatalogSpec(environment), "Echo-Kang-hub/avenic-catalog#main");
     await setDefaultCatalogSpec(environment, "my/private#abc123");
     assert.equal(await loadDefaultCatalogSpec(environment), "my/private#abc123");
     const overridden = { AVENIC_STATE_DIR: root, AVENIC_CATALOG_SPEC: "env/repo" };
