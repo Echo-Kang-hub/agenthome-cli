@@ -1,6 +1,6 @@
 // Public API of @agenthome/core.
 
-export { AGENTS, getAgent } from "./runtime/agents.mjs";
+export { AGENTS, agentExecutableAvailable, getAgent } from "./runtime/agents.mjs";
 export {
   clearLocalAuth,
   deinitializeAgent,

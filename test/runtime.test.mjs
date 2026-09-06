@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -22,6 +22,7 @@ import {
   ensureRuntimeGitignore,
   sessionsGitIgnored,
 } from "../packages/core/src/runtime/gitignore.mjs";
+import { agentExecutableAvailable } from "../packages/core/src/index.mjs";
 import { locateProjectRoot } from "../packages/core/src/runtime/project-root.mjs";
 import * as claudeSessions from "../packages/core/src/runtime/adapters/claude.mjs";
 import * as codexSessions from "../packages/core/src/runtime/adapters/codex.mjs";
@@ -794,4 +795,20 @@ test("self update reinstalls the published npm package globally", async () => {
       argumentsList: ["install", "--global", "agenthome-cli@latest"],
     },
   ]);
+});
+
+test("agentExecutableAvailable probes the official CLI on PATH", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "agent-cli-"));
+  try {
+    // spawnSync cannot launch .cmd files directly on Windows (EINVAL); the
+    // runtime resolves .ps1 shims through PowerShell, matching fakeAgentBinary.
+    const fake = path.join(dir, process.platform === "win32" ? "claude.ps1" : "claude");
+    const content = process.platform === "win32" ? "exit 0\n" : "#!/bin/sh\nexit 0\n";
+    await writeFile(fake, content);
+    if (process.platform !== "win32") await chmod(fake, 0o755);
+    assert.equal(agentExecutableAvailable("claude", { ...process.env, PATH: dir }), true);
+    assert.equal(agentExecutableAvailable("claude", { ...process.env, PATH: "" }), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
