@@ -10,6 +10,7 @@ import {
   parseCatalogSpec,
   setDefaultCatalogSpec,
 } from "../packages/core/src/skills/catalog.mjs";
+import { loadKnownCatalogs, registerCatalog } from "../packages/core/src/index.mjs";
 
 function git(cwd, argumentsList) {
   const result = spawnSync("git", ["-C", cwd, ...argumentsList], { encoding: "utf8", windowsHide: true });
@@ -94,5 +95,24 @@ test("catalog spec storage and sync manage the default spec", async () => {
     assert.equal(await loadDefaultCatalogSpec(environment), "my/private#abc123");
     const overridden = { AGENTHOME_STATE_DIR: root, AGENTHOME_CATALOG_SPEC: "env/repo" };
     assert.equal(await loadDefaultCatalogSpec(overridden), "env/repo");
+  });
+});
+
+test("registerCatalog saves the spec and tolerates preview failure", async () => {
+  await withTemp("catalog-register-", async (root) => {
+    const state = path.join(root, "state");
+    const environment = { AGENTHOME_STATE_DIR: state };
+    const missing = path.join(root, "no-such-catalog");
+    const failed = await registerCatalog(missing, { environment, io: { log() {} } });
+    assert.equal(failed.previewFailed, true);
+    assert.equal(await loadDefaultCatalogSpec(environment), missing);
+    assert.equal((await loadKnownCatalogs(environment))[0].spec, missing);
+
+    const catalog = path.join(root, "catalog");
+    await fixtureCatalog(catalog);
+    const ok = await registerCatalog(catalog, { environment, io: { log() {} } });
+    assert.equal(ok.previewFailed, false);
+    assert.equal(ok.packs.length, 1);
+    assert.equal(ok.packs[0].id, "common");
   });
 });

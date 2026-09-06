@@ -5,6 +5,7 @@ import process from "node:process";
 import { fail } from "../util/fail.mjs";
 import { readJson } from "../util/json.mjs";
 import { git, normalizeRepositoryInput, repositoryIdentity } from "./git.mjs";
+import { loadPacks } from "./packs.mjs";
 import { catalogCacheRoot, defaultCatalogFile, knownCatalogsFile } from "./paths.mjs";
 
 const DEFAULT_CATALOG_SPEC = "Echo-Kang-hub/agenthome-catalog#main";
@@ -107,5 +108,22 @@ export async function ensureCatalog(spec, options = {}) {
       "Check your GitHub authentication (gh auth login, SSH key, or credential helper) and the catalog spec.\n" +
       "To point AgentHome at your own catalog: agenthome catalog add <owner/repo>",
     );
+  }
+}
+
+// Register a catalog: save the default spec and the known-catalog entry
+// first, then try to fetch and preview its Packs. The spec stays configured
+// even when the preview fails (offline, missing credentials, no Packs yet).
+export async function registerCatalog(spec, options = {}) {
+  const io = options.io ?? console;
+  parseCatalogSpec(spec);
+  await setDefaultCatalogSpec(options.environment, spec);
+  await registerKnownCatalog(options.environment, spec);
+  try {
+    const catalogInfo = await ensureCatalog(spec, { environment: options.environment, io });
+    const packs = [...(await loadPacks(catalogInfo.catalogRoot)).values()];
+    return { spec, catalogInfo, packs, previewFailed: false };
+  } catch (error) {
+    return { spec, packs: [], previewFailed: true, error };
   }
 }
