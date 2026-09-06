@@ -86,17 +86,17 @@ test("Pack uninstall prunes only Skills no longer selected", async () => {
 
         const removed = runAgent(projectRoot, ["skills", "uninstall", "development"], environment);
         assert.equal(removed.status, 0, removed.stderr);
-        const config = JSON.parse(await readFile(path.join(projectRoot, ".agent-skills.json"), "utf8"));
+        const config = JSON.parse(await readFile(path.join(projectRoot, ".avenic.json"), "utf8"));
         assert.deepEqual(config.packs, ["common"]);
         assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "beta")), false);
         assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "gamma")), false);
         assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "alpha")), true);
 
-        const before = await readFile(path.join(projectRoot, ".agent-skills.json"), "utf8");
+        const before = await readFile(path.join(projectRoot, ".avenic.json"), "utf8");
         const repeated = runAgent(projectRoot, ["skills", "uninstall", "development"], environment);
         assert.equal(repeated.status, 0, repeated.stderr);
         assert.match(repeated.stdout, /Already absent: development/);
-        assert.equal(await readFile(path.join(projectRoot, ".agent-skills.json"), "utf8"), before);
+        assert.equal(await readFile(path.join(projectRoot, ".avenic.json"), "utf8"), before);
       });
     });
   });
@@ -137,8 +137,8 @@ test("Skills uninstall without Packs removes all managed state", async () => {
 
         const removed = runAgent(projectRoot, ["skills", "uninstall"], environment);
         assert.equal(removed.status, 0, removed.stderr);
-        assert.equal(existsSync(path.join(projectRoot, ".agent-skills.json")), false);
-        assert.equal(existsSync(path.join(projectRoot, ".agent-skills.lock.json")), false);
+        assert.equal(existsSync(path.join(projectRoot, ".avenic.json")), false);
+        assert.equal(existsSync(path.join(projectRoot, ".avenic.lock.json")), false);
         assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "alpha")), false);
         assert.equal(existsSync(external), true);
 
@@ -237,7 +237,7 @@ test("resolveInstallSource pins the lock revision unless refreshing", async () =
     await writeFile(path.join(catalog, "skills", "s", "SKILL.md"), "---\nname: s\n---\nv2\n");
     await gitQuiet(catalog, ["add", "-A"]);
     await gitQuiet(catalog, ["-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "-m", "two"]);
-    await writeJson(path.join(root, ".agent-skills.lock.json"), {
+    await writeJson(path.join(root, ".avenic.lock.json"), {
       schemaVersion: 3,
       catalog: { repository: catalog, revision: first.revision },
     });

@@ -19,6 +19,7 @@ import {
   PROJECT_TARGETS,
   globalConfigFile,
   globalLockFile,
+  migrateLegacyProjectFiles,
 } from "./paths.mjs";
 
 export function isCatalogDirectory(directory) {
@@ -43,6 +44,7 @@ export function createInstallContext(global, options = {}) {
       targets: GLOBAL_TARGETS,
     };
   }
+  migrateLegacyProjectFiles(cwd);
   return {
     configFile: path.join(cwd, PROJECT_CONFIG_FILE),
     environment,

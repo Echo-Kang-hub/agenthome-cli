@@ -306,7 +306,7 @@ test("bare skills installs the default common Pack", async () => {
         assert.equal(installed.status, 0, installed.stderr);
         assert.match(installed.stdout, /Installation complete: 1 unique Skills/);
         assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "alpha", "SKILL.md")), true);
-        assert.equal(existsSync(path.join(projectRoot, ".agent-skills.lock.json")), true);
+        assert.equal(existsSync(path.join(projectRoot, ".avenic.lock.json")), true);
       });
     });
   });

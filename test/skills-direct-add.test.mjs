@@ -85,10 +85,10 @@ test("skills add installs direct public sources into project scope", async () =>
       assert.equal(existsSync(path.join(project, ".agents", "skills", name, "SKILL.md")), true);
       assert.equal(existsSync(path.join(project, ".claude", "skills", name, "SKILL.md")), true);
     }
-    const config = JSON.parse(await readFile(path.join(project, ".agent-skills.json"), "utf8"));
+    const config = JSON.parse(await readFile(path.join(project, ".avenic.json"), "utf8"));
     assert.equal(config.schemaVersion, 3);
     assert.equal(config.direct[0].skills.length, 2);
-    const lock = JSON.parse(await readFile(path.join(project, ".agent-skills.lock.json"), "utf8"));
+    const lock = JSON.parse(await readFile(path.join(project, ".avenic.lock.json"), "utf8"));
     assert.equal(lock.schemaVersion, 3);
     assert.equal(lock.directSources[0].revision, revision);
     assert.equal(existsSync(path.join(project, ".agents", "licenses", lock.directSources[0].id, "LICENSE")), true);
@@ -113,7 +113,7 @@ test("skills add supports single skill and remove clears direct state", async ()
     const removed = runAgent(project, ["skills", "remove", "direct-a"], environment);
     assert.equal(removed.status, 0, removed.stderr);
     assert.equal(existsSync(path.join(project, ".agents", "skills", "direct-a")), false);
-    const lock = JSON.parse(await readFile(path.join(project, ".agent-skills.lock.json"), "utf8"));
+    const lock = JSON.parse(await readFile(path.join(project, ".avenic.lock.json"), "utf8"));
     assert.equal(lock.directSources.length, 0);
   });
 });
