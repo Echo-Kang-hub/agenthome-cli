@@ -37,3 +37,16 @@ test("published bin names avoid shell collisions", async () => {
     ["agenthome", "ah"],
   );
 });
+
+test("core manifest is configured for public publishing", async () => {
+  const manifest = JSON.parse(await readFile(path.join(packageRoot, "packages", "core", "package.json"), "utf8"));
+  assert.equal(manifest.name, "@agenthome/core");
+  assert.equal(manifest.private, undefined);
+  assert.equal(manifest.license, "MIT");
+  assert.equal(manifest.version, "5.8.0");
+  assert.deepEqual(manifest.files, ["src/", "index.d.ts", "LICENSE"]);
+  assert.equal(manifest.exports["."].types, "./index.d.ts");
+  assert.equal(manifest.exports["."].import, "./src/index.mjs");
+  assert.equal(manifest.types, "./index.d.ts");
+  assert.deepEqual(manifest.engines, { node: ">=18.17" });
+});

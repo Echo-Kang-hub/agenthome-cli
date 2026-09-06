@@ -1,11 +1,17 @@
 {
   "name": "@agenthome/core",
-  "version": "5.7.0",
-  "private": true,
+  "version": "5.8.0",
   "license": "MIT",
   "type": "module",
   "main": "src/index.mjs",
+  "types": "./index.d.ts",
   "exports": {
-    ".": "./src/index.mjs"
-  }
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./src/index.mjs",
+      "default": "./src/index.mjs"
+    }
+  },
+  "files": ["src/", "index.d.ts", "LICENSE"],
+  "engines": { "node": ">=18.17" }
 }
