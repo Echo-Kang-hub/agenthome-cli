@@ -43,6 +43,7 @@ import {
   removeAllManagedSkills,
   removeDirectSkills,
   removeEmptyDirectory,
+  removeExternalSkills,
   removeInstallationFiles,
   removeSkillDirectories,
   removeTempDirectory,
@@ -186,20 +187,10 @@ async function commandUninstallSkill(skillArguments, options = {}) {
     fail("Usage: remove <skill...> [-g]");
   }
   const skillNames = [...new Set(skillArguments)];
-  skillNames.forEach(assertSafeSkillName);
   const context = createInstallContext(options.global ?? false, options);
-  const managed = await previousManagedState(context);
-  const managedNames = skillNames.filter((skillName) => managed.has(skillName));
-  if (managedNames.length > 0) {
-    fail(
-      `Managed by configured Packs: ${managedNames.join(", ")}. Uninstall the Pack or remove the Skill from the Catalog`,
-    );
-  }
-
-  const directRemoved = await removeDirectSkills(context, skillNames);
-  const total = await removeSkillDirectories(context, skillNames, io);
+  const result = await removeExternalSkills(context, skillNames, { io });
   io.log(
-    total > 0 || directRemoved.length > 0
+    result.removedDirectories > 0 || result.directRemoved.length > 0
       ? `Removed external Skills: ${skillNames.join(", ")}`
       : `Already absent: ${skillNames.join(", ")}`,
   );

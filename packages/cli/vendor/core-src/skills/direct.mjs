@@ -6,7 +6,7 @@ import { isInside, removeEmptyDirectory } from "../util/fs.mjs";
 import { readJson, writeJson } from "../util/json.mjs";
 import { cloneHead, deriveSourceId, git, normalizeRepositoryInput } from "./git.mjs";
 import { assertSafeSkillName } from "./ids.mjs";
-import { previousManagedState } from "./install.mjs";
+import { previousManagedState, removeSkillDirectories } from "./install.mjs";
 import { stateRoot } from "./paths.mjs";
 import { detectSkillRoot, discoverSourceSkills } from "./sources.mjs";
 
@@ -188,4 +188,22 @@ export async function removeDirectSkills(context, skillNames) {
   await removeEmptyDirectory(directRoot(context));
   await removeEmptyDirectory(directLicensesRoot(context));
   return [...removedNames];
+}
+
+// Remove externally installed Skills: managed Skills are rejected (they
+// belong to Packs), then the direct records and the target directories go.
+export async function removeExternalSkills(context, skillNames, options = {}) {
+  const io = options.io ?? console;
+  const uniqueNames = [...new Set(skillNames)];
+  uniqueNames.forEach(assertSafeSkillName);
+  const managed = await previousManagedState(context);
+  const managedNames = uniqueNames.filter((skillName) => managed.has(skillName));
+  if (managedNames.length > 0) {
+    fail(
+      `Managed by configured Packs: ${managedNames.join(", ")}. Uninstall the Pack or remove the Skill from the Catalog`,
+    );
+  }
+  const directRemoved = await removeDirectSkills(context, uniqueNames);
+  const removedDirectories = await removeSkillDirectories(context, uniqueNames, io);
+  return { directRemoved, removedDirectories };
 }
