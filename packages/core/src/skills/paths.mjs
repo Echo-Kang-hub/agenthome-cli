@@ -45,6 +45,10 @@ export function defaultCatalogFile(environment = process.env) {
   return path.join(stateRoot(environment), "catalog.json");
 }
 
+export function knownCatalogsFile(environment = process.env) {
+  return path.join(stateRoot(environment), "catalogs.json");
+}
+
 export function globalConfigFile(environment = process.env) {
   return path.join(stateRoot(environment), "config.json");
 }

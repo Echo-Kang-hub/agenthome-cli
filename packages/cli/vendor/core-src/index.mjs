@@ -56,6 +56,7 @@ export {
   defaultCatalogFile,
   globalConfigFile,
   globalLockFile,
+  knownCatalogsFile,
   stateRoot,
 } from "./skills/paths.mjs";
 export {
@@ -70,9 +71,12 @@ export {
   run,
 } from "./skills/git.mjs";
 export {
+  catalogDisplayName,
   ensureCatalog,
   loadDefaultCatalogSpec,
+  loadKnownCatalogs,
   parseCatalogSpec,
+  registerKnownCatalog,
   setDefaultCatalogSpec,
 } from "./skills/catalog.mjs";
 export {

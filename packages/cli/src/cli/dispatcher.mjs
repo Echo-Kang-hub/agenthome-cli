@@ -75,10 +75,12 @@ Agent runtimes:
   agenthome doctor                       Check the environment
 
 Skills:
-  agenthome skills [pack...]             Install or sync Packs (default: common)
+  agenthome skills install [pack...]     Install or sync Packs (default: common)
+  agenthome skills [pack...]             Shorthand for skills install
   agenthome skills add <owner/repo> [skill...] [-g]    Install directly from a GitHub repo
+  agenthome skills remove <skill...>     Remove external, unmanaged Skills
   agenthome skills uninstall <pack...>   Remove Packs and unneeded managed Skills
-  agenthome skills uninstall-skill <skill...>          Remove external, unmanaged Skills
+  agenthome skills uninstall             Remove all managed Skills
   agenthome skills tree [pack...]        Show source -> Skill tree
   agenthome skills packs                 List available Packs
   agenthome skills status [-g]           Show the installed tree
@@ -86,6 +88,8 @@ Skills:
 
 Catalog:
   agenthome catalog use <spec>           Set the catalog source (owner/repo[#ref], URL, or local path) and preview its Packs
+  agenthome catalog select [name|spec]   Pick the current catalog from registered ones (↑/↓, Enter)
+  agenthome catalog list                 List registered catalogs
   agenthome catalog sync                 Fetch or update the cached catalog
   agenthome catalog default              Show the configured catalog spec
   Private repos use your local git credentials (gh auth login or SSH)

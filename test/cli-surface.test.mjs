@@ -469,6 +469,88 @@ test("catalog add registers the first source in a fresh catalog", async () => {
   });
 });
 
+test("catalog list and select switch between registered catalogs", async () => {
+  await withTempDirectory("agenthome-catalog-select-", async (projectRoot) => {
+    await withTempDirectory("agenthome-catalog-a-", async (catalogA) => {
+      await withTempDirectory("agenthome-catalog-b-", async (catalogB) => {
+        await withTempDirectory("agenthome-state-", async (stateRoot) => {
+          await createCatalogFixture(catalogA);
+          await createCatalogFixture(catalogB);
+          const environment = { AGENTHOME_STATE_DIR: stateRoot };
+          const nameA = path.basename(catalogA);
+          const nameB = path.basename(catalogB);
+
+          const usedA = runAgent(projectRoot, ["catalog", "use", catalogA], environment);
+          assert.equal(usedA.status, 0, usedA.stderr);
+          const usedB = runAgent(projectRoot, ["catalog", "use", catalogB], environment);
+          assert.equal(usedB.status, 0, usedB.stderr);
+
+          // Most recently used first; the current one is marked.
+          const listed = runAgent(projectRoot, ["catalog", "list"], environment);
+          assert.equal(listed.status, 0, listed.stderr);
+          assert.match(listed.stdout, /Registered catalogs/);
+          assert.match(listed.stdout, new RegExp(`> ${nameB}`));
+          assert.match(listed.stdout, new RegExp(`^ {2}${nameA}`, "m"));
+          assert.match(listed.stdout, /> = current\. Switch: agenthome catalog select/);
+
+          // Without a TTY, `select` falls back to the plain list.
+          const picked = runAgent(projectRoot, ["catalog", "select"], environment);
+          assert.equal(picked.status, 0, picked.stderr);
+          assert.match(picked.stdout, /Registered catalogs/);
+
+          // Select by display name switches the current catalog.
+          const selected = runAgent(projectRoot, ["catalog", "select", nameA], environment);
+          assert.equal(selected.status, 0, selected.stderr);
+          assert.match(selected.stdout, /Current catalog: /);
+          const shown = runAgent(projectRoot, ["catalog", "default"], environment);
+          assert.equal(shown.stdout.trim(), `Default catalog: ${catalogA}`);
+
+          const unknown = runAgent(projectRoot, ["catalog", "select", "no-such"], environment);
+          assert.equal(unknown.status, 1);
+          assert.match(unknown.stderr, /Unknown catalog: no-such/);
+
+          // A fresh state seeds the registry with the configured catalog.
+          const freshList = runAgent(projectRoot, ["catalog", "list"], {
+            AGENTHOME_STATE_DIR: path.join(stateRoot, "fresh"),
+          });
+          assert.equal(freshList.status, 0, freshList.stderr);
+          assert.match(freshList.stdout, /Echo-Kang-hub\/agenthome-catalog/);
+        });
+      });
+    });
+  });
+});
+
+test("skills install and remove are explicit verb pairs", async () => {
+  await withTempDirectory("agenthome-skills-verbs-", async (projectRoot) => {
+    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+
+        const installed = runAgent(projectRoot, ["skills", "install", "common"], environment);
+        assert.equal(installed.status, 0, installed.stderr);
+        assert.match(installed.stdout, /Installation complete/);
+
+        await withTempDirectory("agenthome-upstream-", async (upstreamRoot) => {
+          await createUpstreamFixture(upstreamRoot);
+          const added = runAgent(projectRoot, ["skills", "add", upstreamRoot], environment);
+          assert.equal(added.status, 0, added.stderr);
+          assert.match(added.stdout, /Installed direct Skills: delta, epsilon/);
+
+          const removed = runAgent(projectRoot, ["skills", "remove", "delta", "epsilon"], environment);
+          assert.equal(removed.status, 0, removed.stderr);
+          assert.match(removed.stdout, /Removed external Skills: delta, epsilon/);
+
+          const repeated = runAgent(projectRoot, ["skills", "remove", "delta"], environment);
+          assert.equal(repeated.status, 0, repeated.stderr);
+          assert.match(repeated.stdout, /Already absent: delta/);
+        });
+      });
+    });
+  });
+});
+
 test("catalog maintenance requires the catalog clone and doctor validates it", async () => {
   await withTempDirectory("agenthome-catalog-maintenance-", async (projectRoot) => {
     const outsideDoctor = runAgent(projectRoot, ["catalog", "doctor"]);
@@ -490,7 +572,7 @@ test("catalog maintenance requires the catalog clone and doctor validates it", a
 
       const unknown = runAgent(cloneRoot, ["catalog", "bogus"]);
       assert.equal(unknown.status, 1);
-      assert.match(unknown.stderr, /Usage: agenthome catalog <sync\|use\|default\|doctor\|update\|add\|remove\|pack-add\|pack-remove\|source-add>/);
+      assert.match(unknown.stderr, /Usage: agenthome catalog <sync\|use\|select\|list\|default\|doctor\|update\|add\|remove\|pack-add\|pack-remove\|source-add>/);
     });
   });
 });

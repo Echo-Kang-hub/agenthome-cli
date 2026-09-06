@@ -5,7 +5,7 @@ import process from "node:process";
 import { fail } from "../util/fail.mjs";
 import { readJson } from "../util/json.mjs";
 import { git, normalizeRepositoryInput, repositoryIdentity } from "./git.mjs";
-import { catalogCacheRoot, defaultCatalogFile } from "./paths.mjs";
+import { catalogCacheRoot, defaultCatalogFile, knownCatalogsFile } from "./paths.mjs";
 
 const DEFAULT_CATALOG_SPEC = "Echo-Kang-hub/agenthome-catalog#main";
 
@@ -37,6 +37,41 @@ export async function setDefaultCatalogSpec(environment = process.env, spec) {
   const file = defaultCatalogFile(environment);
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify({ schemaVersion: 1, spec }, null, 2)}\n`, "utf8");
+}
+
+// Short label for a catalog spec: "owner/repo" for remotes, the directory
+// name for local paths. Preserves the original spelling for display.
+export function catalogDisplayName(spec) {
+  const { repository } = parseCatalogSpec(spec);
+  if (/^(https?:\/\/|ssh:\/\/)/i.test(repository)) {
+    const clean = repository.replace(/\.git$/i, "").replace(/\/+$/, "");
+    return clean.split("/").slice(-2).join("/");
+  }
+  if (/^git@/i.test(repository)) {
+    return repository.replace(/\.git$/i, "").split(":").at(-1);
+  }
+  return repository.split(/[\\/]/).filter(Boolean).at(-1) ?? repository;
+}
+
+export async function loadKnownCatalogs(environment = process.env) {
+  const file = knownCatalogsFile(environment);
+  if (!existsSync(file)) {
+    return [];
+  }
+  const config = await readJson(file);
+  const catalogs = Array.isArray(config.catalogs) ? config.catalogs : [];
+  return catalogs.filter((entry) => typeof entry.spec === "string" && entry.spec.length > 0);
+}
+
+// Record a catalog in the registry (most recently used first, deduplicated by
+// spec). The registry drives `catalog select`; the current spec stays in the
+// default catalog file.
+export async function registerKnownCatalog(environment = process.env, spec) {
+  const known = await loadKnownCatalogs(environment);
+  const next = [{ name: catalogDisplayName(spec), spec }, ...known.filter((entry) => entry.spec !== spec)];
+  const file = knownCatalogsFile(environment);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify({ schemaVersion: 1, catalogs: next }, null, 2)}\n`, "utf8");
 }
 
 function cacheDirectory(environment, repository) {

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import {
   AGENTS,
@@ -10,6 +11,7 @@ import {
   assertSafeId,
   assertSafeSkillName,
   buildCatalog,
+  catalogDisplayName,
   cloneHead,
   cloneRevision,
   createInstallContext,
@@ -24,6 +26,7 @@ import {
   isCatalogDirectory,
   isInside,
   loadDefaultCatalogSpec,
+  loadKnownCatalogs,
   loadPacks,
   loadSources,
   parseCatalogSpec,
@@ -33,6 +36,7 @@ import {
   pruneCatalogSkills,
   readDirectState,
   readJson,
+  registerKnownCatalog,
   registerSource,
   remoteHead,
   removeAllManagedSkills,
@@ -224,7 +228,7 @@ async function commandUninstall(packArguments, options = {}) {
 async function commandUninstallSkill(skillArguments, options = {}) {
   const io = options.io ?? console;
   if (skillArguments.length === 0) {
-    fail("Usage: uninstall-skill <skill...> [-g]");
+    fail("Usage: remove <skill...> [-g]");
   }
   const skillNames = [...new Set(skillArguments)];
   skillNames.forEach(assertSafeSkillName);
@@ -804,6 +808,7 @@ async function commandCatalogUse(argumentsList, options = {}) {
   }
   parseCatalogSpec(spec);
   await setDefaultCatalogSpec(options.environment, spec);
+  await registerKnownCatalog(options.environment, spec);
   io.log(`Default catalog: ${spec}`);
   // The spec is already saved; the fetch below is only a preview. If it fails
   // (offline, missing git credentials, no Packs yet), the catalog remains
@@ -830,6 +835,111 @@ async function commandCatalogUse(argumentsList, options = {}) {
     io.log(`  ${String(error.message).split("\n")[0]}`);
   }
   io.log("Run: agenthome catalog sync");
+}
+
+// Seed the registry with the current spec on first use, so upgrading users
+// see their catalog in `catalog list`/`catalog select` immediately.
+async function ensureKnownCatalogs(options = {}) {
+  let known = await loadKnownCatalogs(options.environment);
+  if (known.length === 0) {
+    const current = await loadDefaultCatalogSpec(options.environment);
+    await registerKnownCatalog(options.environment, current);
+    known = await loadKnownCatalogs(options.environment);
+  }
+  return known;
+}
+
+async function commandCatalogList(options = {}) {
+  const io = options.io ?? console;
+  const current = await loadDefaultCatalogSpec(options.environment);
+  const known = await ensureKnownCatalogs(options);
+  io.log("\nRegistered catalogs\n");
+  for (const entry of known) {
+    const marker = entry.spec === current ? ">" : " ";
+    io.log(`${marker} ${entry.name}${entry.spec !== entry.name ? `   ${entry.spec}` : ""}`);
+  }
+  io.log("\n> = current. Switch: agenthome catalog select");
+}
+
+// Arrow-key picker over the registered catalogs. Resolves to the chosen spec,
+// or null when cancelled. Runs in raw mode; callers must ensure the process
+// owns a TTY.
+function promptCatalogChoice(entries, currentIndex) {
+  const output = process.stdout;
+  const input = process.stdin;
+  const count = entries.length;
+  let selected = currentIndex >= 0 ? currentIndex : 0;
+  return new Promise((resolve) => {
+    const paint = (first) => {
+      if (!first) {
+        readline.moveCursor(output, 0, -(count + 1));
+      }
+      for (let index = 0; index < count; index += 1) {
+        readline.clearLine(output, 0);
+        output.write(`${index === selected ? ">" : " "} ${entries[index].name}\n`);
+      }
+      readline.clearLine(output, 0);
+      output.write("↑/↓ select · Enter confirm · Esc cancel");
+    };
+    const finish = (result) => {
+      input.setRawMode(false);
+      input.pause();
+      input.removeAllListeners("keypress");
+      output.write("\n");
+      resolve(result);
+    };
+    input.on("keypress", (value, key) => {
+      if (key.name === "up") {
+        selected = (selected - 1 + count) % count;
+        paint(false);
+      } else if (key.name === "down") {
+        selected = (selected + 1) % count;
+        paint(false);
+      } else if (key.name === "return" || key.name === "enter") {
+        finish(entries[selected].spec);
+      } else if (key.name === "escape" || (key.ctrl && key.name === "c")) {
+        finish(null);
+      }
+    });
+    readline.emitKeypressEvents(input);
+    input.setRawMode(true);
+    input.resume();
+    paint(true);
+  });
+}
+
+async function commandCatalogSelect(argumentsList, options = {}) {
+  const io = options.io ?? console;
+  const [target] = argumentsList;
+  if (argumentsList.length > 1) {
+    fail("Usage: agenthome catalog select [name|spec]");
+  }
+  const current = await loadDefaultCatalogSpec(options.environment);
+  const known = await ensureKnownCatalogs(options);
+  if (target) {
+    const entry = known.find((candidate) => candidate.spec === target)
+      ?? known.find((candidate) => candidate.name === target);
+    if (!entry) {
+      fail(`Unknown catalog: ${target}\nAdd one first: agenthome catalog use <spec>`);
+    }
+    await setDefaultCatalogSpec(options.environment, entry.spec);
+    io.log(`Current catalog: ${entry.spec}`);
+    return;
+  }
+  if (!(process.stdin.isTTY && process.stdout.isTTY)) {
+    // No terminal (pipes, scripts): print the plain list instead.
+    await commandCatalogList(options);
+    return;
+  }
+  const currentIndex = known.findIndex((entry) => entry.spec === current);
+  io.log("Select a catalog:");
+  const chosen = await promptCatalogChoice(known, currentIndex);
+  if (chosen === null) {
+    io.log("No change.");
+    return;
+  }
+  await setDefaultCatalogSpec(options.environment, chosen);
+  io.log(`Current catalog: ${chosen}`);
 }
 
 async function commandCatalogDefault(options = {}) {
@@ -865,6 +975,20 @@ export async function dispatchCatalog(argumentsList, options = {}) {
     await commandCatalogDefault(options);
     return;
   }
+  if (command === "select") {
+    if (global) {
+      fail("agenthome catalog select does not accept a global scope");
+    }
+    await commandCatalogSelect(remainingArguments, options);
+    return;
+  }
+  if (command === "list") {
+    if (global || remainingArguments.length > 0) {
+      fail("Usage: agenthome catalog list");
+    }
+    await commandCatalogList(options);
+    return;
+  }
   const maintenanceCommands = new Set([
     "doctor",
     "update",
@@ -875,7 +999,7 @@ export async function dispatchCatalog(argumentsList, options = {}) {
     "source-add",
   ]);
   if (!command || !maintenanceCommands.has(command)) {
-    fail("Usage: agenthome catalog <sync|use|default|doctor|update|add|remove|pack-add|pack-remove|source-add>");
+    fail("Usage: agenthome catalog <sync|use|select|list|default|doctor|update|add|remove|pack-add|pack-remove|source-add>");
   }
   if (global) {
     fail(`${command} does not accept a global scope`);
@@ -895,6 +1019,16 @@ export async function dispatchSkills(argumentsList, options = {}) {
   const commandOptions = { ...options, global: scope.global || options.global };
   if (command === "add") {
     await commandAddDirect(remainingArguments, commandOptions);
+    return;
+  }
+  // "remove" pairs with "add": it removes externally installed Skills, and
+  // precedes the catalog maintenance set below for the same reason "add" does.
+  if (command === "remove") {
+    await commandUninstallSkill(remainingArguments, commandOptions);
+    return;
+  }
+  if (command === "install") {
+    await commandInstall(remainingArguments, commandOptions);
     return;
   }
   if (command === "skills") {
@@ -937,10 +1071,6 @@ export async function dispatchSkills(argumentsList, options = {}) {
     return runMaintenanceCommand(command, remainingArguments, cwd, io);
   }
 
-  if (!firstArgument) {
-    await commandInstall([], commandOptions);
-    return;
-  }
   if (command === "help" || command === "--help" || command === "-h") {
     const { printHelp } = await import("./dispatcher.mjs");
     printHelp(io);
