@@ -201,7 +201,7 @@ export async function revertFrom(snapshot, source) {
   }
 }
 
-function processAlive(pid) {
+export function processAlive(pid) {
   try {
     process.kill(pid, 0);
     return true;
@@ -270,6 +270,24 @@ let leaseMemberSequence = 0;
 // first) and the last one to exit reverts it via onLast, so sessions created
 // by agenthome launches live only in the project. The returned function
 // leaves the group.
+// Leave a launch group as the given member. Runs onLast when the group has
+// no live launches left, then removes the group state. Used by the launch
+// flow and by the watchdog that finishes an interrupted launch.
+export async function releaseSessionLease(agentId, projectRoot, member, callbacks = {}) {
+  const stateDir = sessionLeasePath(agentId, projectRoot);
+  await withLaunchLock(stateDir, async () => {
+    await rm(path.join(stateDir, "pids", member), { force: true });
+    if ((await aliveLeasePids(stateDir)).length > 0) {
+      return;
+    }
+    try {
+      await callbacks.onLast?.();
+    } finally {
+      await rm(stateDir, { recursive: true, force: true });
+    }
+  });
+}
+
 export async function acquireSessionLease(agentId, projectRoot, callbacks = {}) {
   const stateDir = sessionLeasePath(agentId, projectRoot);
   const snapshotMarker = path.join(stateDir, "snapshot.ok");
@@ -286,17 +304,9 @@ export async function acquireSessionLease(agentId, projectRoot, callbacks = {}) 
     await mkdir(path.join(stateDir, "pids"), { recursive: true });
     await writeFile(path.join(stateDir, "pids", member), "", { encoding: "utf8" });
   });
-  return async () => {
-    await withLaunchLock(stateDir, async () => {
-      await rm(path.join(stateDir, "pids", member), { force: true });
-      if ((await aliveLeasePids(stateDir)).length > 0) {
-        return;
-      }
-      try {
-        await callbacks.onLast?.();
-      } finally {
-        await rm(stateDir, { recursive: true, force: true });
-      }
-    });
+  return {
+    member,
+    stateDir,
+    release: () => releaseSessionLease(agentId, projectRoot, member, callbacks),
   };
 }

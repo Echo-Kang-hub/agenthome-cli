@@ -5,6 +5,7 @@ import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import {
   clearLocalAuth,
@@ -476,17 +477,17 @@ test("session leases allow concurrent launches and revert on the last exit", asy
       onFirst: (recovering) => events.push(`first:${recovering}`),
       onLast: () => events.push("last"),
     };
-    const leaveFirst = await acquireSessionLease("codex", projectRoot, callbacks);
+    const leaveFirst = (await acquireSessionLease("codex", projectRoot, callbacks)).release;
     assert.deepEqual(events, ["first:false"]);
     // A second launch of the same project+agent joins the group without a
     // new snapshot.
-    const leaveSecond = await acquireSessionLease("codex", projectRoot, callbacks);
+    const leaveSecond = (await acquireSessionLease("codex", projectRoot, callbacks)).release;
     assert.deepEqual(events, ["first:false"]);
     // Other agents have their own group.
-    const leaveClaude = await acquireSessionLease("claude", projectRoot, {
+    const leaveClaude = (await acquireSessionLease("claude", projectRoot, {
       onFirst: () => events.push("claude-first"),
       onLast: () => events.push("claude-last"),
-    });
+    })).release;
     assert.deepEqual(events, ["first:false", "claude-first"]);
     await leaveClaude();
     assert.deepEqual(events, ["first:false", "claude-first", "claude-last"]);
@@ -509,14 +510,75 @@ test("session leases salvage the sessions of a crashed launch group", async () =
     await mkdir(path.join(stateDir, "pids"), { recursive: true });
     await writeFile(path.join(stateDir, "pids", "2147483647"), "");
     const events = [];
-    const leave = await acquireSessionLease("codex", projectRoot, {
+    const leave = (await acquireSessionLease("codex", projectRoot, {
       onFirst: (recovering) => events.push(`first:${recovering}`),
       onLast: () => events.push("last"),
-    });
+    })).release;
     assert.deepEqual(events, ["first:true"], "the next launch must see the crashed group");
     await leave();
     assert.deepEqual(events, ["first:true", "last"]);
     assert.equal(existsSync(stateDir), false);
+  });
+});
+
+test("watchdog restores native storage when the launch process dies", async () => {
+  await withTempProject(async (projectRoot) => {
+    const codexHome = path.join(projectRoot, "codex-home");
+    const watchdogScript = path.join(packageRoot, "packages", "cli", "scripts", "watchdog.mjs");
+    // A fake launcher process: joins the launch group, starts the watchdog,
+    // writes a native session like a real run, then dies without releasing
+    // the lease (like a closed terminal).
+    const launcher = `
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
+import { acquireSessionLease, sessionLeasePath } from "${new URL("../packages/core/src/runtime/sessions.mjs", import.meta.url).href}";
+import * as codex from "${new URL("../packages/core/src/runtime/adapters/codex.mjs", import.meta.url).href}";
+
+const projectRoot = process.argv[2];
+const codexHome = process.argv[3];
+const environment = { CODEX_HOME: codexHome };
+const snapshotRoot = path.join(sessionLeasePath("codex", projectRoot), "snapshot");
+const lease = await acquireSessionLease("codex", projectRoot, {
+  onFirst: async () => { await codex.snapshotNative(projectRoot, snapshotRoot, { environment }); },
+  onLast: async () => { await codex.revertNative(snapshotRoot, projectRoot, { environment }); },
+});
+await writeFile(path.join(lease.stateDir, "watchdog.json"), JSON.stringify({
+  member: lease.member,
+  parentPid: process.pid,
+  agentId: "codex",
+  projectRoot,
+  environment,
+}), "utf8");
+const watchdog = spawn(process.execPath, [process.argv[4], lease.stateDir], {
+  detached: true,
+  stdio: "ignore",
+  windowsHide: true,
+});
+watchdog.unref();
+await mkdir(path.join(codexHome, "sessions", "fake"), { recursive: true });
+await writeFile(
+  path.join(codexHome, "sessions", "fake", "session.jsonl"),
+  \`\${JSON.stringify({ type: "session_meta", payload: { id: "sess-new", cwd: projectRoot } })}\\n\`,
+);
+process.exit(0);
+`;
+    const launcherFile = path.join(projectRoot, "launcher.mjs");
+    await writeFile(launcherFile, launcher);
+    const run = spawnSync(process.execPath, [launcherFile, projectRoot, codexHome, watchdogScript], { encoding: "utf8" });
+    assert.equal(run.status, 0, run.stderr);
+
+    // The watchdog notices the dead launcher, captures the session into the
+    // project, restores native storage, and removes the group state.
+    const leaseState = sessionLeasePath("codex", projectRoot);
+    const deadline = Date.now() + 20000;
+    while ((existsSync(path.join(codexHome, "sessions", "fake")) || existsSync(leaseState)) && Date.now() < deadline) {
+      await delay(100);
+    }
+    const captured = path.join(projectRoot, ".agents", "sessions", "codex", "sessions", "fake", "session.jsonl");
+    assert.equal(existsSync(captured), true, "watchdog must capture the interrupted session into the project");
+    assert.equal(existsSync(path.join(codexHome, "sessions", "fake")), false, "watchdog must revert native storage");
+    assert.equal(existsSync(leaseState), false, "watchdog must remove the launch group state");
   });
 });
 

@@ -23,6 +23,7 @@ import {
 } from "#core";
 import { dispatchCatalog, dispatchSkills } from "./skills-cli.mjs";
 import { updateAgentHome } from "./self-update.mjs";
+import { spawnSessionWatchdog } from "./watchdog.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -259,7 +260,7 @@ async function dispatchAgent(agentId, argumentsList) {
   let leaveLaunchGroup = null;
   if (portableSessions && isolatesNative) {
     const snapshotRoot = path.join(sessionLeasePath(agentId, projectRoot), "snapshot");
-    leaveLaunchGroup = await acquireSessionLease(agentId, projectRoot, {
+    const lease = await acquireSessionLease(agentId, projectRoot, {
       onFirst: async (recovering) => {
         if (recovering) {
           // A previous launch group died without exiting: move its sessions
@@ -273,6 +274,10 @@ async function dispatchAgent(agentId, argumentsList) {
         await adapter.revertNative(snapshotRoot, projectRoot, { environment });
       },
     });
+    leaveLaunchGroup = lease.release;
+    try {
+      await spawnSessionWatchdog(agentId, projectRoot, lease.member, environment);
+    } catch {}
   }
   if (portableSessions) {
     // Project session records take priority on launch: conflicting native
