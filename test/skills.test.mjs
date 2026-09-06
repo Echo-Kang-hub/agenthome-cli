@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { createInstallContext, skillsInstallationStatus } from "../packages/core/src/index.mjs";
+import { createInstallContext, resolveInstallSource, setDefaultCatalogSpec, skillsInstallationStatus } from "../packages/core/src/index.mjs";
 import { writeJson } from "../packages/core/src/util/json.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -203,6 +203,43 @@ test("skillsInstallationStatus reports manifest packs and target presence", asyn
     assert.equal(status.packs[0].id, "common");
     assert.equal(status.targets[0].complete, true);
     assert.equal(status.targets[1].complete, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+async function fixtureCatalog(root) {
+  await mkdir(path.join(root, "skills", "s"), { recursive: true });
+  await mkdir(path.join(root, "packs"), { recursive: true });
+  await writeFile(path.join(root, "skills", "s", "SKILL.md"), "---\nname: s\n---\nv1\n");
+  await writeFile(path.join(root, "packs", "common.json"), `${JSON.stringify({ schemaVersion: 1, id: "common", name: "Common", sources: [{ source: "s", skills: ["s"] }] })}\n`);
+  await writeFile(path.join(root, "sources.lock.json"), `${JSON.stringify({ schemaVersion: 1, sources: [{ id: "s", name: "S", repository: "https://github.com/example/s.git", skillRoot: "skills", revision: "a".repeat(40) }] })}\n`);
+  await gitQuiet(root, ["init", "--quiet", "-b", "main"]);
+  await gitQuiet(root, ["add", "-A"]);
+  await gitQuiet(root, ["-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "-m", "one"]);
+}
+
+test("resolveInstallSource pins the lock revision unless refreshing", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "resolve-source-"));
+  try {
+    const state = path.join(root, "state");
+    const catalog = path.join(root, "catalog");
+    await fixtureCatalog(catalog);
+    const environment = { ...process.env, AGENTHOME_STATE_DIR: state };
+    await setDefaultCatalogSpec(environment, catalog);
+    const first = await resolveInstallSource({ cwd: root, environment }, {});
+    assert.equal(first.revision.length, 40);
+    await writeFile(path.join(catalog, "skills", "s", "SKILL.md"), "---\nname: s\n---\nv2\n");
+    await gitQuiet(catalog, ["add", "-A"]);
+    await gitQuiet(catalog, ["-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "-m", "two"]);
+    await writeJson(path.join(root, ".agent-skills.lock.json"), {
+      schemaVersion: 3,
+      catalog: { repository: catalog, revision: first.revision },
+    });
+    const pinned = await resolveInstallSource({ cwd: root, environment }, {});
+    assert.equal(pinned.revision, first.revision);
+    const refreshed = await resolveInstallSource({ cwd: root, environment }, { refresh: true });
+    assert.notEqual(refreshed.revision, first.revision);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

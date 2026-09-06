@@ -6,6 +6,7 @@ import process from "node:process";
 import { fail } from "../util/fail.mjs";
 import { isInside, removeEmptyDirectory } from "../util/fs.mjs";
 import { readJson, writeJson } from "../util/json.mjs";
+import { ensureCatalog, loadDefaultCatalogSpec, parseCatalogSpec } from "./catalog.mjs";
 import { assertSafeSkillName } from "./ids.mjs";
 import { normalizePackIds, parsePackArguments } from "./packs.mjs";
 import {
@@ -255,4 +256,36 @@ export async function skillsInstallationStatus(context) {
     return { ...targetConfig, present, total: names.length, complete: present === names.length };
   });
   return { groups, packs: manifestPacks, names, targets };
+}
+
+async function pinnedCatalogSpec(spec, context) {
+  if (!existsSync(context.lockFile)) {
+    return spec;
+  }
+  const lock = await readJson(context.lockFile);
+  const { repository, revision } = lock.catalog ?? {};
+  if (!repository || !revision) {
+    return spec;
+  }
+  if (parseCatalogSpec(spec).repository !== repository) {
+    return spec;
+  }
+  return `${repository}#${revision}`;
+}
+
+// Resolve the catalog for an install context. The project lock pins the
+// catalog commit for cross-device reproducibility; a refresh (bare
+// `agenthome skills`) intentionally bypasses the pin to pick up the latest.
+export async function resolveInstallSource(options, { refresh = false } = {}) {
+  const spec = await loadDefaultCatalogSpec(options.environment);
+  const context = createInstallContext(options.global ?? false, options);
+  const pinnedSpec = refresh ? spec : await pinnedCatalogSpec(spec, context);
+  const catalogInfo = await ensureCatalog(pinnedSpec, {
+    environment: options.environment,
+    io: options.io ?? console,
+  });
+  const packageMetadata = existsSync(path.join(catalogInfo.catalogRoot, "package.json"))
+    ? await readJson(path.join(catalogInfo.catalogRoot, "package.json"))
+    : null;
+  return { ...catalogInfo, packageMetadata };
 }
