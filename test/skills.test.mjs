@@ -8,7 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const agentBin = path.join(packageRoot, "packages", "cli", "bin", "agent.mjs");
+const agentBin = path.join(packageRoot, "packages", "cli", "scripts", "skills.mjs");
 
 function runAgent(cwd, argumentsList, environment = {}) {
   return spawnSync(process.execPath, [agentBin, ...argumentsList], {

@@ -58,28 +58,41 @@ function takeOption(argumentsList, option) {
   return value;
 }
 
-function printHelp() {
-  console.log(`AgentHome
+export function printHelp(io = console) {
+  io.log(`AgentHome
 
-Usage:
-  agent <claude|codex|opencode> init [--auth global|project] [--sessions global|project]
-  agent <claude|codex|opencode> deinit [--purge]
-  agent <claude|codex|opencode> auth [global|project|reset]
-  agent <claude|codex|opencode> status
-  agent <claude|codex|opencode> sessions [import|restore|status]
-  agent <claude|codex|opencode> [official CLI arguments...]
-  agent skills [pack...]
-  agent skills add <owner/repo> [skill...] [-g]
-  agent catalog <sync|use|default|doctor|update|add|remove|pack-add|pack-remove|source-add>
-  agent sessions git [on|off|status]
-  agent update
-  agent status
-  agent doctor
+CLI: agenthome (shorthand: ahome)
 
-Aliases:
-  ahc   agent claude
-  ahx   agent codex
-  aho   agent opencode
+Agent runtimes:
+  agenthome <claude|codex|opencode> init [--auth global|project] [--sessions global|project]
+  agenthome <claude|codex|opencode> deinit [--purge]
+  agenthome <claude|codex|opencode> auth [global|project|reset]
+  agenthome <claude|codex|opencode> status
+  agenthome <claude|codex|opencode> sessions [import|restore|status]
+  agenthome <claude|codex|opencode> [official CLI arguments...]
+  agenthome sessions git [on|off|status]
+  agenthome status                       Show all three agents
+  agenthome doctor                       Check the environment
+
+Skills:
+  agenthome skills [pack...]             Install or sync Packs (default: common)
+  agenthome skills add <owner/repo> [skill...] [-g]    Install directly from a GitHub repo
+  agenthome skills uninstall <pack...>   Remove Packs and unneeded managed Skills
+  agenthome skills uninstall-skill <skill...>          Remove external, unmanaged Skills
+  agenthome skills tree [pack...]        Show source -> Skill tree
+  agenthome skills packs                 List available Packs
+  agenthome skills status [-g]           Show the installed tree
+  -g, --global                           Use the global user scope
+
+Catalog:
+  agenthome catalog use <spec>           Set the catalog source (owner/repo[#ref], URL, or local path)
+  agenthome catalog sync                 Fetch or update the cached catalog
+  agenthome catalog default              Show the configured catalog spec
+  agenthome catalog doctor|update|add|remove|pack-add|pack-remove|source-add
+                                         (run inside your catalog Git clone)
+
+Update AgentHome:
+  agenthome self-update
 `);
 }
 
@@ -102,6 +115,11 @@ async function dispatchAgent(agentId, argumentsList) {
   const projectRoot = locateProjectRoot();
   const [command, ...remainingArguments] = argumentsList;
 
+  if (command === "help" || command === "--help" || command === "-h") {
+    printHelp();
+    return 0;
+  }
+
   if (command === "init") {
     const initArguments = [...remainingArguments];
     const authOption = takeOption(initArguments, "--auth");
@@ -121,15 +139,28 @@ async function dispatchAgent(agentId, argumentsList) {
     console.log(`Configuration   ${result.configChanged ? "Updated" : "Unchanged"}`);
     console.log(`Git ignore      ${result.gitignoreChanged ? "Updated" : "Unchanged"}`);
     console.log(`Structure       ${result.structureRepaired ? "Repaired" : "Intact"}`);
-    if (!result.configChanged && !result.gitignoreChanged && !result.structureRepaired) {
-      console.log("\nAlready up to date — nothing changed.\n");
-    } else {
-      console.log("\nInitialized successfully.\n");
+    const changedSomething = result.configChanged || result.gitignoreChanged || result.structureRepaired;
+    console.log(changedSomething ? "\nChanged:" : "\nAlready up to date — nothing changed.");
+    if (result.configChanged) {
+      console.log("  .agents/runtime.json          Runtime config (agent, auth, sessions)");
     }
+    if (result.gitignoreChanged) {
+      console.log("  .gitignore                    Added ignore rules for .agents/ and .claude/skills/");
+    }
+    if (result.structureRepaired) {
+      console.log(`  .agents/sessions/${agentId}/       Portable sessions (in Git by default)`);
+      if (result.authMode === "project") {
+        console.log(`  .agents/local/${agentId}/          Project credentials (gitignored)`);
+      }
+    }
+    console.log(`\nUsage:
+  agenthome ${agentId}              Launch ${agent.displayName}
+  agenthome ${agentId} status       Show configuration
+  agenthome ${agentId} deinit       Undo init (--purge also deletes data)
+  agenthome ${agentId} auth         Switch global/project authentication\n`);
     console.log(
       "Project sessions may contain prompts, source code, command output, file paths, and secrets. Only commit sessions to repositories you trust.\n",
     );
-    console.log(`Run:\n  ${agentId === "claude" ? "ahc" : agentId === "codex" ? "ahx" : "aho"}`);
     return 0;
   }
 
@@ -178,7 +209,7 @@ async function dispatchAgent(agentId, argumentsList) {
   if (command === "sessions") {
     const state = await loadRuntime(projectRoot);
     if (!effectiveAgentConfig(state, agentId)) {
-      throw new Error(`${agent.displayName} is not initialized. Run: agent ${agentId} init`);
+      throw new Error(`${agent.displayName} is not initialized. Run: agenthome ${agentId} init`);
     }
     const action = remainingArguments[0] ?? "status";
     if (remainingArguments.length > 1 || !["import", "restore", "status"].includes(action)) {
@@ -204,7 +235,7 @@ async function dispatchAgent(agentId, argumentsList) {
   const state = await loadRuntime(projectRoot);
   const config = effectiveAgentConfig(state, agentId);
   if (!config) {
-    throw new Error(`${agent.displayName} is not initialized. Run: agent ${agentId} init`);
+    throw new Error(`${agent.displayName} is not initialized. Run: agenthome ${agentId} init`);
   }
   const environment = config.auth === "project"
     ? { ...process.env, ...projectAuthEnvironment(agentId, projectRoot) }
@@ -270,7 +301,7 @@ function untrackSessions(projectRoot) {
 async function dispatchSessions(argumentsList) {
   const [command, mode = "status", ...extra] = argumentsList;
   if (command !== "git" || extra.length > 0 || !["on", "off", "status"].includes(mode)) {
-    throw new Error("Usage: agent sessions git [on|off|status]");
+    throw new Error("Usage: agenthome sessions git [on|off|status]");
   }
   const projectRoot = locateProjectRoot();
   if (mode === "off") {
@@ -332,7 +363,7 @@ export async function runCli(options = {}) {
   }
   if (command === "update") {
     if (remainingArguments.length > 0) {
-      throw new Error("Usage: agent update");
+      throw new Error("Usage: agenthome self-update");
     }
     await updateAgentHome(packageRoot);
     return 0;

@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import {
+  AGENTS,
   addDirectSkills,
   addSkillsToPacks,
   assertSafeId,
@@ -78,7 +79,7 @@ function parseScopeArguments(argumentsList) {
 }
 
 // Resolve the catalog for the install context. The project lock pins the catalog
-// commit for cross-device reproducibility; a refresh (bare `agent skills` syncs the
+// commit for cross-device reproducibility; a refresh (bare `agenthome skills` syncs the
 // configured Packs) intentionally bypasses the pin to pick up the latest catalog.
 async function resolveCatalogSource(options, { refresh = false } = {}) {
   const spec = await loadDefaultCatalogSpec(options.environment);
@@ -143,7 +144,7 @@ async function commandAddDirect(argumentsList, options = {}) {
   }
   const [sourceReference, ...skillNames] = argumentsList;
   if (!sourceReference) {
-    fail("Usage: agent skills add <owner/repo> [skill...] [-g]");
+    fail("Usage: agenthome skills add <owner/repo> [skill...] [-g]");
   }
   const unknownOption = argumentsList.find((argument) => argument.startsWith("-"));
   if (unknownOption) {
@@ -710,7 +711,7 @@ async function commandSourceAdd(argumentsList, catalogRoot, io = console) {
     repository,
     skillRoot,
   }, io);
-  io.log(`Next: agent catalog add ${id} <skill-name> --pack <pack>`);
+  io.log(`Next: agenthome catalog add ${id} <skill-name> --pack <pack>`);
 }
 
 async function commandPackAdd(argumentsList, catalogRoot, io = console) {
@@ -742,44 +743,7 @@ async function commandPackAdd(argumentsList, catalogRoot, io = console) {
   });
   io.log(`Created Pack: ${id}`);
   io.log(`File: ${packFile}`);
-  io.log(`Next: agent catalog add <source> <skill-name> --pack ${id}`);
-}
-
-function printHelp(io = console) {
-  io.log(`AgentHome Skills
-
-Install Skills:
-  agenthome                           Install Common, or sync the configured Packs
-  agenthome <pack...>                 Install one or more Packs; Common is always included
-  agenthome uninstall                 Remove all managed Skills and installation metadata
-  agenthome uninstall <pack...>       Remove Packs and unneeded managed Skills
-  agenthome uninstall-skill <skill...> Remove external, unmanaged Skills
-  agenthome add <owner/repo> [skill...] Install Skills directly from a public source
-  agenthome -g [pack...]              Install or sync in the global user scope
-  agenthome packs                     List available Packs
-  agenthome tree [pack...]            Show source -> Skill tree
-  agenthome status [-g]               Show the project or global installed tree
-
-Scope options:
-  -g, --global                        Use global user directories
-
-Configure the catalog:
-  agent catalog use <spec>               Set the catalog source (owner/repo[#ref], URL, or local path)
-  agent catalog sync                     Fetch or update the cached catalog
-  agent catalog default                  Show the configured catalog spec
-
-Maintain this private catalog (run inside its Git clone):
-  agent catalog doctor
-  agent catalog update [source] [--check]
-  agent catalog add <source|owner/repo> [skill...] [--pack <pack,pack>]
-  agent catalog remove <source|owner/repo> <skill...> [--pack <pack,pack>]
-  agent catalog pack-add <id> [--name <name>] [--description <text>]
-  agent catalog pack-remove <pack...>
-  agent catalog source-add <id> <repo> [--name <name>] [--skill-root <path>]
-
-Update AgentHome:
-  agenthome self-update
-`);
+  io.log(`Next: agenthome catalog add <source> <skill-name> --pack ${id}`);
 }
 
 async function runMaintenanceCommand(command, argumentsList, catalogRoot, io) {
@@ -827,12 +791,12 @@ async function commandCatalogUse(argumentsList, options = {}) {
   const io = options.io ?? console;
   const [spec] = argumentsList;
   if (!spec || argumentsList.length !== 1) {
-    fail("Usage: agent catalog use <spec>");
+    fail("Usage: agenthome catalog use <spec>");
   }
   parseCatalogSpec(spec);
   await setDefaultCatalogSpec(options.environment, spec);
   io.log(`Default catalog: ${spec}`);
-  io.log("Run: agent catalog sync");
+  io.log("Run: agenthome catalog sync");
 }
 
 async function commandCatalogDefault(options = {}) {
@@ -846,21 +810,21 @@ export async function dispatchCatalog(argumentsList, options = {}) {
   const [command, ...remainingArguments] = scope.argumentsList;
   if (command === "sync") {
     if (scope.global || remainingArguments.length > 0) {
-      fail("Usage: agent catalog sync");
+      fail("Usage: agenthome catalog sync");
     }
     await commandCatalogSync(options);
     return;
   }
   if (command === "use") {
     if (scope.global) {
-      fail("agent catalog use does not accept a global scope");
+      fail("agenthome catalog use does not accept a global scope");
     }
     await commandCatalogUse(remainingArguments, options);
     return;
   }
   if (command === "default") {
     if (scope.global || remainingArguments.length > 0) {
-      fail("Usage: agent catalog default");
+      fail("Usage: agenthome catalog default");
     }
     await commandCatalogDefault(options);
     return;
@@ -875,7 +839,7 @@ export async function dispatchCatalog(argumentsList, options = {}) {
     "source-add",
   ]);
   if (!command || !maintenanceCommands.has(command)) {
-    fail("Usage: agent catalog <sync|use|default|doctor|update|add|remove|pack-add|pack-remove|source-add>");
+    fail("Usage: agenthome catalog <sync|use|default|doctor|update|add|remove|pack-add|pack-remove|source-add>");
   }
   if (scope.global) {
     fail(`${command} does not accept a global scope`);
@@ -892,9 +856,21 @@ export async function dispatchSkills(argumentsList, options = {}) {
   const scope = parseScopeArguments(argumentsList);
   const [firstArgument, ...remainingArguments] = scope.argumentsList;
   const command = firstArgument ?? "install";
-  const commandOptions = { ...options, global: scope.global };
+  const commandOptions = { ...options, global: scope.global || options.global };
   if (command === "add") {
     await commandAddDirect(remainingArguments, commandOptions);
+    return;
+  }
+  if (command === "skills") {
+    await dispatchSkills(remainingArguments, { ...options, global: scope.global || options.global });
+    return;
+  }
+  if (command === "catalog") {
+    await dispatchCatalog(remainingArguments, {
+      io,
+      cwd: options.cwd ?? process.cwd(),
+      environment: options.environment ?? process.env,
+    });
     return;
   }
   const maintenanceCommands = new Set([
@@ -912,6 +888,13 @@ export async function dispatchSkills(argumentsList, options = {}) {
     }
     const cwd = options.cwd ?? process.cwd();
     if (!isCatalogDirectory(cwd)) {
+      // Outside a catalog clone, doctor and update fall back to their runtime
+      // meanings (environment check and CLI self-update); the other maintenance
+      // commands only make sense inside the catalog Git clone.
+      if (command === "doctor" || command === "update") {
+        const { runCli } = await import("./dispatcher.mjs");
+        return runCli({ argumentsList: [command, ...remainingArguments] });
+      }
       fail(`${command} must run inside the AgentHome Git clone`);
     }
     return runMaintenanceCommand(command, remainingArguments, cwd, io);
@@ -922,6 +905,7 @@ export async function dispatchSkills(argumentsList, options = {}) {
     return;
   }
   if (command === "help" || command === "--help" || command === "-h") {
+    const { printHelp } = await import("./dispatcher.mjs");
     printHelp(io);
     return;
   }
@@ -930,10 +914,6 @@ export async function dispatchSkills(argumentsList, options = {}) {
       fail("Usage: self-update");
     }
     await updateAgentHome(packageRoot);
-    return;
-  }
-  if (command === "status") {
-    await commandStatus(commandOptions);
     return;
   }
   if (command === "uninstall-skill") {
@@ -957,6 +937,15 @@ export async function dispatchSkills(argumentsList, options = {}) {
     case "uninstall":
       await commandUninstall(remainingArguments, commandOptions);
       return;
+  }
+
+  // Agent runtime commands (claude/codex/opencode lifecycle, sessions, agent
+  // status) are handled by the runtime dispatcher; delegate before the Pack
+  // fallback so typos in the agent position never trigger a network fetch.
+  // The skills tree stays reachable as `agenthome skills status`.
+  if (Object.hasOwn(AGENTS, command) || command === "sessions" || command === "status") {
+    const { runCli } = await import("./dispatcher.mjs");
+    return runCli({ argumentsList: scope.argumentsList });
   }
 
   // Anything else is a Pack id (ids are user-defined, so the catalog is the

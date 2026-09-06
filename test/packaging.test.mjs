@@ -26,14 +26,14 @@ test("root manifest must not trigger pacote git-dependency preparation", async (
   }
 });
 
-// Short bins must not collide with shell builtins or aliases: `ac` is PowerShell's
-// built-in alias for Add-Content, so `ac init` was executed as `Add-Content -Path init`
-// and prompted interactively for a missing -Value. `ahc`/`ahx`/`aho` are free in
-// PowerShell, cmd.exe, Git Bash, bash, and zsh.
+// The CLI ships exactly two bins. Single-word names are collision-free in
+// PowerShell, cmd.exe, Git Bash, bash, and zsh; earlier `ac` collided with
+// PowerShell's built-in Add-Content alias (`ac init` executed as
+// `Add-Content -Path init` and prompted interactively for -Value).
 test("published bin names avoid shell collisions", async () => {
   const manifest = JSON.parse(await readFile(path.join(packageRoot, "packages", "cli", "package.json"), "utf8"));
   assert.deepEqual(
     Object.keys(manifest.bin).sort(),
-    ["agent", "agent-skills", "agenthome", "ahc", "aho", "ahx"],
+    ["agenthome", "ahome"],
   );
 });

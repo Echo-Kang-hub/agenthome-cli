@@ -50,13 +50,13 @@ async function verifyInstall(archive, environment) {
   );
   assert.equal(installed.status, 0, installed.stderr || installed.stdout);
   const binDirectory = process.platform === "win32" ? prefix : path.join(prefix, "bin");
-  const launcher = path.join(binDirectory, process.platform === "win32" ? "ahx.cmd" : "ahx");
+  const launcher = path.join(binDirectory, process.platform === "win32" ? "agenthome.cmd" : "agenthome");
   assert.equal(existsSync(launcher), true, `Missing global launcher: ${launcher}`);
   await mkdir(projectRoot, { recursive: true });
-  const launched = runLauncher(launcher, ["init", "--auth", "global"], projectRoot, environment);
-  assert.match(launched.stdout, /Initialized successfully/);
+  const launched = runLauncher(launcher, ["codex", "init", "--auth", "global"], projectRoot, environment);
+  assert.match(launched.stdout, /Changed:/);
   assert.equal(existsSync(path.join(projectRoot, ".agents", "runtime.json")), true);
-  const deinitialized = runLauncher(launcher, ["deinit", "--purge"], projectRoot, environment);
+  const deinitialized = runLauncher(launcher, ["codex", "deinit", "--purge"], projectRoot, environment);
   assert.match(deinitialized.stdout, /Runtime   Removed/);
   assert.match(deinitialized.stdout, /Data      Purged/);
   assert.equal(existsSync(path.join(projectRoot, ".agents", "runtime.json")), false);
@@ -70,7 +70,7 @@ async function uninstall(packageName, environment) {
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const binDirectory = process.platform === "win32" ? prefix : path.join(prefix, "bin");
-  const launcher = path.join(binDirectory, process.platform === "win32" ? "ahx.cmd" : "ahx");
+  const launcher = path.join(binDirectory, process.platform === "win32" ? "agenthome.cmd" : "agenthome");
   assert.equal(existsSync(launcher), false, `Global launcher still exists after uninstall: ${launcher}`);
 }
 
@@ -106,7 +106,7 @@ async function verifySkills(environment) {
     AGENTHOME_STATE_DIR: stateDirectory,
   };
   const binDirectory = process.platform === "win32" ? prefix : path.join(prefix, "bin");
-  const agentLauncher = path.join(binDirectory, process.platform === "win32" ? "agent.cmd" : "agent");
+  const agentLauncher = path.join(binDirectory, process.platform === "win32" ? "agenthome.cmd" : "agenthome");
   const installed = runLauncher(agentLauncher, ["skills", "common"], projectRoot, skillsEnvironment);
   assert.match(installed.stdout, /Installation complete/);
   assert.equal(existsSync(path.join(projectRoot, ".claude", "skills", "alpha", "SKILL.md")), true);
@@ -146,7 +146,7 @@ async function verifySkills(environment) {
     "pinned reinstall must not change installed content",
   );
 
-  // A bare `agent skills` syncs the configured Packs from the latest catalog.
+  // A bare `agenthome skills` syncs the configured Packs from the latest catalog.
   const refreshed = runLauncher(agentLauncher, ["skills"], projectRoot, skillsEnvironment);
   assert.match(refreshed.stdout, /Installation complete/);
   const refreshedLock = JSON.parse(await readFile(path.join(projectRoot, ".agent-skills.lock.json"), "utf8"));

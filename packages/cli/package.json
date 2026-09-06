@@ -1,6 +1,6 @@
 {
   "name": "agenthome-cli",
-  "version": "5.6.0",
+  "version": "5.7.0",
   "private": false,
   "license": "MIT",
   "description": "Portable Skills, runtime configuration, and sessions for coding agents",
@@ -11,17 +11,12 @@
   },
   "bin": {
     "agenthome": "scripts/skills.mjs",
-    "agent-skills": "scripts/skills.mjs",
-    "agent": "bin/agent.mjs",
-    "ahc": "bin/ahc.mjs",
-    "ahx": "bin/ahx.mjs",
-    "aho": "bin/aho.mjs"
+    "ahome": "scripts/skills.mjs"
   },
   "scripts": {
     "prepack": "node ../../scripts/sync-core.mjs"
   },
   "files": [
-    "bin/",
     "scripts/",
     "src/",
     "vendor/core-src/"
