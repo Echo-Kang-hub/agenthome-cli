@@ -386,7 +386,7 @@ test("Codex sessions restore into a new project path", async () => {
   }
 });
 
-test("Codex restore keeps divergent local sessions", async () => {
+test("Codex restore keeps portable sessions over divergent local copies", async () => {
   await withTempProject(async (projectRoot) => {
     const codexHome = await mkdtemp(path.join(os.tmpdir(), "agent-runtime-codex-conflict-"));
     try {
@@ -406,7 +406,11 @@ test("Codex restore keeps divergent local sessions", async () => {
 
       const result = await codexSessions.restore(projectRoot, { environment: { CODEX_HOME: codexHome } });
       assert.equal(result.conflicts, 1);
-      assert.match(await readFile(nativeFile, "utf8"), /local/);
+      // The project (portable) copy wins and the native copy is overwritten.
+      const nativeContent = await readFile(nativeFile, "utf8");
+      assert.match(nativeContent, /portable/);
+      assert.doesNotMatch(nativeContent, /local/);
+      assert.equal(JSON.parse(nativeContent.split("\n", 1)[0]).payload.cwd, projectRoot);
     } finally {
       await rm(codexHome, { recursive: true, force: true });
     }

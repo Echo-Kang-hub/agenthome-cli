@@ -86,7 +86,7 @@ test("ensureCatalog failure message mentions gh auth login", async () => {
   });
 });
 
-test("catalog use and sync manage the default spec", async () => {
+test("catalog spec storage and sync manage the default spec", async () => {
   await withTemp("catalog-default-", async (root) => {
     const environment = { AGENTHOME_STATE_DIR: root };
     assert.equal(await loadDefaultCatalogSpec(environment), "Echo-Kang-hub/agenthome-catalog#main");

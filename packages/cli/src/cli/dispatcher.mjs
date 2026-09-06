@@ -68,7 +68,7 @@ Agent runtimes:
   agenthome <claude|codex|opencode> deinit [--purge]
   agenthome <claude|codex|opencode> auth [global|project|reset]
   agenthome <claude|codex|opencode> status
-  agenthome <claude|codex|opencode> sessions [import|restore|status]
+  agenthome <claude|codex|opencode> sessions [import|writeback|status]
   agenthome <claude|codex|opencode> [official CLI arguments...]
   agenthome sessions git [on|off|status]
   agenthome status                       Show all three agents
@@ -87,13 +87,13 @@ Skills:
   -g, --global                           Use the global user scope
 
 Catalog:
-  agenthome catalog use <spec>           Set the catalog source (owner/repo[#ref], URL, or local path) and preview its Packs
+  agenthome catalog add <spec>           Add a catalog source (owner/repo[#ref], URL, or local path) and preview its Packs
   agenthome catalog select [name|spec]   Pick the current catalog from registered ones (↑/↓, Enter)
   agenthome catalog list                 List registered catalogs
   agenthome catalog sync                 Fetch or update the cached catalog
   agenthome catalog default              Show the configured catalog spec
   Private repos use your local git credentials (gh auth login or SSH)
-  agenthome catalog doctor|update|add|remove|pack-add|pack-remove|source-add
+  agenthome catalog doctor|update|skill-add|remove|pack-add|pack-remove|source-add
                                          (run inside your catalog Git clone)
 
 Update AgentHome:
@@ -217,8 +217,9 @@ async function dispatchAgent(agentId, argumentsList) {
       throw new Error(`${agent.displayName} is not initialized. Run: agenthome ${agentId} init`);
     }
     const action = remainingArguments[0] ?? "status";
-    if (remainingArguments.length > 1 || !["import", "restore", "status"].includes(action)) {
-      throw new Error(`Usage: agenthome ${agentId} sessions [import|restore|status]`);
+    // "restore" is accepted as a legacy alias for "writeback".
+    if (remainingArguments.length > 1 || !["import", "writeback", "restore", "status"].includes(action)) {
+      throw new Error(`Usage: agenthome ${agentId} sessions [import|writeback|status]`);
     }
     const adapter = getSessionAdapter(agentId);
     if (action === "status") {
@@ -227,12 +228,12 @@ async function dispatchAgent(agentId, argumentsList) {
       return 0;
     }
     const result = action === "import" ? await adapter.capture(projectRoot) : await adapter.restore(projectRoot);
-    console.log(`${agent.displayName} session ${action}\n`);
+    console.log(`${agent.displayName} session ${action === "restore" ? "writeback" : action}\n`);
     console.log(`Project   ${projectRoot}`);
     console.log(`Sessions  ${result.count}`);
-    console.log(action === "import" ? `Portable  ${result.changed ? "Updated" : "Unchanged"}` : `Restored  ${result.added + result.updated}`);
+    console.log(action === "import" ? `Portable  ${result.changed ? "Updated" : "Unchanged"}` : `Written back  ${result.added + result.updated}`);
     if (result.conflicts > 0) {
-      console.log(`Conflicts ${result.conflicts} (kept local ${agent.displayName} data)`);
+      console.log(`Conflicts ${result.conflicts} (project copies overwrote local data)`);
     }
     return 0;
   }
@@ -248,9 +249,12 @@ async function dispatchAgent(agentId, argumentsList) {
   const adapter = getSessionAdapter(agentId);
   const portableSessions = config.sessions !== "global";
   if (portableSessions) {
+    // Project portable sessions take priority: conflicting native copies are
+    // overwritten on launch. Native storage is never written to proactively;
+    // only `agenthome <agent> sessions writeback` writes portable -> native.
     const restored = await adapter.restore(projectRoot, { environment });
     if (restored.conflicts > 0) {
-      console.warn(`Portable session conflicts skipped: ${restored.conflicts} (kept local ${agent.displayName} data)`);
+      console.warn(`Portable session conflicts overwritten: ${restored.conflicts} (kept project copies)`);
     }
   }
   const status = launchExecutable(agent.executable, argumentsList, { cwd: projectRoot, environment });

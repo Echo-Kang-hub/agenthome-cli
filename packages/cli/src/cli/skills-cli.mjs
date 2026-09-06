@@ -431,7 +431,7 @@ async function commandAdd(argumentsList, catalogRoot, io = console) {
   const [sourceReference, ...requestedSkillNames] = argumentsList;
   const discoverAll = requestedSkillNames.length === 0;
   if (!sourceReference) {
-    fail("Usage: add <source-id|owner/repo> [skill...] [--pack <pack,pack>]");
+    fail("Usage: skill-add <source-id|owner/repo> [skill...] [--pack <pack,pack>]");
   }
   const unknownOption = argumentsList.find((argument) => argument.startsWith("-"));
   if (unknownOption) {
@@ -724,7 +724,7 @@ async function commandSourceAdd(argumentsList, catalogRoot, io = console) {
     repository,
     skillRoot,
   }, io);
-  io.log(`Next: agenthome catalog add ${id} <skill-name> --pack <pack>`);
+  io.log(`Next: agenthome catalog skill-add ${id} <skill-name> --pack <pack>`);
 }
 
 async function commandPackAdd(argumentsList, catalogRoot, io = console) {
@@ -756,7 +756,7 @@ async function commandPackAdd(argumentsList, catalogRoot, io = console) {
   });
   io.log(`Created Pack: ${id}`);
   io.log(`File: ${packFile}`);
-  io.log(`Next: agenthome catalog add <source> <skill-name> --pack ${id}`);
+  io.log(`Next: agenthome catalog skill-add <source> <skill-name> --pack ${id}`);
 }
 
 async function runMaintenanceCommand(command, argumentsList, catalogRoot, io) {
@@ -767,7 +767,7 @@ async function runMaintenanceCommand(command, argumentsList, catalogRoot, io) {
     case "update":
       await commandUpdate(argumentsList, catalogRoot, io);
       break;
-    case "add":
+    case "skill-add":
       await commandAdd([...argumentsList], catalogRoot, io);
       break;
     case "remove":
@@ -800,11 +800,11 @@ async function commandCatalogSync(options = {}) {
   io.log(`Revision  ${catalogInfo.revision}`);
 }
 
-async function commandCatalogUse(argumentsList, options = {}) {
+async function commandCatalogAdd(argumentsList, options = {}) {
   const io = options.io ?? console;
   const [spec] = argumentsList;
   if (!spec || argumentsList.length !== 1) {
-    fail("Usage: agenthome catalog use <spec>");
+    fail("Usage: agenthome catalog add <spec>");
   }
   parseCatalogSpec(spec);
   await setDefaultCatalogSpec(options.environment, spec);
@@ -815,21 +815,15 @@ async function commandCatalogUse(argumentsList, options = {}) {
   // configured and `agenthome catalog sync` can retry later.
   try {
     const catalogInfo = await ensureCatalog(spec, { environment: options.environment, io });
-    const sourceConfig = await loadSources(catalogInfo.catalogRoot);
-    const catalog = await buildCatalog(sourceConfig, path.join(catalogInfo.catalogRoot, "skills"));
     const packEntries = [...(await loadPacks(catalogInfo.catalogRoot)).values()];
-    io.log(`\nPacks · ${packEntries.length}  ·  revision ${catalogInfo.revision.slice(0, 8)}`);
+    io.log(`\nPacks · ${packEntries.length}`);
     packEntries.forEach((pack, packIndex) => {
-      const resolved = resolvePack(catalog, sourceConfig, pack);
       const lastPack = packIndex === packEntries.length - 1;
-      const childPrefix = lastPack ? "    " : "│   ";
       const label = pack.name && pack.name !== pack.id ? `${pack.id} (${pack.name})` : pack.id;
-      io.log(`${lastPack ? "└──" : "├──"} ${label} · ${resolved.names.length} ${resolved.names.length === 1 ? "Skill" : "Skills"}`);
-      resolved.names.forEach((name, nameIndex) => {
-        io.log(`${childPrefix}${nameIndex === resolved.names.length - 1 ? "└──" : "├──"} ${name}`);
-      });
+      const purpose = pack.description ? ` — ${pack.description}` : "";
+      io.log(`${lastPack ? "└──" : "├──"} ${label}${purpose}`);
     });
-    io.log("\nInstall: agenthome skills [pack...]");
+    io.log("\nInstall: agenthome skills install [pack...]");
   } catch (error) {
     io.log("\nSpec saved. Catalog preview unavailable:");
     io.log(`  ${String(error.message).split("\n")[0]}`);
@@ -862,39 +856,47 @@ async function commandCatalogList(options = {}) {
 }
 
 // Arrow-key picker over the registered catalogs. Resolves to the chosen spec,
-// or null when cancelled. Runs in raw mode; callers must ensure the process
-// owns a TTY.
+// or null when cancelled. Repaints the whole frame on every keypress with
+// saved-cursor positioning: some terminals mishandle relative moveCursor
+// repaints (frames pile up instead of replacing each other), so each paint
+// restores the cursor saved at picker start, clears to the bottom of the
+// screen, and rewrites the full frame. Runs in raw mode; callers must ensure
+// the process owns a TTY.
 function promptCatalogChoice(entries, currentIndex) {
   const output = process.stdout;
   const input = process.stdin;
   const count = entries.length;
   let selected = currentIndex >= 0 ? currentIndex : 0;
   return new Promise((resolve) => {
-    const paint = (first) => {
-      if (!first) {
-        readline.moveCursor(output, 0, -(count + 1));
-      }
+    const paint = () => {
+      const width = Math.max(
+        "Select a catalog:".length,
+        "↑/↓ select · Enter confirm · Esc cancel".length,
+        ...entries.map((entry) => entry.name.length),
+      );
+      const lines = ["Select a catalog:"];
       for (let index = 0; index < count; index += 1) {
-        readline.clearLine(output, 0);
-        output.write(`${index === selected ? ">" : " "} ${entries[index].name}\n`);
+        lines.push(`${index === selected ? ">" : " "} ${entries[index].name}`);
       }
-      readline.clearLine(output, 0);
-      output.write("↑/↓ select · Enter confirm · Esc cancel");
+      lines.push("↑/↓ select · Enter confirm · Esc cancel");
+      output.write("\x1b[u"); // restore the cursor saved at picker start
+      readline.clearScreenDown(output);
+      output.write(lines.map((line) => line.padEnd(width)).join("\n"));
     };
     const finish = (result) => {
       input.setRawMode(false);
       input.pause();
       input.removeAllListeners("keypress");
-      output.write("\n");
+      output.write("\n"); // keep the last frame visible; resume on a fresh line
       resolve(result);
     };
     input.on("keypress", (value, key) => {
       if (key.name === "up") {
         selected = (selected - 1 + count) % count;
-        paint(false);
+        paint();
       } else if (key.name === "down") {
         selected = (selected + 1) % count;
-        paint(false);
+        paint();
       } else if (key.name === "return" || key.name === "enter") {
         finish(entries[selected].spec);
       } else if (key.name === "escape" || (key.ctrl && key.name === "c")) {
@@ -904,7 +906,8 @@ function promptCatalogChoice(entries, currentIndex) {
     readline.emitKeypressEvents(input);
     input.setRawMode(true);
     input.resume();
-    paint(true);
+    output.write("\x1b[s"); // remember where the frame starts
+    paint();
   });
 }
 
@@ -920,7 +923,7 @@ async function commandCatalogSelect(argumentsList, options = {}) {
     const entry = known.find((candidate) => candidate.spec === target)
       ?? known.find((candidate) => candidate.name === target);
     if (!entry) {
-      fail(`Unknown catalog: ${target}\nAdd one first: agenthome catalog use <spec>`);
+      fail(`Unknown catalog: ${target}\nAdd one first: agenthome catalog add <spec>`);
     }
     await setDefaultCatalogSpec(options.environment, entry.spec);
     io.log(`Current catalog: ${entry.spec}`);
@@ -932,7 +935,7 @@ async function commandCatalogSelect(argumentsList, options = {}) {
     return;
   }
   const currentIndex = known.findIndex((entry) => entry.spec === current);
-  io.log("Select a catalog:");
+  // The picker paints its own title as the first frame line.
   const chosen = await promptCatalogChoice(known, currentIndex);
   if (chosen === null) {
     io.log("No change.");
@@ -961,11 +964,19 @@ export async function dispatchCatalog(argumentsList, options = {}) {
     await commandCatalogSync(options);
     return;
   }
-  if (command === "use") {
+  if (command === "add") {
     if (global) {
-      fail("agenthome catalog use does not accept a global scope");
+      fail("agenthome catalog add does not accept a global scope");
     }
-    await commandCatalogUse(remainingArguments, options);
+    await commandCatalogAdd(remainingArguments, options);
+    return;
+  }
+  if (command === "use") {
+    // "use" is the legacy name for "add".
+    if (global) {
+      fail("agenthome catalog add does not accept a global scope");
+    }
+    await commandCatalogAdd(remainingArguments, options);
     return;
   }
   if (command === "default") {
@@ -992,14 +1003,14 @@ export async function dispatchCatalog(argumentsList, options = {}) {
   const maintenanceCommands = new Set([
     "doctor",
     "update",
-    "add",
+    "skill-add",
     "remove",
     "pack-add",
     "pack-remove",
     "source-add",
   ]);
   if (!command || !maintenanceCommands.has(command)) {
-    fail("Usage: agenthome catalog <sync|use|select|list|default|doctor|update|add|remove|pack-add|pack-remove|source-add>");
+    fail("Usage: agenthome catalog <sync|add|select|list|default|doctor|update|skill-add|remove|pack-add|pack-remove|source-add>");
   }
   if (global) {
     fail(`${command} does not accept a global scope`);
@@ -1047,7 +1058,7 @@ export async function dispatchSkills(argumentsList, options = {}) {
   const maintenanceCommands = new Set([
     "doctor",
     "update",
-    "add",
+    "skill-add",
     "remove",
     "pack-add",
     "pack-remove",

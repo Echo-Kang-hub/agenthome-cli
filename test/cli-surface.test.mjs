@@ -63,7 +63,7 @@ async function createCatalogFixture(root) {
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(directory, "SKILL.md"), `---\nname: ${skillName}\n---\n`);
   }
-  const common = { schemaVersion: 1, id: "common", name: "Common", sources: [{ source: "test-source", skills: ["alpha"] }] };
+  const common = { schemaVersion: 1, id: "common", name: "Common", description: "Common tools for everyday work.", sources: [{ source: "test-source", skills: ["alpha"] }] };
   const development = { schemaVersion: 1, id: "development", name: "Development", sources: [{ source: "test-source", skills: ["beta", "gamma"] }] };
   await writeFile(path.join(root, "packs", "common.json"), `${JSON.stringify(common, null, 2)}\n`);
   await writeFile(path.join(root, "packs", "development.json"), `${JSON.stringify(development, null, 2)}\n`);
@@ -260,7 +260,7 @@ test("agent sessions import and status work through the CLI", async () => {
 
       const invalid = runAgent(projectRoot, ["claude", "sessions", "bogus"], environment);
       assert.equal(invalid.status, 1);
-      assert.match(invalid.stderr, /Usage: agenthome claude sessions \[import\|restore\|status\]/);
+      assert.match(invalid.stderr, /Usage: agenthome claude sessions \[import\|writeback\|status\]/);
     });
   });
 });
@@ -379,24 +379,28 @@ test("skills doctor and update fall back to runtime meanings outside a catalog",
   });
 });
 
-test("catalog use, default, and sync round-trip through the CLI", async () => {
+test("catalog add, default, and sync round-trip through the CLI", async () => {
   await withTempDirectory("agenthome-catalog-cli-", async (projectRoot) => {
     await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
       await withTempDirectory("agenthome-state-", async (stateRoot) => {
         await createCatalogFixture(catalogRoot);
         const environment = { AGENTHOME_STATE_DIR: stateRoot };
 
-        const used = runAgent(projectRoot, ["catalog", "use", catalogRoot], environment);
+        const used = runAgent(projectRoot, ["catalog", "add", catalogRoot], environment);
         assert.equal(used.status, 0, used.stderr);
         assert.match(used.stdout, /Default catalog: /);
         assert.match(used.stdout, /Packs · 2/);
-        assert.match(used.stdout, /├── common \(Common\) · 1 Skill/);
-        assert.match(used.stdout, /│   └── alpha/);
-        assert.match(used.stdout, /└── development \(Development\) · 2 Skills/);
-        assert.match(used.stdout, /    ├── beta/);
-        assert.match(used.stdout, /    └── gamma/);
-        assert.match(used.stdout, /Install: agenthome skills \[pack\.\.\.\]/);
+        assert.match(used.stdout, /├── common \(Common\) — Common tools for everyday work\./);
+        assert.match(used.stdout, /└── development \(Development\)\n/);
+        assert.doesNotMatch(used.stdout, /Development — /);
+        assert.doesNotMatch(used.stdout, /alpha|beta|gamma/);
+        assert.match(used.stdout, /Install: agenthome skills install \[pack\.\.\.\]/);
         assert.match(used.stdout, /Run: agenthome catalog sync/);
+
+        // "use" is kept as the legacy alias for "add".
+        const legacy = runAgent(projectRoot, ["catalog", "use", catalogRoot], environment);
+        assert.equal(legacy.status, 0, legacy.stderr);
+        assert.match(legacy.stdout, /Packs · 2/);
 
         const shown = runAgent(projectRoot, ["catalog", "default"], environment);
         assert.equal(shown.status, 0, shown.stderr);
@@ -407,9 +411,9 @@ test("catalog use, default, and sync round-trip through the CLI", async () => {
         assert.match(synced.stdout, /Catalog sync/);
         assert.match(synced.stdout, /Revision\s+[0-9a-f]{40}/);
 
-        const missingSpec = runAgent(projectRoot, ["catalog", "use"], environment);
+        const missingSpec = runAgent(projectRoot, ["catalog", "add"], environment);
         assert.equal(missingSpec.status, 1);
-        assert.match(missingSpec.stderr, /Usage: agenthome catalog use <spec>/);
+        assert.match(missingSpec.stderr, /Usage: agenthome catalog add <spec>/);
 
         const globalSync = runAgent(projectRoot, ["catalog", "-g", "sync"], environment);
         assert.equal(globalSync.status, 1);
@@ -419,13 +423,13 @@ test("catalog use, default, and sync round-trip through the CLI", async () => {
   });
 });
 
-test("catalog use keeps the spec saved when the preview fetch fails", async () => {
+test("catalog add keeps the spec saved when the preview fetch fails", async () => {
   await withTempDirectory("agenthome-catalog-cli-", async (projectRoot) => {
     await withTempDirectory("agenthome-state-", async (stateRoot) => {
       const environment = { AGENTHOME_STATE_DIR: stateRoot };
       const missing = path.join(projectRoot, "no-such-catalog");
 
-      const used = runAgent(projectRoot, ["catalog", "use", missing], environment);
+      const used = runAgent(projectRoot, ["catalog", "add", missing], environment);
       assert.equal(used.status, 0, used.stderr);
       assert.match(used.stdout, /Default catalog: /);
       assert.match(used.stdout, /Spec saved\. Catalog preview unavailable:/);
@@ -438,7 +442,7 @@ test("catalog use keeps the spec saved when the preview fetch fails", async () =
   });
 });
 
-test("catalog add registers the first source in a fresh catalog", async () => {
+test("catalog skill-add registers the first source in a fresh catalog", async () => {
   await withTempDirectory("agenthome-fresh-catalog-", async (catalogRoot) => {
     await withTempDirectory("agenthome-upstream-", async (upstreamRoot) => {
       await mkdir(path.join(catalogRoot, "packs"));
@@ -453,7 +457,7 @@ test("catalog add registers the first source in a fresh catalog", async () => {
       const packAdded = runAgent(catalogRoot, ["catalog", "pack-add", "common"]);
       assert.equal(packAdded.status, 0, packAdded.stderr);
 
-      const added = runAgent(catalogRoot, ["catalog", "add", upstreamRoot, "--pack", "common"]);
+      const added = runAgent(catalogRoot, ["catalog", "skill-add", upstreamRoot, "--pack", "common"]);
       assert.equal(added.status, 0, added.stderr);
       assert.match(added.stdout, /Added all Skills: [a-z0-9._-]+ \(2\)/);
       assert.match(added.stdout, /Packs: common/);
@@ -480,9 +484,9 @@ test("catalog list and select switch between registered catalogs", async () => {
           const nameA = path.basename(catalogA);
           const nameB = path.basename(catalogB);
 
-          const usedA = runAgent(projectRoot, ["catalog", "use", catalogA], environment);
+          const usedA = runAgent(projectRoot, ["catalog", "add", catalogA], environment);
           assert.equal(usedA.status, 0, usedA.stderr);
-          const usedB = runAgent(projectRoot, ["catalog", "use", catalogB], environment);
+          const usedB = runAgent(projectRoot, ["catalog", "add", catalogB], environment);
           assert.equal(usedB.status, 0, usedB.stderr);
 
           // Most recently used first; the current one is marked.
@@ -557,9 +561,14 @@ test("catalog maintenance requires the catalog clone and doctor validates it", a
     assert.equal(outsideDoctor.status, 1);
     assert.match(outsideDoctor.stderr, /must run inside the AgentHome Git clone/);
 
-    const outsideAdd = runAgent(projectRoot, ["catalog", "add", "some", "skill"]);
+    const outsideAdd = runAgent(projectRoot, ["catalog", "skill-add", "some", "skill"]);
     assert.equal(outsideAdd.status, 1);
     assert.match(outsideAdd.stderr, /must run inside the AgentHome Git clone/);
+
+    // "add" is the catalog import verb, not a maintenance command.
+    const importUsage = runAgent(projectRoot, ["catalog", "add", "some", "skill"]);
+    assert.equal(importUsage.status, 1);
+    assert.match(importUsage.stderr, /Usage: agenthome catalog add <spec>/);
 
     await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
       await createCatalogFixture(catalogRoot);
@@ -572,7 +581,7 @@ test("catalog maintenance requires the catalog clone and doctor validates it", a
 
       const unknown = runAgent(cloneRoot, ["catalog", "bogus"]);
       assert.equal(unknown.status, 1);
-      assert.match(unknown.stderr, /Usage: agenthome catalog <sync\|use\|select\|list\|default\|doctor\|update\|add\|remove\|pack-add\|pack-remove\|source-add>/);
+      assert.match(unknown.stderr, /Usage: agenthome catalog <sync\|add\|select\|list\|default\|doctor\|update\|skill-add\|remove\|pack-add\|pack-remove\|source-add>/);
     });
   });
 });
@@ -598,7 +607,7 @@ test("catalog pack-add and source-add manage the catalog", async () => {
       const sourceAdded = runAgent(cloneRoot, ["catalog", "source-add", "second", upstreamRoot, "--name", "Second"]);
       assert.equal(sourceAdded.status, 0, sourceAdded.stderr);
       assert.match(sourceAdded.stdout, /Registered second @ [0-9a-f]{8}/);
-      assert.match(sourceAdded.stdout, /Next: agenthome catalog add second/);
+      assert.match(sourceAdded.stdout, /Next: agenthome catalog skill-add second/);
       const sources = JSON.parse(await readFile(path.join(cloneRoot, "sources.lock.json"), "utf8"));
       assert.equal(sources.sources.some((source) => source.id === "second"), true);
 
@@ -609,7 +618,7 @@ test("catalog pack-add and source-add manage the catalog", async () => {
   });
 });
 
-test("catalog add registers a source and vendors its Skills", async () => {
+test("catalog skill-add registers a source and vendors its Skills", async () => {
   await withTempDirectory("agenthome-catalog-add-", async (catalogRoot) => {
     await withTempDirectory("agenthome-upstream-", async (upstreamRoot) => {
       await createCatalogFixture(catalogRoot);
@@ -619,7 +628,7 @@ test("catalog add registers a source and vendors its Skills", async () => {
       const packAdded = runAgent(cloneRoot, ["catalog", "pack-add", "design"]);
       assert.equal(packAdded.status, 0, packAdded.stderr);
 
-      const added = runAgent(cloneRoot, ["catalog", "add", upstreamRoot, "delta", "--pack", "design"]);
+      const added = runAgent(cloneRoot, ["catalog", "skill-add", upstreamRoot, "delta", "--pack", "design"]);
       assert.equal(added.status, 0, added.stderr);
       assert.match(added.stdout, /Added: [a-z0-9._-]+ -> delta/);
       assert.match(added.stdout, /Packs: design/);
@@ -631,11 +640,11 @@ test("catalog add registers a source and vendors its Skills", async () => {
       const sources = JSON.parse(await readFile(path.join(cloneRoot, "sources.lock.json"), "utf8"));
       assert.equal(sources.sources.some((source) => source.id === sourceId), true);
 
-      const repeated = runAgent(cloneRoot, ["catalog", "add", upstreamRoot, "delta", "--pack", "design"]);
+      const repeated = runAgent(cloneRoot, ["catalog", "skill-add", upstreamRoot, "delta", "--pack", "design"]);
       assert.equal(repeated.status, 0, repeated.stderr);
       assert.match(repeated.stdout, /Already installed/);
 
-      const missing = runAgent(cloneRoot, ["catalog", "add", upstreamRoot, "nosuchskill", "--pack", "design"]);
+      const missing = runAgent(cloneRoot, ["catalog", "skill-add", upstreamRoot, "nosuchskill", "--pack", "design"]);
       assert.equal(missing.status, 1);
       assert.match(missing.stderr, /Skill not found upstream: nosuchskill/);
       const unchanged = JSON.parse(await readFile(path.join(cloneRoot, "packs", "design.json"), "utf8"));

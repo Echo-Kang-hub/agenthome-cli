@@ -25,8 +25,9 @@ agenthome claude init                            # 初始化 Claude Code（默�
 agenthome claude init --auth project             # 项目级认证（凭据随项目，不进 Git）
 agenthome codex init --sessions global           # Codex 会话留在全局原生存储
 agenthome claude sessions import                 # 把本机会话复制进项目便携存储
+agenthome claude sessions writeback              # 把项目便携会话显式回写本机
 agenthome sessions git off                       # 会话不进 Git
-agenthome catalog use <owner/repo>               # 导入 catalog（可导入多个，会打印 Pack 预览树）
+agenthome catalog add <owner/repo>               # 导入 catalog（可导入多个，会打印 Pack 预览树）
 agenthome catalog select                         # 上下键切换当前 catalog
 agenthome skills install                         # 安装默认 Pack（common）
 agenthome skills add <owner/repo>                # 从任意 GitHub 仓库直接安装 Skills
@@ -44,7 +45,7 @@ agenthome skills add <owner/repo>                # 从任意 GitHub 仓库直接
 | `agenthome <agent> deinit [--purge]` | 移除运行时；`--purge` 一并删除数据 |
 | `agenthome <agent> auth [global\|project\|reset]` | 设置认证作用域；不带参数时查看当前状态 |
 | `agenthome <agent> status` | 查看该 Agent 的配置与状态 |
-| `agenthome <agent> sessions import\|restore\|status` | 管理便携会话 |
+| `agenthome <agent> sessions import\|writeback\|status` | 管理便携会话 |
 | `agenthome <agent> [args...]` | 启动 Agent，其余参数透传给官方 CLI |
 | `agenthome status` | 三个 Agent 一览 |
 | `agenthome doctor` | 环境自检 |
@@ -71,12 +72,12 @@ agenthome claude auth                # 查看当前生效的认证作用域
 
 ```bash
 agenthome codex sessions import      # 全局会话 → 项目便携存储（复制不删除）
-agenthome codex sessions restore     # 便携存储 → 原生存储
+agenthome codex sessions writeback   # 便携存储 → 原生存储（显式回写）
 agenthome codex sessions status
 agenthome sessions git on|off|status # 便携会话的 Git 同步开关
 ```
 
-若同一会话在本机原生存储与便携存储中都有记录，启动时保留本机版本并提示 `Portable session conflicts skipped`。
+若同一会话在本机原生存储与便携存储中都有记录，启动时以项目便携版本为准（覆盖本机副本），并提示 `Portable session conflicts overwritten: N (kept project copies)`。便携存储不会自动回写原生存储；需要回写时显式执行 `agenthome <agent> sessions writeback`（旧命令名 `restore` 仍可用）。
 
 > 项目会话可能包含提示词、源码、命令输出、路径与密钥；仅在可信仓库中提交会话。
 
@@ -87,7 +88,7 @@ agenthome sessions git on|off|status # 便携会话的 Git 同步开关
 Catalog 是一个 git 仓库：`skills/<source-id>/<skill-name>/SKILL.md` 存放 Skills，`packs/*.json` 定义 Pack，`sources.lock.json` 锁定上游 commit。公开或私有均可；私有仓库的访问使用本机 git 认证（gh、SSH 或 credential helper）。
 
 ```bash
-agenthome catalog use <owner/repo>    # 导入 catalog 源（owner/repo[#ref]、URL 或本地路径），并打印 Pack 预览树
+agenthome catalog add <owner/repo>    # 导入 catalog 源（owner/repo[#ref]、URL 或本地路径），并打印 Pack 预览树
 agenthome catalog select [name|spec]  # 从已注册 catalog 中上下键选择当前 catalog（无终端时打印列表）
 agenthome catalog list                # 列出已注册 catalog（> 标记当前）
 agenthome catalog sync                # 拉取或更新缓存（~/.config/agent-skills/catalog/）
@@ -109,7 +110,7 @@ agenthome skills status [-g]                    # 当前安装状态
 
 每次安装会把 catalog commit 写入项目锁 `.agent-skills.lock.json`，跨设备可复现。
 
-> 默认 catalog 为维护者提供的示例；使用前请通过 `agenthome catalog use <owner/repo>` 指向自己的 catalog。
+> 默认 catalog 为维护者提供的示例；使用前请通过 `agenthome catalog add <owner/repo>` 指向自己的 catalog。
 
 #### Catalog 结构：源 → Pack → Skill
 
@@ -138,9 +139,12 @@ Pack 定义示例（`packs/development.json`）：
   "schemaVersion": 1,
   "id": "development",
   "name": "Development",
+  "description": "Research, coding, and review workflows.",
   "sources": [{ "source": "example-source", "skills": ["beta", "gamma"] }]
 }
 ```
+
+`description` 说明 Pack 的用途，会在 `catalog add` 的预览树中显示。
 
 #### 构造自己的 catalog
 
@@ -153,28 +157,28 @@ mkdir -p packs skills
 echo '{"schemaVersion":1,"sources":[]}' > sources.lock.json
 
 agenthome catalog pack-add common --name Common                  # 新建 Pack
-agenthome catalog add <owner/repo> --pack common                 # 登记第一个上游源并收录其全部 Skill
+agenthome catalog skill-add <owner/repo> --pack common          # 登记第一个上游源并收录其全部 Skill
 agenthome catalog pack-add development --name Development
-agenthome catalog add <owner/repo> skill-a skill-b --pack development   # 挑选 Skill 进其他 Pack
+agenthome catalog skill-add <owner/repo> skill-a skill-b --pack development   # 挑选 Skill 进其他 Pack
 agenthome catalog doctor                                         # 校验结构
 
 git add -A && git commit -m "catalog" && git push
 ```
 
-`add` 会自动登记未收录的上游源（锁定 commit、保存许可证）；省略 `[skill...]` 收录该源全部 Skill；可反复 `add` 聚合多个上游源，Pack 可跨源挑选。
+`skill-add` 会自动登记未收录的上游源（锁定 commit、保存许可证）；省略 `[skill...]` 收录该源全部 Skill；可反复 `skill-add` 聚合多个上游源，Pack 可跨源挑选。
 
 #### 导入 catalog 源与 Pack
 
 ```bash
-agenthome catalog use <owner/repo>     # 导入 catalog 源：保存源并立即打印 Pack → Skill 预览树
+agenthome catalog add <owner/repo>     # 导入 catalog 源：保存源并立即打印 Pack 预览树
 agenthome skills install               # 按 Pack 导入 Skills（默认 common）
 agenthome skills install development research   # 一次导入多个 Pack
 agenthome skills -g development        # 导入到全局作用域
 ```
 
-`catalog use` 拉取成功后会在终端打印该源的预览树（Pack → 其中的 Skill），一眼看清可导入内容；拉取失败不影响源保存，之后 `agenthome catalog sync` 重试。
+`catalog add` 拉取成功后会在终端打印该源的预览树（Pack 名称 + 用途描述），一眼看清可导入内容；拉取失败不影响源保存，之后 `agenthome catalog sync` 重试。
 
-每次 `catalog use` 都会把该源记入已注册列表；可反复 `use` 导入多个 catalog，用 `agenthome catalog select` 上下键切换当前 catalog（`select <name|spec>` 可直接指定），`catalog list` 查看全部。同一时间生效一个 catalog，该 catalog 内聚合的多个上游仓库共享所有 Pack。
+每次 `catalog add` 都会把该源记入已注册列表；可反复 `add` 导入多个 catalog，用 `agenthome catalog select` 上下键切换当前 catalog（`select <name|spec>` 可直接指定），`catalog list` 查看全部。同一时间生效一个 catalog，该 catalog 内聚合的多个上游仓库共享所有 Pack。
 
 #### 连接私有 Skills 仓库
 
@@ -182,19 +186,19 @@ agenthome skills -g development        # 导入到全局作用域
 
 ```bash
 gh auth login                                            # 1. 登录 GitHub（或改用 SSH key，二选一，只需一次）
-agenthome catalog use Echo-Kang-hub/agenthome-catalog    # 2. 设置 catalog 源（换成 <你的用户名>/<你的仓库>），终端会打印 Pack 预览树
+agenthome catalog add Echo-Kang-hub/agenthome-catalog    # 2. 设置 catalog 源（换成 <你的用户名>/<你的仓库>），终端会打印 Pack 预览树
 agenthome catalog sync                                   # 3. 验证可拉取（输出 40 位 commit 即成功）
 agenthome skills install                                 # 4. 安装默认 Pack（common）
 ```
 
-- Windows 上 HTTPS 方式默认使用 Git Credential Manager（首次自动弹窗登录）；也可以使用 SSH 地址：`agenthome catalog use git@github.com:<owner>/<repo>.git`
+- Windows 上 HTTPS 方式默认使用 Git Credential Manager（首次自动弹窗登录）；也可以使用 SSH 地址：`agenthome catalog add git@github.com:<owner>/<repo>.git`
 - `agenthome skills add <owner/repo>` 从单个私有仓库安装 Skill，认证方式相同
 
 | 现象 | 处理 |
 |---|---|
 | `schannel: failed to receive handshake / SSL/TLS connection failed` | 网络或代理阻断了到 github.com 的 TLS 连接，与认证无关；检查代理/VPN，或改用 SSH 地址 |
 | `Unable to fetch catalog` + `Check your GitHub authentication` | git 没有该私有仓库的访问权限；先运行 `gh auth status` 或 `ssh -T git@github.com` |
-| 换回其他 catalog | 已注册的直接 `agenthome catalog select` 切换；未注册的再次 `agenthome catalog use <spec>` |
+| 换回其他 catalog | 已注册的直接 `agenthome catalog select` 切换；未注册的再次 `agenthome catalog add <spec>` |
 
 #### 维护 catalog
 
@@ -202,7 +206,7 @@ agenthome skills install                                 # 4. 安装默认 Pack�
 
 ```bash
 agenthome catalog source-add <id> <repo> [--name <name>] [--skill-root <path>]
-agenthome catalog add <owner/repo> [skill...] [--pack <pack>]   # 登记上游、固定 commit、保存许可证
+agenthome catalog skill-add <owner/repo> [skill...] [--pack <pack>]   # 登记上游、固定 commit、保存许可证
 agenthome catalog update [source] [--check]                     # 跟进上游更新
 agenthome catalog doctor                                        # 校验 catalog
 ```
@@ -226,7 +230,7 @@ agenthome skills remove <skill...>   # 撤回：移除通过 add 安装的 Skill
 | `agenthome sessions git off` | `agenthome sessions git on` |
 | `agenthome skills install [pack...]`（简写 `agenthome skills [pack...]`） | `agenthome skills uninstall`（全部）或 `agenthome skills uninstall <pack>` |
 | `agenthome skills add <owner/repo>` | `agenthome skills remove <skill...>` |
-| `agenthome catalog use <spec>` | `agenthome catalog select` 选回已注册 catalog，或再次 `agenthome catalog use <原 spec>` |
+| `agenthome catalog add <spec>` | `agenthome catalog select` 选回已注册 catalog，或再次 `agenthome catalog add <原 spec>` |
 | `agenthome self-update` | `npm install -g agenthome-cli@<旧版本>` |
 
 ## 自更新

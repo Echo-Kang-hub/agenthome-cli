@@ -143,6 +143,13 @@ export async function mergeFiles(sourceRoot, relativeFiles, destinationRoot, tra
       conflicts += 1;
       continue;
     }
+    if (options.onConflict === "keep-source") {
+      // The portable (project) copy wins; the destination gets the source
+      // content and the caller reports the conflict.
+      await writeFile(destination, sourceContent);
+      conflicts += 1;
+      continue;
+    }
     throw new Error(`Session conflict: ${relative}. Keep one version, then retry.`);
   }
   return { added, conflicts, updated, unchanged };

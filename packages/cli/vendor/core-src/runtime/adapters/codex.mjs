@@ -109,9 +109,11 @@ export async function restore(projectRoot, options = {}) {
   if (files.length === 0) {
     return { count: 0, added: 0, updated: 0, unchanged: 0 };
   }
+  // Project portable sessions are the source of truth: on conflict they
+  // overwrite the native copy (explicit `sessions writeback` semantics).
   const result = await mergeFiles(sourceRoot, files, nativeSessions, (content, relative) =>
     relative.endsWith(".jsonl") ? rewriteCwd(content, projectRoot, true) : content,
-    { onConflict: "keep-destination" },
+    { onConflict: "keep-source" },
   );
   await restoreIndex(portable, codexHome);
   return { count: files.length, ...result };

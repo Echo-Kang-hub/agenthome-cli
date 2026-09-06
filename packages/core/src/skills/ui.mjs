@@ -12,8 +12,6 @@ export function printTree(groups, title, details = [], io = console) {
     io.log(
       `${groupBranch} ${group.source.name} · ${group.skills.length}`,
     );
-    io.log(`${childPrefix}├── Repository: ${group.source.repository}`);
-    io.log(`${childPrefix}├── Revision: ${group.source.revision.slice(0, 12)}`);
     group.skills.forEach((skill, skillIndex) => {
       const skillBranch = skillIndex === group.skills.length - 1 ? "└──" : "├──";
       io.log(`${childPrefix}${skillBranch} ${skill.name}`);
