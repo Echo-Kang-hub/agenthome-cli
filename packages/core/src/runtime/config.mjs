@@ -76,9 +76,15 @@ export async function initializeAgent(projectRoot, agentId, authMode, sessionsMo
     auth: effectiveAuthMode,
     sessions: effectiveSessionsMode,
   };
-  await mkdir(path.join(state.paths.sessionsRoot, agentId), { recursive: true });
+  const sessionDirectory = path.join(state.paths.sessionsRoot, agentId);
+  const localDirectory = path.join(state.paths.localRoot, agentId);
+  const missingStructure = [sessionDirectory];
   if (effectiveAuthMode === "project") {
-    await mkdir(path.join(state.paths.localRoot, agentId), { recursive: true });
+    missingStructure.push(localDirectory);
+  }
+  const structureRepaired = missingStructure.some((directory) => !existsSync(directory));
+  for (const directory of missingStructure) {
+    await mkdir(directory, { recursive: true });
   }
   const configChanged = await writeJsonIfChanged(state.paths.runtimeFile, state.runtime);
   const gitignoreChanged = await ensureRuntimeGitignore(projectRoot);
@@ -88,6 +94,7 @@ export async function initializeAgent(projectRoot, agentId, authMode, sessionsMo
     sessionsMode: effectiveSessionsMode,
     configChanged,
     gitignoreChanged,
+    structureRepaired,
   };
 }
 

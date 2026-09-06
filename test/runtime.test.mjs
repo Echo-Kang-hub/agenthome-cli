@@ -183,8 +183,8 @@ test("project root falls back to runtime markers", async () => {
 test("full and short commands share one runtime configuration", async () => {
   await withTempProject(async (projectRoot) => {
     const full = runCli(projectRoot, "agent.mjs", ["claude", "init", "--auth", "global"]);
-    const short = runCli(projectRoot, "ax.mjs", ["init", "--auth", "project"]);
-    const status = runCli(projectRoot, "ac.mjs", ["status"]);
+    const short = runCli(projectRoot, "ahx.mjs", ["init", "--auth", "project"]);
+    const status = runCli(projectRoot, "ahc.mjs", ["status"]);
 
     assert.equal(full.status, 0, full.stderr);
     assert.equal(short.status, 0, short.stderr);
@@ -193,6 +193,60 @@ test("full and short commands share one runtime configuration", async () => {
     const state = await loadRuntime(projectRoot);
     assert.equal(state.runtime.agents.claude.auth, "global");
     assert.equal(state.runtime.agents.codex.auth, "project");
+  });
+});
+
+test("repeated init is a no-op when the project structure is intact", async () => {
+  await withTempProject(async (projectRoot) => {
+    const first = runCli(projectRoot, "ahc.mjs", ["init", "--auth", "project"]);
+    assert.equal(first.status, 0, first.stderr);
+    assert.match(first.stdout, /Configuration   Updated/);
+
+    const runtimeFile = path.join(projectRoot, ".agents", "runtime.json");
+    const gitignoreFile = path.join(projectRoot, ".gitignore");
+    const runtimeBefore = await readFile(runtimeFile, "utf8");
+    const gitignoreBefore = await readFile(gitignoreFile, "utf8");
+
+    const second = runCli(projectRoot, "ahc.mjs", ["init"]);
+    assert.equal(second.status, 0, second.stderr);
+    assert.match(second.stdout, /Configuration   Unchanged/);
+    assert.match(second.stdout, /Git ignore      Unchanged/);
+    assert.match(second.stdout, /Structure       Intact/);
+    assert.match(second.stdout, /Already up to date/);
+    assert.equal(await readFile(runtimeFile, "utf8"), runtimeBefore);
+    assert.equal(await readFile(gitignoreFile, "utf8"), gitignoreBefore);
+    assert.match(second.stdout, /Authentication  project/);
+    assert.match(second.stdout, /Sessions        Project/);
+  });
+});
+
+test("init incrementally repairs missing directories without touching existing state", async () => {
+  await withTempProject(async (projectRoot) => {
+    const first = runCli(projectRoot, "ahc.mjs", ["init", "--auth", "project"]);
+    assert.equal(first.status, 0, first.stderr);
+
+    const sessionsDir = path.join(projectRoot, ".agents", "sessions", "claude");
+    const localDir = path.join(projectRoot, ".agents", "local", "claude");
+    await rm(sessionsDir, { recursive: true, force: true });
+    await rm(localDir, { recursive: true, force: true });
+    assert.equal(existsSync(sessionsDir), false);
+    assert.equal(existsSync(localDir), false);
+
+    const runtimeFile = path.join(projectRoot, ".agents", "runtime.json");
+    const gitignoreFile = path.join(projectRoot, ".gitignore");
+    const runtimeBefore = await readFile(runtimeFile, "utf8");
+    const gitignoreBefore = await readFile(gitignoreFile, "utf8");
+
+    const repaired = runCli(projectRoot, "ahc.mjs", ["init"]);
+    assert.equal(repaired.status, 0, repaired.stderr);
+    assert.equal(existsSync(sessionsDir), true);
+    assert.equal(existsSync(localDir), true);
+    assert.equal(await readFile(runtimeFile, "utf8"), runtimeBefore);
+    assert.equal(await readFile(gitignoreFile, "utf8"), gitignoreBefore);
+    assert.match(repaired.stdout, /Configuration   Unchanged/);
+    assert.match(repaired.stdout, /Git ignore      Unchanged/);
+    assert.match(repaired.stdout, /Structure       Repaired/);
+    assert.doesNotMatch(repaired.stdout, /Already up to date/);
   });
 });
 

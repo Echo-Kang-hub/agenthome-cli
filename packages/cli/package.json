@@ -13,9 +13,9 @@
     "agenthome": "scripts/skills.mjs",
     "agent-skills": "scripts/skills.mjs",
     "agent": "bin/agent.mjs",
-    "ac": "bin/ac.mjs",
-    "ax": "bin/ax.mjs",
-    "ao": "bin/ao.mjs"
+    "ahc": "bin/ahc.mjs",
+    "ahx": "bin/ahx.mjs",
+    "aho": "bin/aho.mjs"
   },
   "scripts": {
     "prepack": "node ../../scripts/sync-core.mjs"

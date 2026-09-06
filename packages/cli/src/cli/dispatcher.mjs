@@ -77,9 +77,9 @@ Usage:
   agent doctor
 
 Aliases:
-  ac    agent claude
-  ax    agent codex
-  ao    agent opencode
+  ahc   agent claude
+  ahx   agent codex
+  aho   agent opencode
 `);
 }
 
@@ -120,11 +120,16 @@ async function dispatchAgent(agentId, argumentsList) {
     console.log(`Session Git     ${(await sessionsGitIgnored(projectRoot)) ? "Off" : "On"}`);
     console.log(`Configuration   ${result.configChanged ? "Updated" : "Unchanged"}`);
     console.log(`Git ignore      ${result.gitignoreChanged ? "Updated" : "Unchanged"}`);
-    console.log("\nInitialized successfully.\n");
+    console.log(`Structure       ${result.structureRepaired ? "Repaired" : "Intact"}`);
+    if (!result.configChanged && !result.gitignoreChanged && !result.structureRepaired) {
+      console.log("\nAlready up to date — nothing changed.\n");
+    } else {
+      console.log("\nInitialized successfully.\n");
+    }
     console.log(
       "Project sessions may contain prompts, source code, command output, file paths, and secrets. Only commit sessions to repositories you trust.\n",
     );
-    console.log(`Run:\n  ${agentId === "claude" ? "ac" : agentId === "codex" ? "ax" : "ao"}`);
+    console.log(`Run:\n  ${agentId === "claude" ? "ahc" : agentId === "codex" ? "ahx" : "aho"}`);
     return 0;
   }
 

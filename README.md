@@ -4,7 +4,7 @@
 
 ## 功能
 
-- **多 Agent 运行时管理**：同一项目内为 Claude Code、Codex、OpenCode 独立初始化、查看状态、卸载；`ac` / `ax` / `ao` 简写直达。
+- **多 Agent 运行时管理**：同一项目内为 Claude Code、Codex、OpenCode 独立初始化、查看状态、卸载；`ahc` / `ahx` / `aho` 简写直达。
 - **认证作用域可选**：`--auth global`（本机共享凭据，默认）或 `--auth project`（凭据与配置保存在项目 `.agents/local/`，自动 gitignore，每个项目可用不同账号）。
 - **会话记录可选**：`--sessions project`（默认，便携会话存 `.agents/sessions/`，可随项目迁移、可开关 Git 同步）或 `--sessions global`（使用 Agent 的原生全局存储）。
 - **Skills 双源**：
@@ -12,6 +12,7 @@
   - **直接源**：`agent skills add <owner/repo>` 从任意 GitHub 仓库（公开或私有）直接安装 Skill，许可证自动保存。
 - **安装作用域可选**：默认安装到项目（`.claude/skills/` + `.agents/skills/`），`-g` 安装到全局用户目录。
 - **认证完全委托 git**：CLI 不接触任何 token；私有仓库走 gh、SSH 或 credential helper。
+- **可重复执行的初始化**：`init` 幂等——项目结构已符合时不做任何修改（提示 Already up to date）；缺什么（目录、gitignore 规则、配置）就只补什么。
 - **自更新**：`agenthome self-update` 从 npm 更新。
 
 ## 安装
@@ -22,38 +23,40 @@
 npm install -g agenthome-cli
 ```
 
-安装后可用 `agent`、`agenthome`、`ac`、`ax`、`ao`。AgentHome 只使用 npm 标准 `bin`，不修改 NVM、Node、npm 或 PATH。
+安装后可用 `agent`、`agenthome`、`agent-skills`、`ahc`、`ahx`、`aho`。简写特意避开 PowerShell / cmd / bash 的内置命令与别名（例如 PowerShell 的 `ac` 是 `Add-Content` 的别名）。AgentHome 只使用 npm 标准 `bin`，不修改 NVM、Node、npm 或 PATH。
 
 卸载：`npm uninstall -g agenthome-cli`
 
 ## 快速开始
 
 ```bash
-ac init                            # 初始化 Claude Code（默认全局认证 + 项目便携会话）
-ac init --auth project             # 项目级认证（凭据随项目，不进 Git）
-ax init --sessions global          # Codex 会话留在全局原生存储
-ac sessions import                 # 把本机会话复制进项目便携存储
-agent sessions git off             # 会话不进 Git
-agent catalog use <owner/repo>     # 指向你自己的 Skills catalog（任何 git 仓库）
-agent skills                       # 安装/同步默认 Pack（common）
-agent skills add <owner/repo>      # 从任意 GitHub 仓库直接安装 Skills
+ahc init                            # 初始化 Claude Code（默认全局认证 + 项目便携会话）
+ahc init --auth project             # 项目级认证（凭据随项目，不进 Git）
+ahx init --sessions global          # Codex 会话留在全局原生存储
+ahc sessions import                 # 把本机会话复制进项目便携存储
+agent sessions git off              # 会话不进 Git
+agent catalog use <owner/repo>      # 指向你自己的 Skills catalog（任何 git 仓库）
+agent skills                        # 安装/同步默认 Pack（common）
+agent skills add <owner/repo>       # 从任意 GitHub 仓库直接安装 Skills
 ```
 
 ## Agent 运行时
 
 | Agent | 全写 | 简写 |
 |---|---|---|
-| Claude Code | `agent claude` | `ac` |
-| Codex | `agent codex` | `ax` |
-| OpenCode | `agent opencode` | `ao` |
+| Claude Code | `agent claude` | `ahc` |
+| Codex | `agent codex` | `ahx` |
+| OpenCode | `agent opencode` | `aho` |
 
 ```bash
-ac init [--auth global|project] [--sessions global|project]
-ac status                         # 该 Agent 的配置与状态
-agent status                      # 三个 Agent 一览
-agent doctor                      # 环境自检
-ac deinit                         # 卸载运行时；--purge 一并删除数据
+ahc init [--auth global|project] [--sessions global|project]
+ahc status                         # 该 Agent 的配置与状态
+agent status                       # 三个 Agent 一览
+agent doctor                       # 环境自检
+ahc deinit                         # 卸载运行时；--purge 一并删除数据
 ```
+
+`init` 可以放心重复执行：结构已符合 → 不做任何修改；有缺失 → 只增量补齐。
 
 ### 认证作用域
 
@@ -61,10 +64,10 @@ ac deinit                         # 卸载运行时；--purge 一并删除数据
 - `project`：凭据与配置全部保存在项目 `.agents/local/<agent>/`（自动 gitignore）。同一个 Agent 在不同项目可以用不同账号，项目拷走即带走配置。
 
 ```bash
-ac auth project                   # 切换到项目认证
-ac auth global                    # 切回全局
-ac auth reset                     # 清除本项目覆盖，恢复默认
-ac auth                           # 查看当前生效的认证作用域
+ahc auth project                   # 切换到项目认证
+ahc auth global                    # 切回全局
+ahc auth reset                     # 清除本项目覆盖，恢复默认
+ahc auth                           # 查看当前生效的认证作用域
 ```
 
 ### 会话记录
@@ -73,10 +76,10 @@ ac auth                           # 查看当前生效的认证作用域
 - `global`：会话直接留在 Agent 的原生全局存储，AgentHome 不做拷贝。
 
 ```bash
-ax sessions import                # 全局会话 → 项目便携存储（复制不删除）
-ax sessions restore               # 便携存储 → 原生存储
-ax sessions status
-agent sessions git on|off|status  # 便携会话的 Git 同步开关
+ahx sessions import                # 全局会话 → 项目便携存储（复制不删除）
+ahx sessions restore               # 便携存储 → 原生存储
+ahx sessions status
+agent sessions git on|off|status   # 便携会话的 Git 同步开关
 ```
 
 > 项目会话可能包含提示词、源码、命令输出、路径与密钥，只在你信任的仓库提交会话。

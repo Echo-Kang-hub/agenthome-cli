@@ -8,9 +8,9 @@
     "agenthome": "packages/cli/scripts/skills.mjs",
     "agent-skills": "packages/cli/scripts/skills.mjs",
     "agent": "packages/cli/bin/agent.mjs",
-    "ac": "packages/cli/bin/ac.mjs",
-    "ax": "packages/cli/bin/ax.mjs",
-    "ao": "packages/cli/bin/ao.mjs"
+    "ahc": "packages/cli/bin/ahc.mjs",
+    "ahx": "packages/cli/bin/ahx.mjs",
+    "aho": "packages/cli/bin/aho.mjs"
   },
   "scripts": {
     "sync-core": "node scripts/sync-core.mjs",

@@ -50,7 +50,7 @@ async function verifyInstall(archive, environment) {
   );
   assert.equal(installed.status, 0, installed.stderr || installed.stdout);
   const binDirectory = process.platform === "win32" ? prefix : path.join(prefix, "bin");
-  const launcher = path.join(binDirectory, process.platform === "win32" ? "ax.cmd" : "ax");
+  const launcher = path.join(binDirectory, process.platform === "win32" ? "ahx.cmd" : "ahx");
   assert.equal(existsSync(launcher), true, `Missing global launcher: ${launcher}`);
   await mkdir(projectRoot, { recursive: true });
   const launched = runLauncher(launcher, ["init", "--auth", "global"], projectRoot, environment);
@@ -70,7 +70,7 @@ async function uninstall(packageName, environment) {
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const binDirectory = process.platform === "win32" ? prefix : path.join(prefix, "bin");
-  const launcher = path.join(binDirectory, process.platform === "win32" ? "ax.cmd" : "ax");
+  const launcher = path.join(binDirectory, process.platform === "win32" ? "ahx.cmd" : "ahx");
   assert.equal(existsSync(launcher), false, `Global launcher still exists after uninstall: ${launcher}`);
 }
 
