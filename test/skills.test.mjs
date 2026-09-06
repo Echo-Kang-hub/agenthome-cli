@@ -77,7 +77,7 @@ test("Pack uninstall prunes only Skills no longer selected", async () => {
         const installed = runAgent(projectRoot, ["skills", "development"], environment);
         assert.equal(installed.status, 0, installed.stderr);
 
-        const protectedSkill = runAgent(projectRoot, ["skills", "uninstall-skill", "beta"], environment);
+        const protectedSkill = runAgent(projectRoot, ["skills", "remove", "beta"], environment);
         assert.equal(protectedSkill.status, 1);
         assert.match(protectedSkill.stderr, /Managed by configured Packs/);
         assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "beta")), true);
@@ -109,13 +109,13 @@ test("External Skill uninstall is multi-value and idempotent", async () => {
         await writeFile(path.join(directory, "SKILL.md"), "external\n");
       }
     }
-    const removed = runAgent(projectRoot, ["skills", "uninstall-skill", "external-one", "external-two"]);
+    const removed = runAgent(projectRoot, ["skills", "remove", "external-one", "external-two"]);
     assert.equal(removed.status, 0, removed.stderr);
     assert.match(removed.stdout, /Removed external Skills/);
     assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "external-one")), false);
     assert.equal(existsSync(path.join(projectRoot, ".claude", "skills", "external-two")), false);
 
-    const repeated = runAgent(projectRoot, ["skills", "uninstall-skill", "external-one", "external-two"]);
+    const repeated = runAgent(projectRoot, ["skills", "remove", "external-one", "external-two"]);
     assert.equal(repeated.status, 0, repeated.stderr);
     assert.match(repeated.stdout, /Already absent/);
   });

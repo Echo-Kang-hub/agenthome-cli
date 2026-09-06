@@ -1,6 +1,6 @@
 {
   "name": "agenthome-cli",
-  "version": "5.7.2",
+  "version": "5.7.4",
   "private": false,
   "license": "MIT",
   "description": "Portable Skills, runtime configuration, and sessions for coding agents",

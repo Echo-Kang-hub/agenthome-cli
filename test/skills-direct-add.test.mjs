@@ -96,7 +96,7 @@ test("skills add installs direct public sources into project scope", async () =>
   });
 });
 
-test("skills add supports single skill and uninstall-skill removes direct state", async () => {
+test("skills add supports single skill and remove clears direct state", async () => {
   await withTemp("direct-single-", async (root) => {
     const project = path.join(root, "project");
     const state = path.join(root, "state");
@@ -108,7 +108,7 @@ test("skills add supports single skill and uninstall-skill removes direct state"
     assert.equal(added.status, 0, added.stderr);
     assert.equal(existsSync(path.join(project, ".agents", "skills", "direct-a")), true);
     assert.equal(existsSync(path.join(project, ".agents", "skills", "direct-b")), false);
-    const removed = runAgent(project, ["skills", "uninstall-skill", "direct-a"], environment);
+    const removed = runAgent(project, ["skills", "remove", "direct-a"], environment);
     assert.equal(removed.status, 0, removed.stderr);
     assert.equal(existsSync(path.join(project, ".agents", "skills", "direct-a")), false);
     const lock = JSON.parse(await readFile(path.join(project, ".agent-skills.lock.json"), "utf8"));

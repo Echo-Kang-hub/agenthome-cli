@@ -971,14 +971,6 @@ export async function dispatchCatalog(argumentsList, options = {}) {
     await commandCatalogAdd(remainingArguments, options);
     return;
   }
-  if (command === "use") {
-    // "use" is the legacy name for "add".
-    if (global) {
-      fail("agenthome catalog add does not accept a global scope");
-    }
-    await commandCatalogAdd(remainingArguments, options);
-    return;
-  }
   if (command === "default") {
     if (global || remainingArguments.length > 0) {
       fail("Usage: agenthome catalog default");
@@ -1092,10 +1084,6 @@ export async function dispatchSkills(argumentsList, options = {}) {
       fail("Usage: self-update");
     }
     await updateAgentHome(packageRoot);
-    return;
-  }
-  if (command === "uninstall-skill") {
-    await commandUninstallSkill(remainingArguments, commandOptions);
     return;
   }
   if (command === "uninstall" && remainingArguments.length === 0) {

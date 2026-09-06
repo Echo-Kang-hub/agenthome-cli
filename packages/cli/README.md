@@ -77,7 +77,7 @@ agenthome codex sessions status
 agenthome sessions git on|off|status # 便携会话的 Git 同步开关
 ```
 
-若同一会话在本机原生存储与便携存储中都有记录，启动时以项目便携版本为准（覆盖本机副本），并提示 `Portable session conflicts overwritten: N (kept project copies)`。便携存储不会自动回写原生存储；需要回写时显式执行 `agenthome <agent> sessions writeback`（旧命令名 `restore` 仍可用）。
+若同一会话在本机原生存储与项目内都有记录，`agenthome <agent>` 启动时以项目内的会话记录为准（覆盖本机副本）。运行 `agenthome claude` 优先使用项目内的会话记录；要用全局会话记录时，直接运行 `claude`（其他 Agent 同理直接运行官方 CLI）即可。项目内的会话记录不会自动回写本机原生存储；需要回写时显式执行 `agenthome <agent> sessions writeback`。
 
 > 项目会话可能包含提示词、源码、命令输出、路径与密钥；仅在可信仓库中提交会话。
 
@@ -102,7 +102,7 @@ agenthome skills -g development                 # 安装到全局作用域（ski
 agenthome skills uninstall development          # 卸载 Pack
 agenthome skills uninstall                      # 移除全部受管理 Skills
 agenthome skills add <owner/repo> [skill...]    # 从仓库直接安装外部 Skills
-agenthome skills remove <name...>               # 移除外部 Skills（旧名 uninstall-skill 仍可用）
+agenthome skills remove <name...>               # 移除外部 Skills
 agenthome skills tree [pack...]                 # 查看 catalog 内容树
 agenthome skills packs                          # 列出可用 Packs
 agenthome skills status [-g]                    # 当前安装状态

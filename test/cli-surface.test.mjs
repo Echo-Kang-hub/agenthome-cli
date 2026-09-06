@@ -261,6 +261,11 @@ test("agent sessions import and status work through the CLI", async () => {
       const invalid = runAgent(projectRoot, ["claude", "sessions", "bogus"], environment);
       assert.equal(invalid.status, 1);
       assert.match(invalid.stderr, /Usage: agenthome claude sessions \[import\|writeback\|status\]/);
+
+      // "restore" was renamed to "writeback" and is no longer accepted.
+      const legacyRestore = runAgent(projectRoot, ["claude", "sessions", "restore"], environment);
+      assert.equal(legacyRestore.status, 1);
+      assert.match(legacyRestore.stderr, /Usage: agenthome claude sessions \[import\|writeback\|status\]/);
     });
   });
 });
@@ -397,10 +402,10 @@ test("catalog add, default, and sync round-trip through the CLI", async () => {
         assert.match(used.stdout, /Install: agenthome skills install \[pack\.\.\.\]/);
         assert.match(used.stdout, /Run: agenthome catalog sync/);
 
-        // "use" is kept as the legacy alias for "add".
+        // "use" was renamed to "add" and is no longer accepted.
         const legacy = runAgent(projectRoot, ["catalog", "use", catalogRoot], environment);
-        assert.equal(legacy.status, 0, legacy.stderr);
-        assert.match(legacy.stdout, /Packs · 2/);
+        assert.equal(legacy.status, 1);
+        assert.match(legacy.stderr, /Usage: agenthome catalog <sync\|add\|select\|list\|default\|doctor\|update\|skill-add\|remove\|pack-add\|pack-remove\|source-add>/);
 
         const shown = runAgent(projectRoot, ["catalog", "default"], environment);
         assert.equal(shown.status, 0, shown.stderr);

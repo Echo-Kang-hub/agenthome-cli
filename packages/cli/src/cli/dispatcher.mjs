@@ -217,8 +217,7 @@ async function dispatchAgent(agentId, argumentsList) {
       throw new Error(`${agent.displayName} is not initialized. Run: agenthome ${agentId} init`);
     }
     const action = remainingArguments[0] ?? "status";
-    // "restore" is accepted as a legacy alias for "writeback".
-    if (remainingArguments.length > 1 || !["import", "writeback", "restore", "status"].includes(action)) {
+    if (remainingArguments.length > 1 || !["import", "writeback", "status"].includes(action)) {
       throw new Error(`Usage: agenthome ${agentId} sessions [import|writeback|status]`);
     }
     const adapter = getSessionAdapter(agentId);
@@ -228,12 +227,12 @@ async function dispatchAgent(agentId, argumentsList) {
       return 0;
     }
     const result = action === "import" ? await adapter.capture(projectRoot) : await adapter.restore(projectRoot);
-    console.log(`${agent.displayName} session ${action === "restore" ? "writeback" : action}\n`);
+    console.log(`${agent.displayName} session ${action}\n`);
     console.log(`Project   ${projectRoot}`);
     console.log(`Sessions  ${result.count}`);
     console.log(action === "import" ? `Portable  ${result.changed ? "Updated" : "Unchanged"}` : `Written back  ${result.added + result.updated}`);
     if (result.conflicts > 0) {
-      console.log(`Conflicts ${result.conflicts} (project copies overwrote local data)`);
+      console.log(`Conflicts ${result.conflicts} (project sessions overwrote native storage)`);
     }
     return 0;
   }
@@ -249,13 +248,11 @@ async function dispatchAgent(agentId, argumentsList) {
   const adapter = getSessionAdapter(agentId);
   const portableSessions = config.sessions !== "global";
   if (portableSessions) {
-    // Project portable sessions take priority: conflicting native copies are
-    // overwritten on launch. Native storage is never written to proactively;
-    // only `agenthome <agent> sessions writeback` writes portable -> native.
-    const restored = await adapter.restore(projectRoot, { environment });
-    if (restored.conflicts > 0) {
-      console.warn(`Portable session conflicts overwritten: ${restored.conflicts} (kept project copies)`);
-    }
+    // Project session records take priority on launch: conflicting native
+    // copies are overwritten silently. Native storage is never written to
+    // proactively; only `agenthome <agent> sessions writeback` writes
+    // project records back to native storage.
+    await adapter.restore(projectRoot, { environment });
   }
   const status = launchExecutable(agent.executable, argumentsList, { cwd: projectRoot, environment });
   if (portableSessions) {
