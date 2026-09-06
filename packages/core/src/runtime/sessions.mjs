@@ -6,8 +6,10 @@ import {
   readdir,
   rename,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -163,4 +165,78 @@ export async function readFirstJsonLine(file) {
 
 export function hashContent(content) {
   return createHash("sha256").update(content).digest("hex");
+}
+
+async function copyPath(source, destination) {
+  const stats = await stat(source);
+  if (stats.isDirectory()) {
+    await mkdir(destination, { recursive: true });
+    for (const entry of await readdir(source, { withFileTypes: true })) {
+      await copyPath(path.join(source, entry.name), path.join(destination, entry.name));
+    }
+  } else {
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, await readFile(source));
+  }
+}
+
+// Save a byte-for-byte copy of a file or directory outside the tree it lives
+// in, so the launch flow can restore the agent's native storage after the
+// run. Returns null when the path does not exist.
+export async function snapshotPath(source) {
+  if (!existsSync(source)) {
+    return null;
+  }
+  const temporary = path.join(
+    os.tmpdir(),
+    `agenthome-snapshot-${createHash("sha256").update(path.resolve(source)).digest("hex").slice(0, 12)}-${process.pid}-${Date.now()}`,
+  );
+  await rm(temporary, { recursive: true, force: true });
+  await copyPath(source, temporary);
+  return temporary;
+}
+
+// Restore the pre-launch state saved by snapshotPath: the path returns to
+// its snapshot content, or disappears entirely when it did not exist before.
+export async function revertPath(snapshot, source) {
+  if (snapshot === null) {
+    await rm(source, { recursive: true, force: true });
+    return;
+  }
+  await rm(source, { recursive: true, force: true });
+  await copyPath(snapshot, source);
+  await rm(snapshot, { recursive: true, force: true });
+}
+
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM"; // exists but owned by another user
+  }
+}
+
+// One agenthome launch per project+agent at a time: the launch flow snapshots
+// and reverts the agent's native storage, and concurrent launches would
+// overwrite each other's state. The lock lives in the OS temp directory and
+// is stolen when the recorded process is gone (crashed or killed).
+export async function acquireSessionLock(agentId, projectRoot) {
+  const key = createHash("sha256").update(`${path.resolve(projectRoot)}\n${agentId}`).digest("hex").slice(0, 16);
+  const lockFile = path.join(os.tmpdir(), `agenthome-launch-${key}.lock`);
+  let owner = null;
+  try {
+    owner = Number.parseInt((await readFile(lockFile, "utf8")).trim(), 10);
+  } catch {}
+  if (owner !== null && Number.isInteger(owner) && processAlive(owner)) {
+    throw new Error(`Another agenthome ${agentId} session is already running in this project`);
+  }
+  await writeFile(lockFile, `${process.pid}\n`, "utf8");
+  return async () => {
+    try {
+      if ((await readFile(lockFile, "utf8")).trim() === `${process.pid}`) {
+        await rm(lockFile, { force: true });
+      }
+    } catch {}
+  };
 }

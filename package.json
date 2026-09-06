@@ -1,7 +1,7 @@
 {
   "name": "agenthome-cli-monorepo",
   "license": "MIT",
-  "version": "5.7.4",
+  "version": "5.7.6",
   "private": true,
   "type": "module",
   "bin": {

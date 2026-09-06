@@ -26,7 +26,13 @@ import * as claudeSessions from "../packages/core/src/runtime/adapters/claude.mj
 import * as codexSessions from "../packages/core/src/runtime/adapters/codex.mjs";
 import * as opencodeSessions from "../packages/core/src/runtime/adapters/opencode.mjs";
 import { agentHomePackageSpec, updateAgentHome } from "../packages/cli/src/cli/self-update.mjs";
-import { PROJECT_ROOT_TOKEN, listFiles } from "../packages/core/src/runtime/sessions.mjs";
+import {
+  PROJECT_ROOT_TOKEN,
+  acquireSessionLock,
+  listFiles,
+  revertPath,
+  snapshotPath,
+} from "../packages/core/src/runtime/sessions.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cliPackageRoot = path.join(packageRoot, "packages", "cli");
@@ -49,6 +55,25 @@ async function fakeAgentBinary(projectRoot, agentId) {
   const script = windows
     ? "@\"\nCLAUDE_CONFIG_DIR=$env:CLAUDE_CONFIG_DIR\nCODEX_HOME=$env:CODEX_HOME\nXDG_CONFIG_HOME=$env:XDG_CONFIG_HOME\n\"@ | Set-Content -Path $env:OUT_FILE\n"
     : `#!/bin/sh\n{\n  echo "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR"\n  echo "CODEX_HOME=$CODEX_HOME"\n  echo "XDG_CONFIG_HOME=$XDG_CONFIG_HOME"\n} > "$OUT_FILE"\nexit 0\n`;
+  const executable = path.join(binDirectory, windows ? `${agentId}.ps1` : agentId);
+  await writeFile(executable, script);
+  if (!windows) {
+    const { chmod } = await import("node:fs/promises");
+    await chmod(executable, 0o755);
+  }
+  return binDirectory;
+}
+
+// Like fakeAgentBinary, but the agent writes a session record into its native
+// storage during the run, so the launch flow's capture and revert can be
+// observed end to end.
+async function fakeAgentWritesSession(projectRoot, agentId) {
+  const binDirectory = path.join(projectRoot, "bin-writer");
+  await mkdir(binDirectory, { recursive: true });
+  const windows = process.platform === "win32";
+  const script = windows
+    ? "$dir = Join-Path $env:CODEX_HOME 'sessions\\fake'\nNew-Item -ItemType Directory -Force -Path $dir | Out-Null\n$cwd = $env:PROJECT_ROOT -replace '\\\\', '/'\n$line = '{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-new\",\"cwd\":\"' + $cwd + '\"}}'\nSet-Content -Path (Join-Path $dir 'session.jsonl') -Value $line\n"
+    : `#!/bin/sh\nmkdir -p "$CODEX_HOME/sessions/fake"\nprintf '{"type":"session_meta","payload":{"id":"sess-new","cwd":"%s"}}\\n' "$PROJECT_ROOT" > "$CODEX_HOME/sessions/fake/session.jsonl"\nexit 0\n`;
   const executable = path.join(binDirectory, windows ? `${agentId}.ps1` : agentId);
   await writeFile(executable, script);
   if (!windows) {
@@ -417,6 +442,93 @@ test("Codex restore keeps portable sessions over divergent local copies", async 
   });
 });
 
+test("snapshot and revert restore native storage exactly", async () => {
+  await withTempProject(async (projectRoot) => {
+    const target = path.join(projectRoot, "native");
+    const file = path.join(target, "sub", "session.jsonl");
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, "before\n");
+
+    const snapshot = await snapshotPath(target);
+    await writeFile(file, "after\n");
+    await writeFile(path.join(target, "sub", "new.jsonl"), "new\n");
+    await revertPath(snapshot, target);
+    assert.equal(await readFile(file, "utf8"), "before\n");
+    assert.equal(existsSync(path.join(target, "sub", "new.jsonl")), false);
+
+    // A path that did not exist before stays absent after revert.
+    const absent = path.join(projectRoot, "absent");
+    const none = await snapshotPath(absent);
+    assert.equal(none, null);
+    await mkdir(absent, { recursive: true });
+    await revertPath(none, absent);
+    assert.equal(existsSync(absent), false);
+  });
+});
+
+test("session launch lock blocks concurrent launches and releases", async () => {
+  await withTempProject(async (projectRoot) => {
+    const release = await acquireSessionLock("codex", projectRoot);
+    await assert.rejects(acquireSessionLock("codex", projectRoot), /already running/);
+    // Other agents are not blocked.
+    const otherAgent = await acquireSessionLock("claude", projectRoot);
+    await otherAgent();
+    await release();
+    const again = await acquireSessionLock("codex", projectRoot);
+    await again();
+  });
+});
+
+test("Claude native snapshot and revert restore the pre-launch state", async () => {
+  await withTempProject(async (projectRoot) => {
+    const claudeHome = await mkdtemp(path.join(os.tmpdir(), "agent-runtime-claude-snap-"));
+    try {
+      const environment = { CLAUDE_CONFIG_DIR: claudeHome };
+      const native = path.join(claudeHome, "projects", claudeSessions.claudeProjectKey(projectRoot));
+      const sessionFile = path.join(native, "session.jsonl");
+      await mkdir(native, { recursive: true });
+      await writeFile(sessionFile, "global\n");
+
+      const snapshot = await claudeSessions.snapshotNative(projectRoot, { environment });
+      await writeFile(sessionFile, "project\n");
+      await writeFile(path.join(native, "new.jsonl"), "new\n");
+      await claudeSessions.revertNative(snapshot, projectRoot, { environment });
+
+      assert.equal(await readFile(sessionFile, "utf8"), "global\n");
+      assert.equal(existsSync(path.join(native, "new.jsonl")), false);
+    } finally {
+      await rm(claudeHome, { recursive: true, force: true });
+    }
+  });
+});
+
+test("Codex native snapshot and revert cover sessions and the index", async () => {
+  await withTempProject(async (projectRoot) => {
+    const codexHome = await mkdtemp(path.join(os.tmpdir(), "agent-runtime-codex-snap-"));
+    try {
+      const environment = { CODEX_HOME: codexHome };
+      const sessionDir = path.join(codexHome, "sessions", "2026", "09", "06");
+      const sessionFile = path.join(sessionDir, "rollout-1.jsonl");
+      const indexFile = path.join(codexHome, "session_index.jsonl");
+      await mkdir(sessionDir, { recursive: true });
+      await writeFile(sessionFile, "global\n");
+      await writeFile(indexFile, `${JSON.stringify({ id: "sess-1" })}\n`);
+
+      const snapshot = await codexSessions.snapshotNative(projectRoot, { environment });
+      await writeFile(sessionFile, "project\n");
+      await writeFile(path.join(sessionDir, "new.jsonl"), "new\n");
+      await writeFile(indexFile, `${JSON.stringify({ id: "sess-1" })}\n${JSON.stringify({ id: "sess-new" })}\n`);
+      await codexSessions.revertNative(snapshot, projectRoot, { environment });
+
+      assert.equal(await readFile(sessionFile, "utf8"), "global\n");
+      assert.equal(existsSync(path.join(sessionDir, "new.jsonl")), false);
+      assert.equal(await readFile(indexFile, "utf8"), `${JSON.stringify({ id: "sess-1" })}\n`);
+    } finally {
+      await rm(codexHome, { recursive: true, force: true });
+    }
+  });
+});
+
 test("OpenCode uses native export and imports each portable version once", async () => {
   await withTempProject(async (projectRoot) => {
     const calls = [];
@@ -507,6 +619,45 @@ test("global sessions leave native storage untouched on launch", async () => {
     runCli(projectRoot, "agenthome.mjs", ["codex", "init", "--sessions", "project"], environment);
     runCli(projectRoot, "agenthome.mjs", ["codex", "exec"], environment);
     assert.ok((await listFiles(portable)).length > 0, "project sessions must capture native sessions");
+  });
+});
+
+test("project sessions revert native storage after launch", async () => {
+  await withTempProject(async (projectRoot) => {
+    const binDirectory = await fakeAgentWritesSession(projectRoot, "codex");
+    const codexHome = path.join(projectRoot, "codex-home");
+    const sessionDirectory = path.join(codexHome, "sessions", "2026", "09", "06");
+    const rolloutFile = path.join(sessionDirectory, "rollout-1.jsonl");
+    const indexFile = path.join(codexHome, "session_index.jsonl");
+    await mkdir(sessionDirectory, { recursive: true });
+    await writeFile(rolloutFile, `${JSON.stringify({ type: "session_meta", payload: { id: "sess-1", cwd: projectRoot } })}\n`);
+    await writeFile(indexFile, `${JSON.stringify({ id: "sess-1" })}\n`);
+    const environment = {
+      ...process.env,
+      PATH: `${binDirectory}${path.delimiter}${process.env.PATH}`,
+      CODEX_HOME: codexHome,
+      PROJECT_ROOT: projectRoot,
+    };
+    const initialized = runCli(projectRoot, "agenthome.mjs", ["codex", "init"], environment);
+    assert.equal(initialized.status, 0, initialized.stderr);
+    const launched = runCli(projectRoot, "agenthome.mjs", ["codex", "exec"], environment);
+    assert.equal(launched.status, 0, launched.stderr);
+
+    // The session written during the run was captured into the project...
+    const captured = path.join(projectRoot, ".agents", "sessions", "codex", "sessions", "fake", "session.jsonl");
+    assert.equal(existsSync(captured), true, "launch must capture the session into the project");
+
+    // ...and the native storage returned to its pre-launch state.
+    assert.equal(
+      existsSync(path.join(codexHome, "sessions", "fake")),
+      false,
+      "native sessions written during the run must be reverted",
+    );
+    assert.equal(
+      await readFile(rolloutFile, "utf8"),
+      `${JSON.stringify({ type: "session_meta", payload: { id: "sess-1", cwd: projectRoot } })}\n`,
+    );
+    assert.equal(await readFile(indexFile, "utf8"), `${JSON.stringify({ id: "sess-1" })}\n`);
   });
 });
 

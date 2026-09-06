@@ -25,13 +25,16 @@ export { locateProjectRoot } from "./runtime/project-root.mjs";
 export { spawnExecutableSync } from "./runtime/process.mjs";
 export {
   PROJECT_ROOT_TOKEN,
+  acquireSessionLock,
   hashContent,
   listFiles,
   mergeFiles,
   readFirstJsonLine,
   replaceDirectory,
+  revertPath,
   samePath,
   snapshotFiles,
+  snapshotPath,
   transformJsonLines,
 } from "./runtime/sessions.mjs";
 export { getSessionAdapter } from "./runtime/adapters/index.mjs";

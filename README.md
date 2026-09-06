@@ -67,17 +67,23 @@ agenthome claude auth                # 查看当前生效的认证作用域
 
 ### 会话记录
 
-- `project`（默认）：启动前恢复、结束后捕获，会话保存在 `.agents/sessions/<agent>/`，可跨设备迁移。
-- `global`：会话直接留在 Agent 的原生全局存储。
+- `project`（默认）：启动前把项目内的会话记录提供给 Agent，退出后把本次会话写回 `.agents/sessions/<agent>/`（可跨设备迁移），并把本机原生存储恢复到启动前的状态。会话只更新在项目里，全局存储完全不受影响；删除项目后，会话随项目消失。
+- `global`：会话直接留在 Agent 的原生全局存储，不产生项目副本。
 
 ```bash
-agenthome codex sessions import      # 全局会话 → 项目便携存储（复制不删除）
-agenthome codex sessions writeback   # 便携存储 → 原生存储（显式回写）
+agenthome codex sessions import      # 全局会话 → 项目会话记录（复制不删除）
+agenthome codex sessions writeback   # 项目会话记录 → 原生存储（显式回写）
 agenthome codex sessions status
-agenthome sessions git on|off|status # 便携会话的 Git 同步开关
+agenthome sessions git on|off|status # 项目会话记录的 Git 同步开关
 ```
 
-若同一会话在本机原生存储与项目内都有记录，`agenthome <agent>` 启动时以项目内的会话记录为准（覆盖本机副本）。运行 `agenthome claude` 优先使用项目内的会话记录；要用全局会话记录时，直接运行 `claude`（其他 Agent 同理直接运行官方 CLI）即可。项目内的会话记录不会自动回写本机原生存储；需要回写时显式执行 `agenthome <agent> sessions writeback`。
+若同一会话在本机原生存储与项目内都有记录，`agenthome <agent>` 启动时以项目内的会话记录为准（覆盖本机副本）。运行 `agenthome claude` 优先使用项目内的会话记录；要用全局会话记录时，直接运行 `claude`（其他 Agent 同理直接运行官方 CLI）即可。
+
+项目内的会话记录不会自动回写本机原生存储；需要回写时显式执行 `agenthome <agent> sessions writeback`：原生存储中该项目的会话记录会被项目内记录覆盖；原生存储中没有该项目的会话记录时，则按 Agent 的原生目录结构创建后放入会话，效果与直接用官方 CLI 产生的会话一致。
+
+同一项目同一 Agent 同时只能启动一个 `agenthome` 会话（不同项目、不同 Agent 互不影响）。若 Agent 进程被强制中断，本机原生存储可能残留本次会话，下次启动时会以项目内记录为准并恢复。
+
+> OpenCode 例外：其会话存储由官方 CLI 自行管理，`agenthome opencode` 启动后原生存储仍保留本次运行产生的会话，不受上述回滚保护。
 
 > 项目会话可能包含提示词、源码、命令输出、路径与密钥；仅在可信仓库中提交会话。
 

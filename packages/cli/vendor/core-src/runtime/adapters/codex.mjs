@@ -9,7 +9,9 @@ import {
   mergeFiles,
   readFirstJsonLine,
   replaceDirectory,
+  revertPath,
   samePath,
+  snapshotPath,
   transformJsonLines,
 } from "../sessions.mjs";
 
@@ -122,4 +124,21 @@ export async function restore(projectRoot, options = {}) {
 export async function status(projectRoot) {
   const { portable } = locations(projectRoot);
   return { count: (await listFiles(path.join(portable, "sessions"))).filter((file) => file.endsWith(".jsonl")).length };
+}
+
+// Save the native sessions directory and session index so the launch flow
+// can restore them after the run: sessions created by `agenthome codex` must
+// live only in the project, never in the global native storage.
+export async function snapshotNative(projectRoot, options = {}) {
+  const { codexHome, nativeSessions } = locations(projectRoot, options.environment);
+  return {
+    sessions: await snapshotPath(nativeSessions),
+    index: await snapshotPath(path.join(codexHome, "session_index.jsonl")),
+  };
+}
+
+export async function revertNative(snapshot, projectRoot, options = {}) {
+  const { codexHome, nativeSessions } = locations(projectRoot, options.environment);
+  await revertPath(snapshot.index, path.join(codexHome, "session_index.jsonl"));
+  await revertPath(snapshot.sessions, nativeSessions);
 }

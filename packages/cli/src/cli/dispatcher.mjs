@@ -3,6 +3,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import {
   AGENTS,
+  acquireSessionLock,
   clearLocalAuth,
   deinitializeAgent,
   effectiveAgentConfig,
@@ -247,16 +248,52 @@ async function dispatchAgent(agentId, argumentsList) {
     : process.env;
   const adapter = getSessionAdapter(agentId);
   const portableSessions = config.sessions !== "global";
+  let releaseLock = null;
+  let nativeSnapshot = null;
   if (portableSessions) {
     // Project session records take priority on launch: conflicting native
     // copies are overwritten silently. Native storage is never written to
     // proactively; only `agenthome <agent> sessions writeback` writes
     // project records back to native storage.
-    await adapter.restore(projectRoot, { environment });
+    releaseLock = await acquireSessionLock(agentId, projectRoot);
+    const isolatesNative = typeof adapter.snapshotNative === "function"
+      && typeof adapter.revertNative === "function";
+    try {
+      if (isolatesNative) {
+        nativeSnapshot = await adapter.snapshotNative(projectRoot, { environment });
+      }
+      await adapter.restore(projectRoot, { environment });
+    } catch (error) {
+      try {
+        if (nativeSnapshot !== null) {
+          await adapter.revertNative(nativeSnapshot, projectRoot, { environment });
+        }
+      } finally {
+        await releaseLock();
+      }
+      throw error;
+    }
   }
-  const status = launchExecutable(agent.executable, argumentsList, { cwd: projectRoot, environment });
-  if (portableSessions) {
-    await adapter.capture(projectRoot, { environment });
+  let status;
+  try {
+    status = launchExecutable(agent.executable, argumentsList, { cwd: projectRoot, environment });
+  } finally {
+    if (portableSessions) {
+      try {
+        await adapter.capture(projectRoot, { environment });
+      } finally {
+        try {
+          // Sessions created during the run live only in the project: the
+          // native storage returns to its pre-launch state, so global
+          // sessions are never touched by an agenthome launch.
+          if (nativeSnapshot !== null) {
+            await adapter.revertNative(nativeSnapshot, projectRoot, { environment });
+          }
+        } finally {
+          await releaseLock();
+        }
+      }
+    }
   }
   return status;
 }
