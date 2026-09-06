@@ -78,7 +78,7 @@ test("skills add installs direct public sources into project scope", async () =>
     const upstream = path.join(root, "upstream");
     await mkdir(project);
     const revision = await upstreamFixture(upstream, ["direct-a", "direct-b"]);
-    const environment = { AGENTHOME_STATE_DIR: state };
+    const environment = { AVENIC_STATE_DIR: state };
     const added = runAgent(project, ["skills", "add", upstream], environment);
     assert.equal(added.status, 0, added.stderr);
     for (const name of ["direct-a", "direct-b"]) {
@@ -105,7 +105,7 @@ test("skills add supports single skill and remove clears direct state", async ()
     const upstream = path.join(root, "upstream");
     await mkdir(project);
     await upstreamFixture(upstream, ["direct-a", "direct-b"]);
-    const environment = { AGENTHOME_STATE_DIR: state };
+    const environment = { AVENIC_STATE_DIR: state };
     const added = runAgent(project, ["skills", "add", upstream, "direct-a"], environment);
     assert.equal(added.status, 0, added.stderr);
     assert.equal(existsSync(path.join(project, ".agents", "skills", "direct-a")), true);
@@ -127,7 +127,7 @@ test("skills add refuses skills managed by catalog Packs", async () => {
     await mkdir(project);
     await catalogFixture(catalog);
     await upstreamFixture(upstream, ["alpha", "direct-b"]);
-    const environment = { AGENTHOME_CATALOG_SPEC: catalog, AGENTHOME_STATE_DIR: state };
+    const environment = { AVENIC_CATALOG_SPEC: catalog, AVENIC_STATE_DIR: state };
     const installed = runAgent(project, ["skills", "common"], environment);
     assert.equal(installed.status, 0, installed.stderr);
     const refused = runAgent(project, ["skills", "add", upstream, "alpha"], environment);
@@ -142,7 +142,7 @@ test("skills add rejects refs on direct sources instead of a git error", async (
     const state = path.join(root, "state");
     await mkdir(project);
     const refused = runAgent(project, ["skills", "add", "example/skills#main"], {
-      AGENTHOME_STATE_DIR: state,
+      AVENIC_STATE_DIR: state,
     });
     assert.equal(refused.status, 1);
     assert.match(refused.stderr, /Refs are not supported/);
@@ -158,7 +158,7 @@ test("skills add fails clearly when upstream has no Skills", async () => {
     await mkdir(upstream);
     await writeFile(path.join(upstream, "README.md"), "empty upstream\n");
     await commitAll(upstream, "empty");
-    const refused = runAgent(project, ["skills", "add", upstream], { AGENTHOME_STATE_DIR: state });
+    const refused = runAgent(project, ["skills", "add", upstream], { AVENIC_STATE_DIR: state });
     assert.equal(refused.status, 1);
     assert.match(refused.stderr, /No Skill/);
   });

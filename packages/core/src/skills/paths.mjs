@@ -14,13 +14,23 @@ export const PROJECT_TARGETS = [
   },
 ];
 
-export function stateRoot(environment = process.env) {
-  if (environment.AGENTHOME_STATE_DIR) {
-    return environment.AGENTHOME_STATE_DIR;
+// Read an environment variable under its current name, falling back to a
+// deprecated legacy name with a deprecation warning on stderr.
+export function deprecatedEnvironmentValue(environment, primary, legacy) {
+  if (environment[primary]) return environment[primary];
+  if (environment[legacy]) {
+    console.warn(`Environment variable ${legacy} is deprecated; use ${primary}`);
+    return environment[legacy];
   }
+  return undefined;
+}
+
+export function stateRoot(environment = process.env) {
+  const override = deprecatedEnvironmentValue(environment, "AVENIC_STATE_DIR", "AGENTHOME_STATE_DIR");
+  if (override) return override;
   return path.join(
     environment.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
-    "agent-skills",
+    "avenic", // Renamed from "agent-skills"; migrating existing directories is a later task.
   );
 }
 

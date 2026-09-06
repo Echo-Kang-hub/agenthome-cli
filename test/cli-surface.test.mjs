@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 // End-to-end coverage of the full CLI command surface. Every command position
 // (main, agent runtime, skills, catalog, maintenance) is exercised through the
-// real entry point; network access is avoided by pointing AGENTHOME_CATALOG_SPEC
+// real entry point; network access is avoided by pointing AVENIC_CATALOG_SPEC
 // at local git fixtures and by faking npm for self-update fallbacks.
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -81,7 +81,7 @@ async function createUpstreamFixture(root) {
 }
 
 function catalogEnvironment(catalogRoot, stateRoot) {
-  return { AGENTHOME_CATALOG_SPEC: catalogRoot, AGENTHOME_STATE_DIR: stateRoot };
+  return { AVENIC_CATALOG_SPEC: catalogRoot, AVENIC_STATE_DIR: stateRoot };
 }
 
 // A fake npm on PATH that records its arguments, so self-update fallbacks can be
@@ -389,7 +389,7 @@ test("catalog add, default, and sync round-trip through the CLI", async () => {
     await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
       await withTempDirectory("agenthome-state-", async (stateRoot) => {
         await createCatalogFixture(catalogRoot);
-        const environment = { AGENTHOME_STATE_DIR: stateRoot };
+        const environment = { AVENIC_STATE_DIR: stateRoot };
 
         const used = runAgent(projectRoot, ["catalog", "add", catalogRoot], environment);
         assert.equal(used.status, 0, used.stderr);
@@ -431,7 +431,7 @@ test("catalog add, default, and sync round-trip through the CLI", async () => {
 test("catalog add keeps the spec saved when the preview fetch fails", async () => {
   await withTempDirectory("agenthome-catalog-cli-", async (projectRoot) => {
     await withTempDirectory("agenthome-state-", async (stateRoot) => {
-      const environment = { AGENTHOME_STATE_DIR: stateRoot };
+      const environment = { AVENIC_STATE_DIR: stateRoot };
       const missing = path.join(projectRoot, "no-such-catalog");
 
       const used = runAgent(projectRoot, ["catalog", "add", missing], environment);
@@ -485,7 +485,7 @@ test("catalog list and select switch between registered catalogs", async () => {
         await withTempDirectory("agenthome-state-", async (stateRoot) => {
           await createCatalogFixture(catalogA);
           await createCatalogFixture(catalogB);
-          const environment = { AGENTHOME_STATE_DIR: stateRoot };
+          const environment = { AVENIC_STATE_DIR: stateRoot };
           const nameA = path.basename(catalogA);
           const nameB = path.basename(catalogB);
 
@@ -520,7 +520,7 @@ test("catalog list and select switch between registered catalogs", async () => {
 
           // A fresh state seeds the registry with the configured catalog.
           const freshList = runAgent(projectRoot, ["catalog", "list"], {
-            AGENTHOME_STATE_DIR: path.join(stateRoot, "fresh"),
+            AVENIC_STATE_DIR: path.join(stateRoot, "fresh"),
           });
           assert.equal(freshList.status, 0, freshList.stderr);
           assert.match(freshList.stdout, /Echo-Kang-hub\/agenthome-catalog/);

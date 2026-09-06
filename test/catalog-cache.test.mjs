@@ -57,7 +57,7 @@ test("ensureCatalog clones once, reuses, and pins revisions", async () => {
     const catalog = path.join(root, "catalog");
     const state = path.join(root, "state");
     await fixtureCatalog(catalog);
-    const first = await ensureCatalog(catalog, { environment: { AGENTHOME_STATE_DIR: state } });
+    const first = await ensureCatalog(catalog, { environment: { AVENIC_STATE_DIR: state } });
     assert.equal(first.spec, catalog);
     assert.equal(first.catalogRoot.startsWith(path.join(state, "catalog") + path.sep), true);
     assert.equal(path.basename(first.catalogRoot).endsWith("-catalog"), true);
@@ -67,11 +67,11 @@ test("ensureCatalog clones once, reuses, and pins revisions", async () => {
     git(catalog, ["add", "-A"]);
     git(catalog, ["-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "-m", "two"]);
 
-    const pinned = await ensureCatalog(`${catalog}#${first.revision}`, { environment: { AGENTHOME_STATE_DIR: state } });
+    const pinned = await ensureCatalog(`${catalog}#${first.revision}`, { environment: { AVENIC_STATE_DIR: state } });
     assert.equal(pinned.revision, first.revision);
     assert.match(await readFile(path.join(pinned.catalogRoot, "skills", "s", "SKILL.md"), "utf8"), /v1/);
 
-    const latest = await ensureCatalog(catalog, { environment: { AGENTHOME_STATE_DIR: state } });
+    const latest = await ensureCatalog(catalog, { environment: { AVENIC_STATE_DIR: state } });
     assert.notEqual(latest.revision, first.revision);
     assert.match(await readFile(path.join(latest.catalogRoot, "skills", "s", "SKILL.md"), "utf8"), /v2/);
   });
@@ -81,7 +81,7 @@ test("ensureCatalog failure message mentions gh auth login", async () => {
   await withTemp("catalog-fail-", async (root) => {
     const state = path.join(root, "state");
     await assert.rejects(
-      () => ensureCatalog(path.join(root, "missing-repo"), { environment: { AGENTHOME_STATE_DIR: state } }),
+      () => ensureCatalog(path.join(root, "missing-repo"), { environment: { AVENIC_STATE_DIR: state } }),
       /gh auth login/,
     );
   });
@@ -89,11 +89,11 @@ test("ensureCatalog failure message mentions gh auth login", async () => {
 
 test("catalog spec storage and sync manage the default spec", async () => {
   await withTemp("catalog-default-", async (root) => {
-    const environment = { AGENTHOME_STATE_DIR: root };
+    const environment = { AVENIC_STATE_DIR: root };
     assert.equal(await loadDefaultCatalogSpec(environment), "Echo-Kang-hub/agenthome-catalog#main");
     await setDefaultCatalogSpec(environment, "my/private#abc123");
     assert.equal(await loadDefaultCatalogSpec(environment), "my/private#abc123");
-    const overridden = { AGENTHOME_STATE_DIR: root, AGENTHOME_CATALOG_SPEC: "env/repo" };
+    const overridden = { AVENIC_STATE_DIR: root, AVENIC_CATALOG_SPEC: "env/repo" };
     assert.equal(await loadDefaultCatalogSpec(overridden), "env/repo");
   });
 });
@@ -101,7 +101,7 @@ test("catalog spec storage and sync manage the default spec", async () => {
 test("registerCatalog saves the spec and tolerates preview failure", async () => {
   await withTemp("catalog-register-", async (root) => {
     const state = path.join(root, "state");
-    const environment = { AGENTHOME_STATE_DIR: state };
+    const environment = { AVENIC_STATE_DIR: state };
     const missing = path.join(root, "no-such-catalog");
     const failed = await registerCatalog(missing, { environment, io: { log() {} } });
     assert.equal(failed.previewFailed, true);

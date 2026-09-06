@@ -22,7 +22,7 @@ import {
   ensureRuntimeGitignore,
   sessionsGitIgnored,
 } from "../packages/core/src/runtime/gitignore.mjs";
-import { agentExecutableAvailable } from "../packages/core/src/index.mjs";
+import { agentExecutableAvailable, stateRoot } from "../packages/core/src/index.mjs";
 import { locateProjectRoot } from "../packages/core/src/runtime/project-root.mjs";
 import * as claudeSessions from "../packages/core/src/runtime/adapters/claude.mjs";
 import * as codexSessions from "../packages/core/src/runtime/adapters/codex.mjs";
@@ -811,4 +811,9 @@ test("agentExecutableAvailable probes the official CLI on PATH", async () => {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("stateRoot prefers AVENIC_STATE_DIR and falls back to AGENTHOME_STATE_DIR", () => {
+  assert.equal(stateRoot({ AVENIC_STATE_DIR: "/x" }), "/x");
+  assert.equal(stateRoot({ AGENTHOME_STATE_DIR: "/legacy" }), "/legacy");
 });

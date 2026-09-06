@@ -67,7 +67,7 @@ async function createCatalogFixture(root) {
 }
 
 function catalogEnvironment(catalogRoot, stateRoot) {
-  return { AGENTHOME_CATALOG_SPEC: catalogRoot, AGENTHOME_STATE_DIR: stateRoot };
+  return { AVENIC_CATALOG_SPEC: catalogRoot, AVENIC_STATE_DIR: stateRoot };
 }
 
 test("Pack uninstall prunes only Skills no longer selected", async () => {
@@ -230,7 +230,7 @@ test("resolveInstallSource pins the lock revision unless refreshing", async () =
     const state = path.join(root, "state");
     const catalog = path.join(root, "catalog");
     await fixtureCatalog(catalog);
-    const environment = { ...process.env, AGENTHOME_STATE_DIR: state };
+    const environment = { ...process.env, AVENIC_STATE_DIR: state };
     await setDefaultCatalogSpec(environment, catalog);
     const first = await resolveInstallSource({ cwd: root, environment }, {});
     assert.equal(first.revision.length, 40);
@@ -256,7 +256,7 @@ test("installPacks installs the resolved packs and writes metadata", async () =>
     const state = path.join(root, "state");
     const catalog = path.join(root, "catalog");
     await fixtureCatalog(catalog);
-    const environment = { ...process.env, AGENTHOME_STATE_DIR: state };
+    const environment = { ...process.env, AVENIC_STATE_DIR: state };
     await setDefaultCatalogSpec(environment, catalog);
     const context = createInstallContext(false, { cwd: root, environment });
     const planned = [];
@@ -279,7 +279,7 @@ test("uninstallPacks keeps common and reinstalls remaining packs", async () => {
     const state = path.join(root, "state");
     const catalog = path.join(root, "catalog");
     await fixtureCatalog(catalog);
-    const environment = { ...process.env, AGENTHOME_STATE_DIR: state };
+    const environment = { ...process.env, AVENIC_STATE_DIR: state };
     await setDefaultCatalogSpec(environment, catalog);
     const context = createInstallContext(false, { cwd: root, environment });
     await installPacks(context, ["development"], { io: { log() {} } });

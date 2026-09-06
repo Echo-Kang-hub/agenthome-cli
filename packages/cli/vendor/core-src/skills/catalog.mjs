@@ -6,7 +6,7 @@ import { fail } from "../util/fail.mjs";
 import { readJson } from "../util/json.mjs";
 import { git, normalizeRepositoryInput, repositoryIdentity } from "./git.mjs";
 import { loadPacks } from "./packs.mjs";
-import { catalogCacheRoot, defaultCatalogFile, knownCatalogsFile } from "./paths.mjs";
+import { catalogCacheRoot, defaultCatalogFile, deprecatedEnvironmentValue, knownCatalogsFile } from "./paths.mjs";
 
 const DEFAULT_CATALOG_SPEC = "Echo-Kang-hub/agenthome-catalog#main";
 
@@ -21,8 +21,9 @@ export function parseCatalogSpec(spec) {
 }
 
 export async function loadDefaultCatalogSpec(environment = process.env) {
-  if (environment.AGENTHOME_CATALOG_SPEC) {
-    return environment.AGENTHOME_CATALOG_SPEC;
+  const catalogSpec = deprecatedEnvironmentValue(environment, "AVENIC_CATALOG_SPEC", "AGENTHOME_CATALOG_SPEC");
+  if (catalogSpec) {
+    return catalogSpec;
   }
   const file = defaultCatalogFile(environment);
   if (existsSync(file)) {
