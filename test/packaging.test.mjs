@@ -34,6 +34,6 @@ test("published bin names avoid shell collisions", async () => {
   const manifest = JSON.parse(await readFile(path.join(packageRoot, "packages", "cli", "package.json"), "utf8"));
   assert.deepEqual(
     Object.keys(manifest.bin).sort(),
-    ["agenthome", "ahome"],
+    ["agenthome", "ah"],
   );
 });

@@ -2,7 +2,7 @@
 
 一个命令行工具，统一管理编码 Agent 的**运行时**（Claude Code / Codex / OpenCode）与 **Skills**，支持 Windows、Ubuntu 和 macOS。
 
-主命令是 `agenthome`，简写 `ahome`——只有这两个单词，且不与任何 shell 内置命令或别名冲突。
+主命令是 `agenthome`，简写 `ah`——只有这两个单词，且不与任何 shell 内置命令或别名冲突。
 
 ## 功能
 
@@ -25,7 +25,7 @@
 npm install -g agenthome-cli
 ```
 
-安装后可用两个命令：`agenthome`（主）与 `ahome`（简写）。AgentHome 只使用 npm 标准 `bin`，不修改 NVM、Node、npm 或 PATH。
+安装后可用两个命令：`agenthome`（主）与 `ah`（简写）。AgentHome 只使用 npm 标准 `bin`，不修改 NVM、Node、npm 或 PATH。
 
 卸载：`npm uninstall -g agenthome-cli`
 
@@ -46,9 +46,9 @@ agenthome skills add <owner/repo>                # 从任意 GitHub 仓库直接
 
 | Agent | 全写 | 简写 |
 |---|---|---|
-| Claude Code | `agenthome claude` | `ahome claude` |
-| Codex | `agenthome codex` | `ahome codex` |
-| OpenCode | `agenthome opencode` | `ahome opencode` |
+| Claude Code | `agenthome claude` | `ah claude` |
+| Codex | `agenthome codex` | `ah codex` |
+| OpenCode | `agenthome opencode` | `ah opencode` |
 
 ```bash
 agenthome claude init [--auth global|project] [--sessions global|project]

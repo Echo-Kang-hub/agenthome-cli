@@ -6,7 +6,7 @@
   "type": "module",
   "bin": {
     "agenthome": "packages/cli/scripts/skills.mjs",
-    "ahome": "packages/cli/scripts/skills.mjs"
+    "ah": "packages/cli/scripts/skills.mjs"
   },
   "scripts": {
     "sync-core": "node scripts/sync-core.mjs",

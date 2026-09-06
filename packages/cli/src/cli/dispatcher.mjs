@@ -61,7 +61,7 @@ function takeOption(argumentsList, option) {
 export function printHelp(io = console) {
   io.log(`AgentHome
 
-CLI: agenthome (shorthand: ahome)
+CLI: agenthome (shorthand: ah)
 
 Agent runtimes:
   agenthome <claude|codex|opencode> init [--auth global|project] [--sessions global|project]
@@ -177,7 +177,7 @@ async function dispatchAgent(agentId, argumentsList) {
     console.log(`Data      ${result.purged ? "Purged" : "Preserved"}`);
     console.log(`Agents    ${result.remaining} remaining`);
     if (!purge) {
-      console.log(`\nReinitialize later without losing portable sessions:\n  agent ${agentId} init`);
+      console.log(`\nReinitialize later without losing portable sessions:\n  agenthome ${agentId} init`);
     }
     return 0;
   }
@@ -188,7 +188,7 @@ async function dispatchAgent(agentId, argumentsList) {
       return 0;
     }
     if (remainingArguments.length !== 1) {
-      throw new Error(`Usage: agent ${agentId} auth [global|project|reset]`);
+      throw new Error(`Usage: agenthome ${agentId} auth [global|project|reset]`);
     }
     const mode = remainingArguments[0];
     const config = mode === "reset"
@@ -213,7 +213,7 @@ async function dispatchAgent(agentId, argumentsList) {
     }
     const action = remainingArguments[0] ?? "status";
     if (remainingArguments.length > 1 || !["import", "restore", "status"].includes(action)) {
-      throw new Error(`Usage: agent ${agentId} sessions [import|restore|status]`);
+      throw new Error(`Usage: agenthome ${agentId} sessions [import|restore|status]`);
     }
     const adapter = getSessionAdapter(agentId);
     if (action === "status") {

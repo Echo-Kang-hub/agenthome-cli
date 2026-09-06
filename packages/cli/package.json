@@ -11,7 +11,7 @@
   },
   "bin": {
     "agenthome": "scripts/skills.mjs",
-    "ahome": "scripts/skills.mjs"
+    "ah": "scripts/skills.mjs"
   },
   "scripts": {
     "prepack": "node ../../scripts/sync-core.mjs"

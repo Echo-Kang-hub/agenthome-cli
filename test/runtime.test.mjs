@@ -264,12 +264,27 @@ test("init reports the created structure and how to use it", async () => {
   });
 });
 
+test("init is fully decoupled from the catalog and network", async () => {
+  await withTempProject(async (projectRoot) => {
+    // Point PATH/Path at an empty directory: if init ever invoked git (or any
+    // other tool) the call would fail with ENOENT, and a catalog fetch would
+    // raise an SSL/authentication error. Init must never touch either.
+    const emptyBin = path.join(projectRoot, "empty-bin");
+    await mkdir(emptyBin);
+    const environment = { ...process.env, PATH: emptyBin, Path: emptyBin };
+    const init = runCli(projectRoot, "agenthome.mjs", ["claude", "init", "--auth", "project"], environment);
+    assert.equal(init.status, 0, init.stderr);
+    assert.match(init.stdout, /Changed:/);
+    assert.doesNotMatch(`${init.stdout}${init.stderr}`, /catalog|Unable to fetch|git failed/i);
+  });
+});
+
 test("help works from the main and agent positions", async () => {
   await withTempProject(async (projectRoot) => {
     const main = runCli(projectRoot, "agenthome.mjs", ["--help"]);
     assert.equal(main.status, 0, main.stderr);
     assert.match(main.stdout, /agenthome <claude\|codex\|opencode> init/);
-    assert.match(main.stdout, /shorthand: ahome/);
+    assert.match(main.stdout, /shorthand: ah/);
     assert.match(main.stdout, /self-update/);
     const agent = runCli(projectRoot, "agenthome.mjs", ["claude", "--help"]);
     assert.equal(agent.status, 0, agent.stderr);
