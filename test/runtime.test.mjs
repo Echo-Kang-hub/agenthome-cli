@@ -27,7 +27,7 @@ import { locateProjectRoot } from "../packages/core/src/runtime/project-root.mjs
 import * as claudeSessions from "../packages/core/src/runtime/adapters/claude.mjs";
 import * as codexSessions from "../packages/core/src/runtime/adapters/codex.mjs";
 import * as opencodeSessions from "../packages/core/src/runtime/adapters/opencode.mjs";
-import { agentHomePackageSpec, updateAgentHome } from "../packages/cli/src/cli/self-update.mjs";
+import { avenicPackageSpec, updateAvenic } from "../packages/cli/src/cli/self-update.mjs";
 import {
   PROJECT_ROOT_TOKEN,
   acquireSessionLease,
@@ -287,7 +287,7 @@ test("init reports the created structure and how to use it", async () => {
     assert.match(first.stdout, /\.gitignore/);
     assert.match(first.stdout, /\.agents\/sessions\/claude/);
     assert.match(first.stdout, /\.agents\/local\/claude/);
-    assert.match(first.stdout, /agenthome claude deinit/);
+    assert.match(first.stdout, /avenic claude deinit/);
     assert.doesNotMatch(first.stdout, /Already up to date/);
   });
 });
@@ -311,8 +311,8 @@ test("help works from the main and agent positions", async () => {
   await withTempProject(async (projectRoot) => {
     const main = runCli(projectRoot, "agenthome.mjs", ["--help"]);
     assert.equal(main.status, 0, main.stderr);
-    assert.match(main.stdout, /agenthome <claude\|codex\|opencode> init/);
-    assert.match(main.stdout, /shorthand: ah/);
+    assert.match(main.stdout, /avenic <claude\|codex\|opencode> init/);
+    assert.match(main.stdout, /shorthand: ave/);
     assert.match(main.stdout, /self-update/);
     const agent = runCli(projectRoot, "agenthome.mjs", ["claude", "--help"]);
     assert.equal(agent.status, 0, agent.stderr);
@@ -779,8 +779,8 @@ test("project sessions revert native storage after launch", async () => {
 
 test("self update reinstalls the published npm package globally", async () => {
   const calls = [];
-  const packageSpec = await agentHomePackageSpec(cliPackageRoot);
-  const result = await updateAgentHome(cliPackageRoot, {
+  const packageSpec = await avenicPackageSpec(cliPackageRoot);
+  const result = await updateAvenic(cliPackageRoot, {
     spawn(executable, argumentsList) {
       calls.push({ executable, argumentsList });
       return { status: 0 };

@@ -107,7 +107,7 @@ export async function ensureCatalog(spec, options = {}) {
     fail(
       `${error.message}\nUnable to fetch catalog: ${spec}\n` +
       "Check your GitHub authentication (gh auth login, SSH key, or credential helper) and the catalog spec.\n" +
-      "To point AgentHome at your own catalog: agenthome catalog add <owner/repo>",
+      "To point Avenic at your own catalog: avenic catalog add <owner/repo>",
     );
   }
 }

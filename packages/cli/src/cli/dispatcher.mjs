@@ -23,7 +23,7 @@ import {
   validateSessionsMode,
 } from "#core";
 import { dispatchCatalog, dispatchSkills } from "./skills-cli.mjs";
-import { updateAgentHome } from "./self-update.mjs";
+import { updateAvenic } from "./self-update.mjs";
 import { spawnSessionWatchdog } from "./watchdog.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -55,45 +55,45 @@ function takeOption(argumentsList, option) {
 }
 
 export function printHelp(io = console) {
-  io.log(`AgentHome
+  io.log(`Avenic
 
-CLI: agenthome (shorthand: ah)
+CLI: avenic (shorthand: ave)
 
 Agent runtimes:
-  agenthome <claude|codex|opencode> init [--auth global|project] [--sessions global|project]
-  agenthome <claude|codex|opencode> deinit [--purge]
-  agenthome <claude|codex|opencode> auth [global|project|reset]
-  agenthome <claude|codex|opencode> status
-  agenthome <claude|codex|opencode> sessions [import|writeback|status]
-  agenthome <claude|codex|opencode> [official CLI arguments...]
-  agenthome sessions git [on|off|status]
-  agenthome status                       Show all three agents
-  agenthome doctor                       Check the environment
+  avenic <claude|codex|opencode> init [--auth global|project] [--sessions global|project]
+  avenic <claude|codex|opencode> deinit [--purge]
+  avenic <claude|codex|opencode> auth [global|project|reset]
+  avenic <claude|codex|opencode> status
+  avenic <claude|codex|opencode> sessions [import|writeback|status]
+  avenic <claude|codex|opencode> [official CLI arguments...]
+  avenic sessions git [on|off|status]
+  avenic status                       Show all three agents
+  avenic doctor                       Check the environment
 
 Skills:
-  agenthome skills install [pack...]     Install or sync Packs (default: common)
-  agenthome skills [pack...]             Shorthand for skills install
-  agenthome skills add <owner/repo> [skill...] [-g]    Install directly from a GitHub repo
-  agenthome skills remove <skill...>     Remove external, unmanaged Skills
-  agenthome skills uninstall <pack...>   Remove Packs and unneeded managed Skills
-  agenthome skills uninstall             Remove all managed Skills
-  agenthome skills tree [pack...]        Show source -> Skill tree
-  agenthome skills packs                 List available Packs
-  agenthome skills status [-g]           Show the installed tree
+  avenic skills install [pack...]     Install or sync Packs (default: common)
+  avenic skills [pack...]             Shorthand for skills install
+  avenic skills add <owner/repo> [skill...] [-g]    Install directly from a GitHub repo
+  avenic skills remove <skill...>     Remove external, unmanaged Skills
+  avenic skills uninstall <pack...>   Remove Packs and unneeded managed Skills
+  avenic skills uninstall             Remove all managed Skills
+  avenic skills tree [pack...]        Show source -> Skill tree
+  avenic skills packs                 List available Packs
+  avenic skills status [-g]           Show the installed tree
   -g, --global                           Use the global user scope
 
 Catalog:
-  agenthome catalog add <spec>           Add a catalog source (owner/repo[#ref], URL, or local path) and preview its Packs
-  agenthome catalog select [name|spec]   Pick the current catalog from registered ones (↑/↓, Enter)
-  agenthome catalog list                 List registered catalogs
-  agenthome catalog sync                 Fetch or update the cached catalog
-  agenthome catalog default              Show the configured catalog spec
+  avenic catalog add <spec>           Add a catalog source (owner/repo[#ref], URL, or local path) and preview its Packs
+  avenic catalog select [name|spec]   Pick the current catalog from registered ones (↑/↓, Enter)
+  avenic catalog list                 List registered catalogs
+  avenic catalog sync                 Fetch or update the cached catalog
+  avenic catalog default              Show the configured catalog spec
   Private repos use your local git credentials (gh auth login or SSH)
-  agenthome catalog doctor|update|skill-add|remove|pack-add|pack-remove|source-add
+  avenic catalog doctor|update|skill-add|remove|pack-add|pack-remove|source-add
                                          (run inside your catalog Git clone)
 
-Update AgentHome:
-  agenthome self-update
+Update Avenic:
+  avenic self-update
 `);
 }
 
@@ -131,7 +131,7 @@ async function dispatchAgent(agentId, argumentsList) {
       throw new Error(`Unknown option: ${initArguments[0]}`);
     }
     const result = await initializeAgent(projectRoot, agentId, authMode, sessionsMode);
-    console.log("AgentHome Runtime\n");
+    console.log("Avenic Runtime\n");
     console.log(`Agent           ${agent.displayName}`);
     console.log(`Project         ${projectRoot}`);
     console.log(`Authentication  ${result.authMode}`);
@@ -155,10 +155,10 @@ async function dispatchAgent(agentId, argumentsList) {
       }
     }
     console.log(`\nUsage:
-  agenthome ${agentId}              Launch ${agent.displayName}
-  agenthome ${agentId} status       Show configuration
-  agenthome ${agentId} deinit       Undo init (--purge also deletes data)
-  agenthome ${agentId} auth         Switch global/project authentication\n`);
+  avenic ${agentId}              Launch ${agent.displayName}
+  avenic ${agentId} status       Show configuration
+  avenic ${agentId} deinit       Undo init (--purge also deletes data)
+  avenic ${agentId} auth         Switch global/project authentication\n`);
     console.log(
       "Project sessions may contain prompts, source code, command output, file paths, and secrets. Only commit sessions to repositories you trust.\n",
     );
@@ -178,7 +178,7 @@ async function dispatchAgent(agentId, argumentsList) {
     console.log(`Data      ${result.purged ? "Purged" : "Preserved"}`);
     console.log(`Agents    ${result.remaining} remaining`);
     if (!purge) {
-      console.log(`\nReinitialize later without losing portable sessions:\n  agenthome ${agentId} init`);
+      console.log(`\nReinitialize later without losing portable sessions:\n  avenic ${agentId} init`);
     }
     return 0;
   }
@@ -189,7 +189,7 @@ async function dispatchAgent(agentId, argumentsList) {
       return 0;
     }
     if (remainingArguments.length !== 1) {
-      throw new Error(`Usage: agenthome ${agentId} auth [global|project|reset]`);
+      throw new Error(`Usage: avenic ${agentId} auth [global|project|reset]`);
     }
     const mode = remainingArguments[0];
     const config = mode === "reset"
@@ -210,11 +210,11 @@ async function dispatchAgent(agentId, argumentsList) {
   if (command === "sessions") {
     const state = await loadRuntime(projectRoot);
     if (!effectiveAgentConfig(state, agentId)) {
-      throw new Error(`${agent.displayName} is not initialized. Run: agenthome ${agentId} init`);
+      throw new Error(`${agent.displayName} is not initialized. Run: avenic ${agentId} init`);
     }
     const action = remainingArguments[0] ?? "status";
     if (remainingArguments.length > 1 || !["import", "writeback", "status"].includes(action)) {
-      throw new Error(`Usage: agenthome ${agentId} sessions [import|writeback|status]`);
+      throw new Error(`Usage: avenic ${agentId} sessions [import|writeback|status]`);
     }
     const adapter = getSessionAdapter(agentId);
     if (action === "status") {
@@ -236,7 +236,7 @@ async function dispatchAgent(agentId, argumentsList) {
   const state = await loadRuntime(projectRoot);
   const config = effectiveAgentConfig(state, agentId);
   if (!config) {
-    throw new Error(`${agent.displayName} is not initialized. Run: agenthome ${agentId} init`);
+    throw new Error(`${agent.displayName} is not initialized. Run: avenic ${agentId} init`);
   }
   const environment = config.auth === "project"
     ? { ...process.env, ...projectAuthEnvironment(agentId, projectRoot) }
@@ -275,7 +275,7 @@ async function dispatchAgent(agentId, argumentsList) {
   if (portableSessions) {
     // Project session records take priority on launch: conflicting native
     // copies are overwritten silently. Native storage is never written to
-    // proactively; only `agenthome <agent> sessions writeback` writes
+    // proactively; only `avenic <agent> sessions writeback` writes
     // project records back to native storage.
     try {
       await adapter.restore(projectRoot, { environment });
@@ -310,7 +310,7 @@ async function dispatchAgent(agentId, argumentsList) {
 async function dispatchStatus() {
   const projectRoot = locateProjectRoot();
   const state = await loadRuntime(projectRoot);
-  console.log("AgentHome Status\n");
+  console.log("Avenic Status\n");
   console.log(`Project  ${projectRoot}\n`);
   for (const agentId of Object.keys(AGENTS)) {
     const agent = getAgent(agentId);
@@ -323,7 +323,7 @@ async function dispatchStatus() {
 async function dispatchDoctor() {
   const projectRoot = locateProjectRoot();
   const state = await loadRuntime(projectRoot);
-  console.log("AgentHome Doctor\n");
+  console.log("Avenic Doctor\n");
   console.log(`Project root       OK  ${projectRoot}`);
   console.log(`Runtime config     ${state.runtime.agents ? "OK" : "ERROR"}`);
   for (const agentId of Object.keys(AGENTS)) {
@@ -353,7 +353,7 @@ function untrackSessions(projectRoot) {
 async function dispatchSessions(argumentsList) {
   const [command, mode = "status", ...extra] = argumentsList;
   if (command !== "git" || extra.length > 0 || !["on", "off", "status"].includes(mode)) {
-    throw new Error("Usage: agenthome sessions git [on|off|status]");
+    throw new Error("Usage: avenic sessions git [on|off|status]");
   }
   const projectRoot = locateProjectRoot();
   if (mode === "off") {
@@ -415,9 +415,9 @@ export async function runCli(options = {}) {
   }
   if (command === "update") {
     if (remainingArguments.length > 0) {
-      throw new Error("Usage: agenthome self-update");
+      throw new Error("Usage: avenic self-update");
     }
-    await updateAgentHome(packageRoot);
+    await updateAvenic(packageRoot);
     return 0;
   }
   if (command === "status") {

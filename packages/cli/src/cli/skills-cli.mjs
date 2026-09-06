@@ -61,7 +61,7 @@ import {
   writeInstallMetadata,
   writeJson,
 } from "#core";
-import { updateAgentHome } from "./self-update.mjs";
+import { updateAvenic } from "./self-update.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -110,11 +110,11 @@ async function commandAddDirect(argumentsList, options = {}) {
   const io = options.io ?? console;
   const context = createInstallContext(options.global ?? false, options);
   if (!options.global && isCatalogDirectory(options.cwd ?? process.cwd())) {
-    fail("Run installation from a work project, not from the AgentHome catalog");
+    fail("Run installation from a work project, not from the Avenic catalog");
   }
   const [sourceReference, ...skillNames] = argumentsList;
   if (!sourceReference) {
-    fail("Usage: agenthome skills add <owner/repo> [skill...] [-g]");
+    fail("Usage: avenic skills add <owner/repo> [skill...] [-g]");
   }
   const unknownOption = argumentsList.find((argument) => argument.startsWith("-"));
   if (unknownOption) {
@@ -662,7 +662,7 @@ async function commandSourceAdd(argumentsList, catalogRoot, io = console) {
     repository,
     skillRoot,
   }, io);
-  io.log(`Next: agenthome catalog skill-add ${id} <skill-name> --pack <pack>`);
+  io.log(`Next: avenic catalog skill-add ${id} <skill-name> --pack <pack>`);
 }
 
 async function commandPackAdd(argumentsList, catalogRoot, io = console) {
@@ -694,7 +694,7 @@ async function commandPackAdd(argumentsList, catalogRoot, io = console) {
   });
   io.log(`Created Pack: ${id}`);
   io.log(`File: ${packFile}`);
-  io.log(`Next: agenthome catalog skill-add <source> <skill-name> --pack ${id}`);
+  io.log(`Next: avenic catalog skill-add <source> <skill-name> --pack ${id}`);
 }
 
 async function runMaintenanceCommand(command, argumentsList, catalogRoot, io) {
@@ -742,7 +742,7 @@ async function commandCatalogAdd(argumentsList, options = {}) {
   const io = options.io ?? console;
   const [spec] = argumentsList;
   if (!spec || argumentsList.length !== 1) {
-    fail("Usage: agenthome catalog add <spec>");
+    fail("Usage: avenic catalog add <spec>");
   }
   const result = await registerCatalog(spec, { environment: options.environment, io });
   io.log(`Default catalog: ${spec}`);
@@ -757,9 +757,9 @@ async function commandCatalogAdd(argumentsList, options = {}) {
       const purpose = pack.description ? ` — ${pack.description}` : "";
       io.log(`${lastPack ? "└──" : "├──"} ${label}${purpose}`);
     });
-    io.log("\nInstall: agenthome skills install [pack...]");
+    io.log("\nInstall: avenic skills install [pack...]");
   }
-  io.log("Run: agenthome catalog sync");
+  io.log("Run: avenic catalog sync");
 }
 
 // Seed the registry with the current spec on first use, so upgrading users
@@ -783,7 +783,7 @@ async function commandCatalogList(options = {}) {
     const marker = entry.spec === current ? ">" : " ";
     io.log(`${marker} ${entry.name}${entry.spec !== entry.name ? `   ${entry.spec}` : ""}`);
   }
-  io.log("\n> = current. Switch: agenthome catalog select");
+  io.log("\n> = current. Switch: avenic catalog select");
 }
 
 // Arrow-key picker over the registered catalogs. Resolves to the chosen spec,
@@ -846,7 +846,7 @@ async function commandCatalogSelect(argumentsList, options = {}) {
   const io = options.io ?? console;
   const [target] = argumentsList;
   if (argumentsList.length > 1) {
-    fail("Usage: agenthome catalog select [name|spec]");
+    fail("Usage: avenic catalog select [name|spec]");
   }
   const current = await loadDefaultCatalogSpec(options.environment);
   const known = await ensureKnownCatalogs(options);
@@ -854,7 +854,7 @@ async function commandCatalogSelect(argumentsList, options = {}) {
     const entry = known.find((candidate) => candidate.spec === target)
       ?? known.find((candidate) => candidate.name === target);
     if (!entry) {
-      fail(`Unknown catalog: ${target}\nAdd one first: agenthome catalog add <spec>`);
+      fail(`Unknown catalog: ${target}\nAdd one first: avenic catalog add <spec>`);
     }
     await setDefaultCatalogSpec(options.environment, entry.spec);
     io.log(`Current catalog: ${entry.spec}`);
@@ -890,35 +890,35 @@ export async function dispatchCatalog(argumentsList, options = {}) {
   const [command, ...remainingArguments] = scope.argumentsList;
   if (command === "sync") {
     if (global || remainingArguments.length > 0) {
-      fail("Usage: agenthome catalog sync");
+      fail("Usage: avenic catalog sync");
     }
     await commandCatalogSync(options);
     return;
   }
   if (command === "add") {
     if (global) {
-      fail("agenthome catalog add does not accept a global scope");
+      fail("avenic catalog add does not accept a global scope");
     }
     await commandCatalogAdd(remainingArguments, options);
     return;
   }
   if (command === "default") {
     if (global || remainingArguments.length > 0) {
-      fail("Usage: agenthome catalog default");
+      fail("Usage: avenic catalog default");
     }
     await commandCatalogDefault(options);
     return;
   }
   if (command === "select") {
     if (global) {
-      fail("agenthome catalog select does not accept a global scope");
+      fail("avenic catalog select does not accept a global scope");
     }
     await commandCatalogSelect(remainingArguments, options);
     return;
   }
   if (command === "list") {
     if (global || remainingArguments.length > 0) {
-      fail("Usage: agenthome catalog list");
+      fail("Usage: avenic catalog list");
     }
     await commandCatalogList(options);
     return;
@@ -933,14 +933,14 @@ export async function dispatchCatalog(argumentsList, options = {}) {
     "source-add",
   ]);
   if (!command || !maintenanceCommands.has(command)) {
-    fail("Usage: agenthome catalog <sync|add|select|list|default|doctor|update|skill-add|remove|pack-add|pack-remove|source-add>");
+    fail("Usage: avenic catalog <sync|add|select|list|default|doctor|update|skill-add|remove|pack-add|pack-remove|source-add>");
   }
   if (global) {
     fail(`${command} does not accept a global scope`);
   }
   const cwd = options.cwd ?? process.cwd();
   if (!isCatalogDirectory(cwd)) {
-    fail(`${command} must run inside the AgentHome Git clone`);
+    fail(`${command} must run inside the Avenic Git clone`);
   }
   return runMaintenanceCommand(command, remainingArguments, cwd, io);
 }
@@ -1000,7 +1000,7 @@ export async function dispatchSkills(argumentsList, options = {}) {
         const { runCli } = await import("./dispatcher.mjs");
         return runCli({ argumentsList: [command, ...remainingArguments] });
       }
-      fail(`${command} must run inside the AgentHome Git clone`);
+      fail(`${command} must run inside the Avenic Git clone`);
     }
     return runMaintenanceCommand(command, remainingArguments, cwd, io);
   }
@@ -1014,7 +1014,7 @@ export async function dispatchSkills(argumentsList, options = {}) {
     if (scope.global || remainingArguments.length > 0) {
       fail("Usage: self-update");
     }
-    await updateAgentHome(packageRoot);
+    await updateAvenic(packageRoot);
     return;
   }
   if (command === "uninstall" && remainingArguments.length === 0) {
@@ -1042,7 +1042,7 @@ export async function dispatchSkills(argumentsList, options = {}) {
   // Agent runtime commands (claude/codex/opencode lifecycle, sessions) are
   // handled by the runtime dispatcher; delegate before the Pack fallback so
   // typos in the agent position never trigger a network fetch. The bare
-  // `agenthome status` overview stays reachable through the main entry.
+  // `avenic status` overview stays reachable through the main entry.
   if (Object.hasOwn(AGENTS, command) || command === "sessions") {
     const { runCli } = await import("./dispatcher.mjs");
     return runCli({ argumentsList: scope.argumentsList });

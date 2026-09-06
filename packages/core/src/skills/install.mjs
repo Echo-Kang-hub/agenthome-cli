@@ -277,7 +277,7 @@ async function pinnedCatalogSpec(spec, context) {
 
 // Resolve the catalog for an install context. The project lock pins the
 // catalog commit for cross-device reproducibility; a refresh (bare
-// `agenthome skills`) intentionally bypasses the pin to pick up the latest.
+// `avenic skills`) intentionally bypasses the pin to pick up the latest.
 export async function resolveInstallSource(options, { refresh = false } = {}) {
   const spec = await loadDefaultCatalogSpec(options.environment);
   const context = createInstallContext(options.global ?? false, options);
@@ -299,7 +299,7 @@ export async function resolveInstallSource(options, { refresh = false } = {}) {
 export async function installPacks(context, explicitPacks = [], options = {}) {
   const io = options.io ?? console;
   if (!context.global && isCatalogDirectory(context.root)) {
-    fail("Run installation from a work project, not from the AgentHome catalog");
+    fail("Run installation from a work project, not from the Avenic catalog");
   }
   const catalogInfo = await resolveInstallSource({
     global: context.global,

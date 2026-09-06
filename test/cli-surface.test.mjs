@@ -87,7 +87,7 @@ function catalogEnvironment(catalogRoot, stateRoot) {
 // A fake npm on PATH that records its arguments, so self-update fallbacks can be
 // verified without touching the real global npm install.
 async function withFakeNpm(run) {
-  await withTempDirectory("agenthome-fake-npm-", async (root) => {
+  await withTempDirectory("avenic-fake-npm-", async (root) => {
     const binDirectory = path.join(root, "bin");
     const logFile = path.join(root, "npm.log");
     await mkdir(binDirectory);
@@ -109,23 +109,23 @@ async function withFakeNpm(run) {
 }
 
 test("bare invocation and help positions exit cleanly without touching the catalog", async () => {
-  await withTempDirectory("agenthome-help-", async (projectRoot) => {
+  await withTempDirectory("avenic-help-", async (projectRoot) => {
     for (const argumentsList of [[], ["help"], ["-h"], ["--help"]]) {
       const result = runAgent(projectRoot, argumentsList);
       assert.equal(result.status, 0, result.stderr);
-      assert.match(result.stdout, /AgentHome/);
+      assert.match(result.stdout, /Avenic/);
       assert.doesNotMatch(result.stdout, /Installation Plan/);
     }
     const shorthand = runAgent(projectRoot, ["--help"]);
-    assert.match(shorthand.stdout, /shorthand: ah/);
+    assert.match(shorthand.stdout, /shorthand: ave/);
   });
 });
 
 test("unknown commands fail with a clear error", async () => {
-  await withTempDirectory("agenthome-unknown-", async (projectRoot) => {
+  await withTempDirectory("avenic-unknown-", async (projectRoot) => {
     // Point at a local fixture so the Pack-vs-typo catalog check stays offline.
-    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
-      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
         await createCatalogFixture(catalogRoot);
         const environment = catalogEnvironment(catalogRoot, stateRoot);
         const result = runAgent(projectRoot, ["bogus-command"], environment);
@@ -137,7 +137,7 @@ test("unknown commands fail with a clear error", async () => {
 });
 
 test("runtime overview and doctor cover all three agents", async () => {
-  await withTempDirectory("agenthome-overview-", async (projectRoot) => {
+  await withTempDirectory("avenic-overview-", async (projectRoot) => {
     const status = runAgent(projectRoot, ["status"]);
     assert.equal(status.status, 0, status.stderr);
     assert.match(status.stdout, /Claude Code/);
@@ -155,7 +155,7 @@ test("runtime overview and doctor cover all three agents", async () => {
 });
 
 test("sessions git toggles on/off/status and rejects invalid modes", async () => {
-  await withTempDirectory("agenthome-sessions-git-", async (projectRoot) => {
+  await withTempDirectory("avenic-sessions-git-", async (projectRoot) => {
     spawnSync("git", ["init", "--quiet"], { cwd: projectRoot, windowsHide: true });
     const initialized = runAgent(projectRoot, ["codex", "init", "--auth", "global"]);
     assert.equal(initialized.status, 0, initialized.stderr);
@@ -177,15 +177,15 @@ test("sessions git toggles on/off/status and rejects invalid modes", async () =>
 
     const invalidMode = runAgent(projectRoot, ["sessions", "git", "bogus"]);
     assert.equal(invalidMode.status, 1);
-    assert.match(invalidMode.stderr, /Usage: agenthome sessions git \[on\|off\|status\]/);
+    assert.match(invalidMode.stderr, /Usage: avenic sessions git \[on\|off\|status\]/);
     const invalidCommand = runAgent(projectRoot, ["sessions", "bogus"]);
     assert.equal(invalidCommand.status, 1);
-    assert.match(invalidCommand.stderr, /Usage: agenthome sessions git \[on\|off\|status\]/);
+    assert.match(invalidCommand.stderr, /Usage: avenic sessions git \[on\|off\|status\]/);
   });
 });
 
 test("agent auth CLI switches scope, resets, and rejects invalid modes", async () => {
-  await withTempDirectory("agenthome-auth-", async (projectRoot) => {
+  await withTempDirectory("avenic-auth-", async (projectRoot) => {
     const initialized = runAgent(projectRoot, ["claude", "init", "--auth", "global"]);
     assert.equal(initialized.status, 0, initialized.stderr);
 
@@ -208,10 +208,10 @@ test("agent auth CLI switches scope, resets, and rejects invalid modes", async (
 });
 
 test("agent launch and auth before init fail with hints", async () => {
-  await withTempDirectory("agenthome-before-init-", async (projectRoot) => {
+  await withTempDirectory("avenic-before-init-", async (projectRoot) => {
     const launch = runAgent(projectRoot, ["claude"]);
     assert.equal(launch.status, 1);
-    assert.match(launch.stderr, /is not initialized\. Run: agenthome claude init/);
+    assert.match(launch.stderr, /is not initialized\. Run: avenic claude init/);
 
     const auth = runAgent(projectRoot, ["claude", "auth", "project"]);
     assert.equal(auth.status, 1);
@@ -220,7 +220,7 @@ test("agent launch and auth before init fail with hints", async () => {
 });
 
 test("init validates options and auth/sessions modes", async () => {
-  await withTempDirectory("agenthome-init-validate-", async (projectRoot) => {
+  await withTempDirectory("avenic-init-validate-", async (projectRoot) => {
     const invalidAuth = runAgent(projectRoot, ["claude", "init", "--auth", "bogus"]);
     assert.equal(invalidAuth.status, 1);
     assert.match(invalidAuth.stderr, /Authentication must be global or project: bogus/);
@@ -244,11 +244,11 @@ test("init validates options and auth/sessions modes", async () => {
 });
 
 test("agent sessions import and status work through the CLI", async () => {
-  await withTempDirectory("agenthome-sessions-cli-", async (projectRoot) => {
+  await withTempDirectory("avenic-sessions-cli-", async (projectRoot) => {
     const initialized = runAgent(projectRoot, ["claude", "init", "--auth", "global"]);
     assert.equal(initialized.status, 0, initialized.stderr);
 
-    await withTempDirectory("agenthome-claude-home-", async (claudeHome) => {
+    await withTempDirectory("avenic-claude-home-", async (claudeHome) => {
       const environment = { CLAUDE_CONFIG_DIR: claudeHome };
       const imported = runAgent(projectRoot, ["claude", "sessions", "import"], environment);
       assert.equal(imported.status, 0, imported.stderr);
@@ -260,32 +260,32 @@ test("agent sessions import and status work through the CLI", async () => {
 
       const invalid = runAgent(projectRoot, ["claude", "sessions", "bogus"], environment);
       assert.equal(invalid.status, 1);
-      assert.match(invalid.stderr, /Usage: agenthome claude sessions \[import\|writeback\|status\]/);
+      assert.match(invalid.stderr, /Usage: avenic claude sessions \[import\|writeback\|status\]/);
 
       // "restore" was renamed to "writeback" and is no longer accepted.
       const legacyRestore = runAgent(projectRoot, ["claude", "sessions", "restore"], environment);
       assert.equal(legacyRestore.status, 1);
-      assert.match(legacyRestore.stderr, /Usage: agenthome claude sessions \[import\|writeback\|status\]/);
+      assert.match(legacyRestore.stderr, /Usage: avenic claude sessions \[import\|writeback\|status\]/);
     });
   });
 });
 
 test("skills help and unknown Pack errors stay offline", async () => {
-  await withTempDirectory("agenthome-skills-help-", async (projectRoot) => {
+  await withTempDirectory("avenic-skills-help-", async (projectRoot) => {
     const help = runAgent(projectRoot, ["skills", "help"]);
     assert.equal(help.status, 0, help.stderr);
     assert.match(help.stdout, /Agent runtimes/);
 
     const missingSource = runAgent(projectRoot, ["skills", "add"]);
     assert.equal(missingSource.status, 1);
-    assert.match(missingSource.stderr, /Usage: agenthome skills add <owner\/repo>/);
+    assert.match(missingSource.stderr, /Usage: avenic skills add <owner\/repo>/);
 
     const extra = runAgent(projectRoot, ["skills", "self-update", "extra"]);
     assert.equal(extra.status, 1);
     assert.match(extra.stderr, /Usage: self-update/);
 
-    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
-      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
         await createCatalogFixture(catalogRoot);
         const environment = catalogEnvironment(catalogRoot, stateRoot);
         const unknownPack = runAgent(projectRoot, ["skills", "bogus-pack"], environment);
@@ -297,9 +297,9 @@ test("skills help and unknown Pack errors stay offline", async () => {
 });
 
 test("bare skills installs the default common Pack", async () => {
-  await withTempDirectory("agenthome-skills-bare-", async (projectRoot) => {
-    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
-      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+  await withTempDirectory("avenic-skills-bare-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
         await createCatalogFixture(catalogRoot);
         const environment = catalogEnvironment(catalogRoot, stateRoot);
         const installed = runAgent(projectRoot, ["skills"], environment);
@@ -313,9 +313,9 @@ test("bare skills installs the default common Pack", async () => {
 });
 
 test("skills packs and tree read the catalog", async () => {
-  await withTempDirectory("agenthome-skills-tree-", async (projectRoot) => {
-    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
-      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+  await withTempDirectory("avenic-skills-tree-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
         await createCatalogFixture(catalogRoot);
         const environment = catalogEnvironment(catalogRoot, stateRoot);
 
@@ -341,9 +341,9 @@ test("skills packs and tree read the catalog", async () => {
 });
 
 test("skills status reports the installed tree and fails without a lock", async () => {
-  await withTempDirectory("agenthome-skills-status-", async (projectRoot) => {
-    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
-      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+  await withTempDirectory("avenic-skills-status-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
         await createCatalogFixture(catalogRoot);
         const environment = catalogEnvironment(catalogRoot, stateRoot);
 
@@ -366,28 +366,28 @@ test("skills status reports the installed tree and fails without a lock", async 
 });
 
 test("skills doctor and update fall back to runtime meanings outside a catalog", async () => {
-  await withTempDirectory("agenthome-skills-fallback-", async (projectRoot) => {
+  await withTempDirectory("avenic-skills-fallback-", async (projectRoot) => {
     const doctor = runAgent(projectRoot, ["skills", "doctor"]);
     assert.equal(doctor.status, 0, doctor.stderr);
     assert.match(doctor.stdout, /Project root\s+OK/);
 
     const extra = runAgent(projectRoot, ["skills", "update", "extra"]);
     assert.equal(extra.status, 1);
-    assert.match(extra.stderr, /Usage: agenthome self-update/);
+    assert.match(extra.stderr, /Usage: avenic self-update/);
 
     await withFakeNpm(async (environment, logFile) => {
       const update = runAgent(projectRoot, ["skills", "update"], environment);
       assert.equal(update.status, 0, update.stderr);
-      assert.match(update.stdout, /AgentHome update complete/);
+      assert.match(update.stdout, /Avenic update complete/);
       assert.match(await readFile(logFile, "utf8"), /install --global avenic@latest/);
     });
   });
 });
 
 test("catalog add, default, and sync round-trip through the CLI", async () => {
-  await withTempDirectory("agenthome-catalog-cli-", async (projectRoot) => {
-    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
-      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+  await withTempDirectory("avenic-catalog-cli-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
         await createCatalogFixture(catalogRoot);
         const environment = { AVENIC_STATE_DIR: stateRoot };
 
@@ -399,13 +399,13 @@ test("catalog add, default, and sync round-trip through the CLI", async () => {
         assert.match(used.stdout, /└── development \(Development\)\n/);
         assert.doesNotMatch(used.stdout, /Development — /);
         assert.doesNotMatch(used.stdout, /alpha|beta|gamma/);
-        assert.match(used.stdout, /Install: agenthome skills install \[pack\.\.\.\]/);
-        assert.match(used.stdout, /Run: agenthome catalog sync/);
+        assert.match(used.stdout, /Install: avenic skills install \[pack\.\.\.\]/);
+        assert.match(used.stdout, /Run: avenic catalog sync/);
 
         // "use" was renamed to "add" and is no longer accepted.
         const legacy = runAgent(projectRoot, ["catalog", "use", catalogRoot], environment);
         assert.equal(legacy.status, 1);
-        assert.match(legacy.stderr, /Usage: agenthome catalog <sync\|add\|select\|list\|default\|doctor\|update\|skill-add\|remove\|pack-add\|pack-remove\|source-add>/);
+        assert.match(legacy.stderr, /Usage: avenic catalog <sync\|add\|select\|list\|default\|doctor\|update\|skill-add\|remove\|pack-add\|pack-remove\|source-add>/);
 
         const shown = runAgent(projectRoot, ["catalog", "default"], environment);
         assert.equal(shown.status, 0, shown.stderr);
@@ -418,19 +418,19 @@ test("catalog add, default, and sync round-trip through the CLI", async () => {
 
         const missingSpec = runAgent(projectRoot, ["catalog", "add"], environment);
         assert.equal(missingSpec.status, 1);
-        assert.match(missingSpec.stderr, /Usage: agenthome catalog add <spec>/);
+        assert.match(missingSpec.stderr, /Usage: avenic catalog add <spec>/);
 
         const globalSync = runAgent(projectRoot, ["catalog", "-g", "sync"], environment);
         assert.equal(globalSync.status, 1);
-        assert.match(globalSync.stderr, /Usage: agenthome catalog sync/);
+        assert.match(globalSync.stderr, /Usage: avenic catalog sync/);
       });
     });
   });
 });
 
 test("catalog add keeps the spec saved when the preview fetch fails", async () => {
-  await withTempDirectory("agenthome-catalog-cli-", async (projectRoot) => {
-    await withTempDirectory("agenthome-state-", async (stateRoot) => {
+  await withTempDirectory("avenic-catalog-cli-", async (projectRoot) => {
+    await withTempDirectory("avenic-state-", async (stateRoot) => {
       const environment = { AVENIC_STATE_DIR: stateRoot };
       const missing = path.join(projectRoot, "no-such-catalog");
 
@@ -438,7 +438,7 @@ test("catalog add keeps the spec saved when the preview fetch fails", async () =
       assert.equal(used.status, 0, used.stderr);
       assert.match(used.stdout, /Default catalog: /);
       assert.match(used.stdout, /Spec saved\. Catalog preview unavailable:/);
-      assert.match(used.stdout, /Run: agenthome catalog sync/);
+      assert.match(used.stdout, /Run: avenic catalog sync/);
 
       const shown = runAgent(projectRoot, ["catalog", "default"], environment);
       assert.equal(shown.status, 0, shown.stderr);
@@ -448,8 +448,8 @@ test("catalog add keeps the spec saved when the preview fetch fails", async () =
 });
 
 test("catalog skill-add registers the first source in a fresh catalog", async () => {
-  await withTempDirectory("agenthome-fresh-catalog-", async (catalogRoot) => {
-    await withTempDirectory("agenthome-upstream-", async (upstreamRoot) => {
+  await withTempDirectory("avenic-fresh-catalog-", async (catalogRoot) => {
+    await withTempDirectory("avenic-upstream-", async (upstreamRoot) => {
       await mkdir(path.join(catalogRoot, "packs"));
       await mkdir(path.join(catalogRoot, "skills"));
       await writeFile(
@@ -479,10 +479,10 @@ test("catalog skill-add registers the first source in a fresh catalog", async ()
 });
 
 test("catalog list and select switch between registered catalogs", async () => {
-  await withTempDirectory("agenthome-catalog-select-", async (projectRoot) => {
-    await withTempDirectory("agenthome-catalog-a-", async (catalogA) => {
-      await withTempDirectory("agenthome-catalog-b-", async (catalogB) => {
-        await withTempDirectory("agenthome-state-", async (stateRoot) => {
+  await withTempDirectory("avenic-catalog-select-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-a-", async (catalogA) => {
+      await withTempDirectory("avenic-catalog-b-", async (catalogB) => {
+        await withTempDirectory("avenic-state-", async (stateRoot) => {
           await createCatalogFixture(catalogA);
           await createCatalogFixture(catalogB);
           const environment = { AVENIC_STATE_DIR: stateRoot };
@@ -500,7 +500,7 @@ test("catalog list and select switch between registered catalogs", async () => {
           assert.match(listed.stdout, /Registered catalogs/);
           assert.match(listed.stdout, new RegExp(`> ${nameB}`));
           assert.match(listed.stdout, new RegExp(`^ {2}${nameA}`, "m"));
-          assert.match(listed.stdout, /> = current\. Switch: agenthome catalog select/);
+          assert.match(listed.stdout, /> = current\. Switch: avenic catalog select/);
 
           // Without a TTY, `select` falls back to the plain list.
           const picked = runAgent(projectRoot, ["catalog", "select"], environment);
@@ -531,9 +531,9 @@ test("catalog list and select switch between registered catalogs", async () => {
 });
 
 test("skills install and remove are explicit verb pairs", async () => {
-  await withTempDirectory("agenthome-skills-verbs-", async (projectRoot) => {
-    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
-      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+  await withTempDirectory("avenic-skills-verbs-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
         await createCatalogFixture(catalogRoot);
         const environment = catalogEnvironment(catalogRoot, stateRoot);
 
@@ -541,7 +541,7 @@ test("skills install and remove are explicit verb pairs", async () => {
         assert.equal(installed.status, 0, installed.stderr);
         assert.match(installed.stdout, /Installation complete/);
 
-        await withTempDirectory("agenthome-upstream-", async (upstreamRoot) => {
+        await withTempDirectory("avenic-upstream-", async (upstreamRoot) => {
           await createUpstreamFixture(upstreamRoot);
           const added = runAgent(projectRoot, ["skills", "add", upstreamRoot], environment);
           assert.equal(added.status, 0, added.stderr);
@@ -561,21 +561,21 @@ test("skills install and remove are explicit verb pairs", async () => {
 });
 
 test("catalog maintenance requires the catalog clone and doctor validates it", async () => {
-  await withTempDirectory("agenthome-catalog-maintenance-", async (projectRoot) => {
+  await withTempDirectory("avenic-catalog-maintenance-", async (projectRoot) => {
     const outsideDoctor = runAgent(projectRoot, ["catalog", "doctor"]);
     assert.equal(outsideDoctor.status, 1);
-    assert.match(outsideDoctor.stderr, /must run inside the AgentHome Git clone/);
+    assert.match(outsideDoctor.stderr, /must run inside the Avenic Git clone/);
 
     const outsideAdd = runAgent(projectRoot, ["catalog", "skill-add", "some", "skill"]);
     assert.equal(outsideAdd.status, 1);
-    assert.match(outsideAdd.stderr, /must run inside the AgentHome Git clone/);
+    assert.match(outsideAdd.stderr, /must run inside the Avenic Git clone/);
 
     // "add" is the catalog import verb, not a maintenance command.
     const importUsage = runAgent(projectRoot, ["catalog", "add", "some", "skill"]);
     assert.equal(importUsage.status, 1);
-    assert.match(importUsage.stderr, /Usage: agenthome catalog add <spec>/);
+    assert.match(importUsage.stderr, /Usage: avenic catalog add <spec>/);
 
-    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
       await createCatalogFixture(catalogRoot);
       const cloneRoot = `${catalogRoot}-work`;
       await gitQuiet(catalogRoot, ["clone", "--quiet", catalogRoot, cloneRoot]);
@@ -586,14 +586,14 @@ test("catalog maintenance requires the catalog clone and doctor validates it", a
 
       const unknown = runAgent(cloneRoot, ["catalog", "bogus"]);
       assert.equal(unknown.status, 1);
-      assert.match(unknown.stderr, /Usage: agenthome catalog <sync\|add\|select\|list\|default\|doctor\|update\|skill-add\|remove\|pack-add\|pack-remove\|source-add>/);
+      assert.match(unknown.stderr, /Usage: avenic catalog <sync\|add\|select\|list\|default\|doctor\|update\|skill-add\|remove\|pack-add\|pack-remove\|source-add>/);
     });
   });
 });
 
 test("catalog pack-add and source-add manage the catalog", async () => {
-  await withTempDirectory("agenthome-catalog-manage-", async (catalogRoot) => {
-    await withTempDirectory("agenthome-upstream-", async (upstreamRoot) => {
+  await withTempDirectory("avenic-catalog-manage-", async (catalogRoot) => {
+    await withTempDirectory("avenic-upstream-", async (upstreamRoot) => {
       await createCatalogFixture(catalogRoot);
       await createUpstreamFixture(upstreamRoot);
       const cloneRoot = `${catalogRoot}-work`;
@@ -612,7 +612,7 @@ test("catalog pack-add and source-add manage the catalog", async () => {
       const sourceAdded = runAgent(cloneRoot, ["catalog", "source-add", "second", upstreamRoot, "--name", "Second"]);
       assert.equal(sourceAdded.status, 0, sourceAdded.stderr);
       assert.match(sourceAdded.stdout, /Registered second @ [0-9a-f]{8}/);
-      assert.match(sourceAdded.stdout, /Next: agenthome catalog skill-add second/);
+      assert.match(sourceAdded.stdout, /Next: avenic catalog skill-add second/);
       const sources = JSON.parse(await readFile(path.join(cloneRoot, "sources.lock.json"), "utf8"));
       assert.equal(sources.sources.some((source) => source.id === "second"), true);
 
@@ -624,8 +624,8 @@ test("catalog pack-add and source-add manage the catalog", async () => {
 });
 
 test("catalog skill-add registers a source and vendors its Skills", async () => {
-  await withTempDirectory("agenthome-catalog-add-", async (catalogRoot) => {
-    await withTempDirectory("agenthome-upstream-", async (upstreamRoot) => {
+  await withTempDirectory("avenic-catalog-add-", async (catalogRoot) => {
+    await withTempDirectory("avenic-upstream-", async (upstreamRoot) => {
       await createCatalogFixture(catalogRoot);
       await createUpstreamFixture(upstreamRoot);
       const cloneRoot = `${catalogRoot}-work`;
@@ -659,7 +659,7 @@ test("catalog skill-add registers a source and vendors its Skills", async () => 
 });
 
 test("catalog update follows upstream revisions", async () => {
-  await withTempDirectory("agenthome-catalog-update-", async (root) => {
+  await withTempDirectory("avenic-catalog-update-", async (root) => {
     const upstreamRoot = path.join(root, "upstream");
     const catalogRoot = path.join(root, "catalog");
     await mkdir(path.join(upstreamRoot, "skills", "s"), { recursive: true });

@@ -127,7 +127,7 @@ export async function status(projectRoot) {
 }
 
 // Save the native sessions directory and session index into the shared launch
-// state so the last exit can restore them: sessions created by `agenthome
+// state so the last exit can restore them: sessions created by `avenic
 // codex` must live only in the project, never in the global native storage.
 export async function snapshotNative(projectRoot, snapshotRoot, options = {}) {
   const { codexHome, nativeSessions } = locations(projectRoot, options.environment);

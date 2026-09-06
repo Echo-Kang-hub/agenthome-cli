@@ -210,10 +210,10 @@ export function processAlive(pid) {
   }
 }
 
-// Shared state for concurrent agenthome launches of one agent in one project.
+// Shared state for concurrent avenic launches of one agent in one project.
 export function sessionLeasePath(agentId, projectRoot) {
   const key = createHash("sha256").update(`${path.resolve(projectRoot)}\n${agentId}`).digest("hex").slice(0, 16);
-  return path.join(os.tmpdir(), `agenthome-launch-${key}`);
+  return path.join(os.tmpdir(), `avenic-launch-${key}`);
 }
 
 // Serialize the short bookkeeping sections of acquire/release. The lock file
@@ -240,7 +240,7 @@ async function withLaunchLock(stateDir, run) {
         continue;
       }
       if (Date.now() > deadline) {
-        throw new Error("Timed out waiting for another agenthome launch in this project");
+        throw new Error("Timed out waiting for another avenic launch in this project");
       }
       await delay(100);
     }
@@ -268,7 +268,7 @@ let leaseMemberSequence = 0;
 // active at once; the first one snapshots the agent's native storage (or, when
 // a previous group died without finishing, salvages it via onFirst(true)
 // first) and the last one to exit reverts it via onLast, so sessions created
-// by agenthome launches live only in the project. The returned function
+// by avenic launches live only in the project. The returned function
 // leaves the group.
 // Leave a launch group as the given member. Runs onLast when the group has
 // no live launches left, then removes the group state. Used by the launch

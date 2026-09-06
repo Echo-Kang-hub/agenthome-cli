@@ -68,7 +68,7 @@ export async function status(projectRoot) {
 }
 
 // Save the native project directory into the shared launch state so the last
-// exit can restore it: sessions created by `agenthome claude` must live only
+// exit can restore it: sessions created by `avenic claude` must live only
 // in the project, never in the global native storage.
 export async function snapshotNative(projectRoot, snapshotRoot, options = {}) {
   const { native } = locations(projectRoot, options.environment);

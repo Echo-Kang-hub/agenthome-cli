@@ -1,4 +1,4 @@
-// Detached helper for `agenthome <agent>` launches. When the launching CLI
+// Detached helper for `avenic <agent>` launches. When the launching CLI
 // process disappears without a normal exit (terminal closed, killed), it
 // finishes the launch's cleanup: the run's sessions are captured into the
 // project and, for the last launch of the group, the agent's native storage
