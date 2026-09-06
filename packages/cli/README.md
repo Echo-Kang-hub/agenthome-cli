@@ -108,6 +108,38 @@ agenthome sessions git on|off|status # 便携会话的 Git 同步开关
 
 Catalog 就是一个 git 仓库：`skills/<source-id>/<skill-name>/SKILL.md` + `packs/*.json` 定义 Pack + `sources.lock.json` 锁定上游 commit。公开或私有均可；私有仓库访问由你本机的 git 认证（gh / SSH / credential helper）负责。
 
+### 连接私有 Skills 仓库
+
+私有仓库不需要任何特殊配置：CLI 不接触任何 token，clone 与 fetch 全部交给本机 git——git 能访问的仓库，AgentHome 就能用。以连接你自己的私有 catalog（如 `Echo-Kang-hub/agenthome-catalog`）为例：
+
+```bash
+# 1. 确保 git 能访问你的私有仓库（只需做一次，二选一）
+gh auth login                                            # GitHub CLI 登录（推荐，三平台通用）
+# 或：ssh -T git@github.com                              # 配置好 SSH key 即可，无需 gh
+
+# 2. 一行指向你的 catalog
+agenthome catalog use Echo-Kang-hub/agenthome-catalog    # 换成 <你的用户名>/<你的仓库>
+
+# 3. 验证能拉取（输出 40 位 commit 即成功）
+agenthome catalog sync
+
+# 4. 安装 Skills
+agenthome skills                                         # 安装默认 Pack（common）
+
+agenthome catalog default                                # 随时查看当前指向
+```
+
+- HTTPS 方式在 Windows 上默认走 Git Credential Manager（首次自动弹窗登录）；也可以直接用 SSH 地址：`agenthome catalog use git@github.com:Echo-Kang-hub/agenthome-catalog.git`
+- `agenthome skills add <owner/repo>` 从单个私有仓库直接安装 Skill，同样走这套本机 git 认证
+
+常见问题：
+
+| 现象 | 处理 |
+|---|---|
+| `schannel: failed to receive handshake / SSL/TLS connection failed` | 网络或代理阻断了到 github.com 的 TLS 连接，与认证无关；检查代理/VPN，或改用 SSH 地址 |
+| `Unable to fetch catalog` + `Check your GitHub authentication` | git 没有该私有仓库的访问权限；先跑 `gh auth status` 或 `ssh -T git@github.com` |
+| 想换回别的 catalog | 再执行一次 `agenthome catalog use <原 spec>` 即可（见「撤回操作」表） |
+
 ```bash
 agenthome catalog use <owner/repo>    # 或完整 URL、本地路径；私有仓库同样支持
 agenthome catalog sync                # 拉取/更新缓存（~/.config/agent-skills/catalog/）
