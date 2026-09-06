@@ -8,7 +8,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const root = await mkdtemp(path.join(os.tmpdir(), "agenthome-global-install-"));
+const root = await mkdtemp(path.join(os.tmpdir(), "avenic-global-install-"));
 const prefix = path.join(root, "prefix");
 const home = path.join(root, "home");
 const stateDirectory = path.join(root, "state");
@@ -50,13 +50,13 @@ async function verifyInstall(archive, environment) {
   );
   assert.equal(installed.status, 0, installed.stderr || installed.stdout);
   const binDirectory = process.platform === "win32" ? prefix : path.join(prefix, "bin");
-  const launcher = path.join(binDirectory, process.platform === "win32" ? "agenthome.cmd" : "agenthome");
+  const launcher = path.join(binDirectory, process.platform === "win32" ? "avenic.cmd" : "avenic");
   assert.equal(existsSync(launcher), true, `Missing global launcher: ${launcher}`);
-  const shorthand = path.join(binDirectory, process.platform === "win32" ? "ah.cmd" : "ah");
+  const shorthand = path.join(binDirectory, process.platform === "win32" ? "ave.cmd" : "ave");
   assert.equal(existsSync(shorthand), true, `Missing shorthand launcher: ${shorthand}`);
   await mkdir(projectRoot, { recursive: true });
   const shorthandHelp = runLauncher(shorthand, ["--help"], projectRoot, environment);
-  assert.match(shorthandHelp.stdout, /shorthand: ah/);
+  assert.match(shorthandHelp.stdout, /shorthand: ave/);
   const launched = runLauncher(launcher, ["codex", "init", "--auth", "global"], projectRoot, environment);
   assert.match(launched.stdout, /Changed:/);
   assert.equal(existsSync(path.join(projectRoot, ".agents", "runtime.json")), true);
@@ -74,7 +74,7 @@ async function uninstall(packageName, environment) {
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const binDirectory = process.platform === "win32" ? prefix : path.join(prefix, "bin");
-  const launcher = path.join(binDirectory, process.platform === "win32" ? "agenthome.cmd" : "agenthome");
+  const launcher = path.join(binDirectory, process.platform === "win32" ? "avenic.cmd" : "avenic");
   assert.equal(existsSync(launcher), false, `Global launcher still exists after uninstall: ${launcher}`);
 }
 
@@ -106,11 +106,11 @@ async function verifySkills(environment) {
   const { catalogRoot, revision } = await createCatalogFixture();
   const skillsEnvironment = {
     ...environment,
-    AGENTHOME_CATALOG_SPEC: catalogRoot,
-    AGENTHOME_STATE_DIR: stateDirectory,
+    AVENIC_CATALOG_SPEC: catalogRoot,
+    AVENIC_STATE_DIR: stateDirectory,
   };
   const binDirectory = process.platform === "win32" ? prefix : path.join(prefix, "bin");
-  const agentLauncher = path.join(binDirectory, process.platform === "win32" ? "agenthome.cmd" : "agenthome");
+  const agentLauncher = path.join(binDirectory, process.platform === "win32" ? "avenic.cmd" : "avenic");
   const installed = runLauncher(agentLauncher, ["skills", "common"], projectRoot, skillsEnvironment);
   assert.match(installed.stdout, /Installation complete/);
   assert.equal(existsSync(path.join(projectRoot, ".claude", "skills", "alpha", "SKILL.md")), true);
@@ -150,7 +150,7 @@ async function verifySkills(environment) {
     "pinned reinstall must not change installed content",
   );
 
-  // A bare `agenthome skills` syncs the configured Packs from the latest catalog.
+  // A bare `avenic skills` syncs the configured Packs from the latest catalog.
   const refreshed = runLauncher(agentLauncher, ["skills"], projectRoot, skillsEnvironment);
   assert.match(refreshed.stdout, /Installation complete/);
   const refreshedLock = JSON.parse(await readFile(path.join(projectRoot, ".agent-skills.lock.json"), "utf8"));
@@ -173,13 +173,13 @@ try {
   // Mode 1: registry equivalent — the published packages/cli tarball.
   const cliArchive = pack(path.join(packageRoot, "packages", "cli"), environment);
   await verifyInstall(cliArchive, environment);
-  await uninstall("agenthome-cli", environment);
+  await uninstall("avenic", environment);
 
   // Mode 2: GitHub equivalent — the monorepo root tarball with synced vendor core.
   const rootArchive = pack(packageRoot, environment);
   await verifyInstall(rootArchive, environment);
   await verifySkills(environment);
-  await uninstall("agenthome-cli-monorepo", environment);
+  await uninstall("avenic-repo", environment);
 
   console.log("Dual-mode global install, agent runtime, and skills tests passed");
 } finally {
