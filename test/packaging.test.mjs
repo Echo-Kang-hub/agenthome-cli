@@ -50,3 +50,19 @@ test("core manifest is configured for public publishing", async () => {
   assert.equal(manifest.types, "./index.d.ts");
   assert.deepEqual(manifest.engines, { node: ">=18.17" });
 });
+
+test("core type declarations cover the extension contract", async () => {
+  const dts = await readFile(path.join(packageRoot, "packages", "core", "index.d.ts"), "utf8");
+  for (const name of [
+    "AGENTS", "getAgent", "agentExecutableAvailable",
+    "initializeAgent", "deinitializeAgent", "setLocalAuth", "clearLocalAuth",
+    "effectiveAgentConfig", "loadRuntime", "getSessionAdapter", "spawnExecutableSync",
+    "createInstallContext", "installedPackIds", "installPacks", "uninstallPacks",
+    "skillsInstallationStatus", "resolveInstallSource", "addDirectSkills", "removeExternalSkills",
+    "readDirectState", "loadKnownCatalogs", "setDefaultCatalogSpec", "loadDefaultCatalogSpec",
+    "registerCatalog", "ensureCatalog", "buildCatalog", "loadPacks", "resolvePacks",
+    "cloneHead", "detectSkillRoot", "discoverSourceSkills", "locateProjectRoot",
+  ]) {
+    assert.match(dts, new RegExp(`\\b${name}\\b`), name);
+  }
+});

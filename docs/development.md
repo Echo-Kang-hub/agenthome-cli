@@ -39,7 +39,11 @@ cd packages/cli && npm publish
 
 - `agentHome.packageSpec` 保持 `agenthome-cli@latest`（`agent update` 自更新源）。
 - registry 包 `private` 保持 `false`。
-- 唯一发布物是 `packages/cli`（包名 `agenthome-cli`）；`packages/core` 不发布。
+- 发布物是 `packages/cli`（包名 `agenthome-cli`）与 `packages/core`（包名 `@agenthome/core`，见下）。
+
+## core 发布纪律
+
+core 变更 → bump `packages/core/package.json` 版本 → `cd packages/core && npm publish`（由维护者执行）→ CLI `npm run sync-core` 照旧。
 
 ## catalog 仓库
 
