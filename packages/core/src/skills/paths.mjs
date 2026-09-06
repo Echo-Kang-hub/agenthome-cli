@@ -1,4 +1,4 @@
-import { existsSync, renameSync } from "node:fs";
+import { existsSync, renameSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -43,10 +43,19 @@ export function deprecatedEnvironmentValue(environment, primary, legacy) {
 export function stateRoot(environment = process.env) {
   const override = deprecatedEnvironmentValue(environment, "AVENIC_STATE_DIR", "AGENTHOME_STATE_DIR");
   if (override) return override;
-  return path.join(
-    environment.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
-    "avenic", // Renamed from "agent-skills"; migrating existing directories is a later task.
-  );
+  const root = environment.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  const current = path.join(root, "avenic");
+  const legacy = path.join(root, "agent-skills");
+  if (existsSync(legacy) && !statSync(current, { throwIfNoEntry: false })?.isDirectory()) {
+    // 新路径被同名非目录占用：不能迁移进去，也绝不覆盖删除，降级继续用旧目录
+    if (existsSync(current)) return legacy;
+    try {
+      renameSync(legacy, current); // 同父目录原子 rename，一次性迁移
+    } catch {
+      return legacy; // 迁移失败降级：继续用旧目录，不丢数据
+    }
+  }
+  return current;
 }
 
 export const GLOBAL_TARGETS = [

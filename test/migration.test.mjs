@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createInstallContext } from "../packages/core/src/index.mjs";
+import { createInstallContext, stateRoot } from "../packages/core/src/index.mjs";
 
 test("createInstallContext migrates legacy project files to .avenic.*", () => {
   const cwd = mkdtempSync(path.join(os.tmpdir(), "avenic-migrate-"));
@@ -25,4 +25,23 @@ test("migration never overwrites existing new files", () => {
   const context = createInstallContext(false, { cwd });
   assert.deepEqual(JSON.parse(readFileSync(context.configFile, "utf8")), { schemaVersion: 2, packs: ["fresh"] });
   assert.equal(existsSync(path.join(cwd, ".agent-skills.json")), true);
+});
+
+test("stateRoot migrates ~/.config/agent-skills to avenic once", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "avenic-state-"));
+  mkdirSync(path.join(root, "agent-skills", "catalog"), { recursive: true });
+  writeFileSync(path.join(root, "agent-skills", "catalog.json"), "{}");
+  const env = { XDG_CONFIG_HOME: root };
+  assert.equal(stateRoot(env), path.join(root, "avenic"));
+  assert.equal(existsSync(path.join(root, "avenic", "catalog.json")), true);
+  assert.equal(existsSync(path.join(root, "agent-skills")), false);
+});
+
+test("stateRoot keeps legacy directory when rename fails", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "avenic-state-"));
+  // 用一个同名文件占位，使 rename 失败
+  writeFileSync(path.join(root, "avenic"), "blocked");
+  mkdirSync(path.join(root, "agent-skills"));
+  const env = { XDG_CONFIG_HOME: root };
+  assert.equal(stateRoot(env), path.join(root, "agent-skills"));
 });
