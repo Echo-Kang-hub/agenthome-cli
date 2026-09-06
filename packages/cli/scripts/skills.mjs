@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import process from "node:process";
-import { dispatchSkills } from "../src/cli/skills-cli.mjs";
+import { runCli } from "../src/cli/dispatcher.mjs";
 
-dispatchSkills(process.argv.slice(2), { io: console, cwd: process.cwd(), environment: process.env })
+runCli({ io: console, cwd: process.cwd(), environment: process.env })
   .then((status) => {
     process.exitCode = status;
   })

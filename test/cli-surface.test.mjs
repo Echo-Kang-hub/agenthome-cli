@@ -1,0 +1,552 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+// End-to-end coverage of the full CLI command surface. Every command position
+// (main, agent runtime, skills, catalog, maintenance) is exercised through the
+// real entry point; network access is avoided by pointing AGENTHOME_CATALOG_SPEC
+// at local git fixtures and by faking npm for self-update fallbacks.
+
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const agentBin = path.join(packageRoot, "packages", "cli", "scripts", "skills.mjs");
+
+function runAgent(cwd, argumentsList, environment = {}) {
+  return spawnSync(process.execPath, [agentBin, ...argumentsList], {
+    cwd,
+    encoding: "utf8",
+    windowsHide: true,
+    env: { ...process.env, ...environment },
+  });
+}
+
+function gitQuiet(cwd, argumentsList) {
+  const result = spawnSync("git", ["-C", cwd, ...argumentsList], { encoding: "utf8", windowsHide: true });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
+async function withTempDirectory(prefix, run) {
+  const directory = await mkdtemp(path.join(os.tmpdir(), prefix));
+  try {
+    await run(directory);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function commitAll(root, message) {
+  await gitQuiet(root, ["init", "--quiet", "-b", "main"]);
+  await gitQuiet(root, ["add", "-A"]);
+  await gitQuiet(root, ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", message]);
+}
+
+// Catalog fixture: one source with three Skills and two Packs (common, development).
+async function createCatalogFixture(root) {
+  await mkdir(path.join(root, "packs"), { recursive: true });
+  await mkdir(path.join(root, "licenses"), { recursive: true });
+  await writeFile(
+    path.join(root, "package.json"),
+    `${JSON.stringify({ name: "fixture-catalog", version: "1.0.0", private: true, agentSkills: { packageSpec: "fixture#main" } }, null, 2)}\n`,
+  );
+  await writeFile(
+    path.join(root, "sources.lock.json"),
+    `${JSON.stringify({ schemaVersion: 1, sources: [{ id: "test-source", name: "Test Source", repository: "https://github.com/example/test.git", skillRoot: "skills", revision: "a".repeat(40), skillPaths: { beta: "nested/beta" }, licenseFile: "licenses/test-source-LICENSE" }] }, null, 2)}\n`,
+  );
+  await writeFile(path.join(root, "licenses", "test-source-LICENSE"), "license\n");
+  for (const skillName of ["alpha", "beta", "gamma"]) {
+    const directory = path.join(root, "skills", "test-source", skillName);
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, "SKILL.md"), `---\nname: ${skillName}\n---\n`);
+  }
+  const common = { schemaVersion: 1, id: "common", name: "Common", sources: [{ source: "test-source", skills: ["alpha"] }] };
+  const development = { schemaVersion: 1, id: "development", name: "Development", sources: [{ source: "test-source", skills: ["beta", "gamma"] }] };
+  await writeFile(path.join(root, "packs", "common.json"), `${JSON.stringify(common, null, 2)}\n`);
+  await writeFile(path.join(root, "packs", "development.json"), `${JSON.stringify(development, null, 2)}\n`);
+  await commitAll(root, "fixture catalog");
+}
+
+// Upstream fixture: a standalone git repo containing two Skills under skills/.
+async function createUpstreamFixture(root) {
+  for (const skillName of ["delta", "epsilon"]) {
+    const directory = path.join(root, "skills", skillName);
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, "SKILL.md"), `---\nname: ${skillName}\n---\ncontent\n`);
+  }
+  await commitAll(root, "upstream fixture");
+}
+
+function catalogEnvironment(catalogRoot, stateRoot) {
+  return { AGENTHOME_CATALOG_SPEC: catalogRoot, AGENTHOME_STATE_DIR: stateRoot };
+}
+
+// A fake npm on PATH that records its arguments, so self-update fallbacks can be
+// verified without touching the real global npm install.
+async function withFakeNpm(run) {
+  await withTempDirectory("agenthome-fake-npm-", async (root) => {
+    const binDirectory = path.join(root, "bin");
+    const logFile = path.join(root, "npm.log");
+    await mkdir(binDirectory);
+    if (process.platform === "win32") {
+      // .ps1 shims are launched through PowerShell by the runtime resolver.
+      await writeFile(path.join(binDirectory, "npm.ps1"), `Add-Content -Path $env:NPM_LOG -Value ($args -join ' ')\n`);
+    } else {
+      const script = path.join(binDirectory, "npm");
+      await writeFile(script, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$NPM_LOG\"\nexit 0\n");
+      await chmod(script, 0o755);
+    }
+    const environment = {
+      PATH: `${binDirectory}${path.delimiter}${process.env.PATH}`,
+      Path: `${binDirectory}${path.delimiter}${process.env.PATH}`,
+      NPM_LOG: logFile,
+    };
+    await run(environment, logFile);
+  });
+}
+
+test("bare invocation and help positions exit cleanly without touching the catalog", async () => {
+  await withTempDirectory("agenthome-help-", async (projectRoot) => {
+    for (const argumentsList of [[], ["help"], ["-h"], ["--help"]]) {
+      const result = runAgent(projectRoot, argumentsList);
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /AgentHome/);
+      assert.doesNotMatch(result.stdout, /Installation Plan/);
+    }
+    const shorthand = runAgent(projectRoot, ["--help"]);
+    assert.match(shorthand.stdout, /shorthand: ah/);
+  });
+});
+
+test("unknown commands fail with a clear error", async () => {
+  await withTempDirectory("agenthome-unknown-", async (projectRoot) => {
+    // Point at a local fixture so the Pack-vs-typo catalog check stays offline.
+    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        const result = runAgent(projectRoot, ["bogus-command"], environment);
+        assert.equal(result.status, 1);
+        assert.match(result.stderr, /Error: Unknown command or Pack: bogus-command/);
+      });
+    });
+  });
+});
+
+test("runtime overview and doctor cover all three agents", async () => {
+  await withTempDirectory("agenthome-overview-", async (projectRoot) => {
+    const status = runAgent(projectRoot, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /Claude Code/);
+    assert.match(status.stdout, /Codex/);
+    assert.match(status.stdout, /OpenCode/);
+    assert.match(status.stdout, /Not initialized/);
+
+    const doctor = runAgent(projectRoot, ["doctor"]);
+    assert.equal(doctor.status, 0, doctor.stderr);
+    assert.match(doctor.stdout, /Project root\s+OK/);
+    assert.match(doctor.stdout, /Claude Code\s+(OK|NOT FOUND)/);
+    assert.match(doctor.stdout, /Codex\s+(OK|NOT FOUND)/);
+    assert.match(doctor.stdout, /OpenCode\s+(OK|NOT FOUND)/);
+  });
+});
+
+test("sessions git toggles on/off/status and rejects invalid modes", async () => {
+  await withTempDirectory("agenthome-sessions-git-", async (projectRoot) => {
+    spawnSync("git", ["init", "--quiet"], { cwd: projectRoot, windowsHide: true });
+    const initialized = runAgent(projectRoot, ["codex", "init", "--auth", "global"]);
+    assert.equal(initialized.status, 0, initialized.stderr);
+
+    const on = runAgent(projectRoot, ["sessions", "git", "status"]);
+    assert.equal(on.status, 0, on.stderr);
+    assert.match(on.stdout, /Session Git sync: On/);
+
+    const off = runAgent(projectRoot, ["sessions", "git", "off"]);
+    assert.equal(off.status, 0, off.stderr);
+    assert.match(off.stdout, /Status\s+Off/);
+    const disabled = runAgent(projectRoot, ["sessions", "git", "status"]);
+    assert.match(disabled.stdout, /Session Git sync: Off/);
+
+    const reEnabled = runAgent(projectRoot, ["sessions", "git", "on"]);
+    assert.equal(reEnabled.status, 0, reEnabled.stderr);
+    assert.match(reEnabled.stdout, /Status\s+On/);
+    assert.match(runAgent(projectRoot, ["sessions", "git", "status"]).stdout, /Session Git sync: On/);
+
+    const invalidMode = runAgent(projectRoot, ["sessions", "git", "bogus"]);
+    assert.equal(invalidMode.status, 1);
+    assert.match(invalidMode.stderr, /Usage: agenthome sessions git \[on\|off\|status\]/);
+    const invalidCommand = runAgent(projectRoot, ["sessions", "bogus"]);
+    assert.equal(invalidCommand.status, 1);
+    assert.match(invalidCommand.stderr, /Usage: agenthome sessions git \[on\|off\|status\]/);
+  });
+});
+
+test("agent auth CLI switches scope, resets, and rejects invalid modes", async () => {
+  await withTempDirectory("agenthome-auth-", async (projectRoot) => {
+    const initialized = runAgent(projectRoot, ["claude", "init", "--auth", "global"]);
+    assert.equal(initialized.status, 0, initialized.stderr);
+
+    const current = runAgent(projectRoot, ["claude", "auth"]);
+    assert.equal(current.status, 0, current.stderr);
+    assert.match(current.stdout, /Effective auth\s+global/);
+
+    const project = runAgent(projectRoot, ["claude", "auth", "project"]);
+    assert.equal(project.status, 0, project.stderr);
+    assert.match(project.stdout, /Effective\s+project/);
+
+    const reset = runAgent(projectRoot, ["claude", "auth", "reset"]);
+    assert.equal(reset.status, 0, reset.stderr);
+    assert.match(reset.stdout, /Effective\s+global/);
+
+    const invalid = runAgent(projectRoot, ["claude", "auth", "bogus"]);
+    assert.equal(invalid.status, 1);
+    assert.match(invalid.stderr, /Authentication must be global or project: bogus/);
+  });
+});
+
+test("agent launch and auth before init fail with hints", async () => {
+  await withTempDirectory("agenthome-before-init-", async (projectRoot) => {
+    const launch = runAgent(projectRoot, ["claude"]);
+    assert.equal(launch.status, 1);
+    assert.match(launch.stderr, /is not initialized\. Run: agenthome claude init/);
+
+    const auth = runAgent(projectRoot, ["claude", "auth", "project"]);
+    assert.equal(auth.status, 1);
+    assert.match(auth.stderr, /is not initialized/);
+  });
+});
+
+test("init validates options and auth/sessions modes", async () => {
+  await withTempDirectory("agenthome-init-validate-", async (projectRoot) => {
+    const invalidAuth = runAgent(projectRoot, ["claude", "init", "--auth", "bogus"]);
+    assert.equal(invalidAuth.status, 1);
+    assert.match(invalidAuth.stderr, /Authentication must be global or project: bogus/);
+
+    const invalidSessions = runAgent(projectRoot, ["codex", "init", "--sessions", "bogus"]);
+    assert.equal(invalidSessions.status, 1);
+    assert.match(invalidSessions.stderr, /Sessions must be global or project: bogus/);
+
+    const unknownOption = runAgent(projectRoot, ["claude", "init", "--bogus"]);
+    assert.equal(unknownOption.status, 1);
+    assert.match(unknownOption.stderr, /Unknown option: --bogus/);
+
+    const strayArgument = runAgent(projectRoot, ["claude", "init", "extra"]);
+    assert.equal(strayArgument.status, 1);
+    assert.match(strayArgument.stderr, /Unknown option: extra/);
+
+    const deinit = runAgent(projectRoot, ["claude", "deinit", "--bogus"]);
+    assert.equal(deinit.status, 1);
+    assert.match(deinit.stderr, /Unknown option: --bogus/);
+  });
+});
+
+test("agent sessions import and status work through the CLI", async () => {
+  await withTempDirectory("agenthome-sessions-cli-", async (projectRoot) => {
+    const initialized = runAgent(projectRoot, ["claude", "init", "--auth", "global"]);
+    assert.equal(initialized.status, 0, initialized.stderr);
+
+    await withTempDirectory("agenthome-claude-home-", async (claudeHome) => {
+      const environment = { CLAUDE_CONFIG_DIR: claudeHome };
+      const imported = runAgent(projectRoot, ["claude", "sessions", "import"], environment);
+      assert.equal(imported.status, 0, imported.stderr);
+      assert.match(imported.stdout, /Sessions\s+0/);
+
+      const status = runAgent(projectRoot, ["claude", "sessions", "status"], environment);
+      assert.equal(status.status, 0, status.stderr);
+      assert.match(status.stdout, /Sessions 0/);
+
+      const invalid = runAgent(projectRoot, ["claude", "sessions", "bogus"], environment);
+      assert.equal(invalid.status, 1);
+      assert.match(invalid.stderr, /Usage: agenthome claude sessions \[import\|restore\|status\]/);
+    });
+  });
+});
+
+test("skills help and unknown Pack errors stay offline", async () => {
+  await withTempDirectory("agenthome-skills-help-", async (projectRoot) => {
+    const help = runAgent(projectRoot, ["skills", "help"]);
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /Agent runtimes/);
+
+    const missingSource = runAgent(projectRoot, ["skills", "add"]);
+    assert.equal(missingSource.status, 1);
+    assert.match(missingSource.stderr, /Usage: agenthome skills add <owner\/repo>/);
+
+    const extra = runAgent(projectRoot, ["skills", "self-update", "extra"]);
+    assert.equal(extra.status, 1);
+    assert.match(extra.stderr, /Usage: self-update/);
+
+    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        const unknownPack = runAgent(projectRoot, ["skills", "bogus-pack"], environment);
+        assert.equal(unknownPack.status, 1);
+        assert.match(unknownPack.stderr, /Unknown command or Pack: bogus-pack/);
+      });
+    });
+  });
+});
+
+test("bare skills installs the default common Pack", async () => {
+  await withTempDirectory("agenthome-skills-bare-", async (projectRoot) => {
+    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        const installed = runAgent(projectRoot, ["skills"], environment);
+        assert.equal(installed.status, 0, installed.stderr);
+        assert.match(installed.stdout, /Installation complete: 1 unique Skills/);
+        assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "alpha", "SKILL.md")), true);
+        assert.equal(existsSync(path.join(projectRoot, ".agent-skills.lock.json")), true);
+      });
+    });
+  });
+});
+
+test("skills packs and tree read the catalog", async () => {
+  await withTempDirectory("agenthome-skills-tree-", async (projectRoot) => {
+    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+
+        const packs = runAgent(projectRoot, ["skills", "packs"], environment);
+        assert.equal(packs.status, 0, packs.stderr);
+        assert.match(packs.stdout, /Available Packs/);
+        assert.match(packs.stdout, /common/);
+        assert.match(packs.stdout, /development/);
+
+        const tree = runAgent(projectRoot, ["skills", "tree"], environment);
+        assert.equal(tree.status, 0, tree.stderr);
+        assert.match(tree.stdout, /alpha/);
+        assert.match(tree.stdout, /beta/);
+        assert.match(tree.stdout, /gamma/);
+
+        const preview = runAgent(projectRoot, ["skills", "tree", "development"], environment);
+        assert.equal(preview.status, 0, preview.stderr);
+        assert.match(preview.stdout, /Pack Preview/);
+        assert.match(preview.stdout, /Packs: Common \+ Development/);
+      });
+    });
+  });
+});
+
+test("skills status reports the installed tree and fails without a lock", async () => {
+  await withTempDirectory("agenthome-skills-status-", async (projectRoot) => {
+    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+
+        const missing = runAgent(projectRoot, ["skills", "status"], environment);
+        assert.equal(missing.status, 1);
+        assert.match(missing.stderr, /no lock file/);
+        const missingGlobal = runAgent(projectRoot, ["skills", "-g", "status"], environment);
+        assert.equal(missingGlobal.status, 1);
+        assert.match(missingGlobal.stderr, /no lock file/);
+
+        const installed = runAgent(projectRoot, ["skills", "common"], environment);
+        assert.equal(installed.status, 0, installed.stderr);
+        const status = runAgent(projectRoot, ["skills", "status"], environment);
+        assert.equal(status.status, 0, status.stderr);
+        assert.match(status.stdout, /Packs: Common/);
+        assert.match(status.stdout, /alpha/);
+      });
+    });
+  });
+});
+
+test("skills doctor and update fall back to runtime meanings outside a catalog", async () => {
+  await withTempDirectory("agenthome-skills-fallback-", async (projectRoot) => {
+    const doctor = runAgent(projectRoot, ["skills", "doctor"]);
+    assert.equal(doctor.status, 0, doctor.stderr);
+    assert.match(doctor.stdout, /Project root\s+OK/);
+
+    const extra = runAgent(projectRoot, ["skills", "update", "extra"]);
+    assert.equal(extra.status, 1);
+    assert.match(extra.stderr, /Usage: agenthome self-update/);
+
+    await withFakeNpm(async (environment, logFile) => {
+      const update = runAgent(projectRoot, ["skills", "update"], environment);
+      assert.equal(update.status, 0, update.stderr);
+      assert.match(update.stdout, /AgentHome update complete/);
+      assert.match(await readFile(logFile, "utf8"), /install --global agenthome-cli@latest/);
+    });
+  });
+});
+
+test("catalog use, default, and sync round-trip through the CLI", async () => {
+  await withTempDirectory("agenthome-catalog-cli-", async (projectRoot) => {
+    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+      await withTempDirectory("agenthome-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = { AGENTHOME_STATE_DIR: stateRoot };
+
+        const used = runAgent(projectRoot, ["catalog", "use", catalogRoot], environment);
+        assert.equal(used.status, 0, used.stderr);
+        assert.match(used.stdout, /Default catalog: /);
+        assert.match(used.stdout, /Run: agenthome catalog sync/);
+
+        const shown = runAgent(projectRoot, ["catalog", "default"], environment);
+        assert.equal(shown.status, 0, shown.stderr);
+        assert.equal(shown.stdout.trim(), `Default catalog: ${catalogRoot}`);
+
+        const synced = runAgent(projectRoot, ["catalog", "sync"], environment);
+        assert.equal(synced.status, 0, synced.stderr);
+        assert.match(synced.stdout, /Catalog sync/);
+        assert.match(synced.stdout, /Revision\s+[0-9a-f]{40}/);
+
+        const missingSpec = runAgent(projectRoot, ["catalog", "use"], environment);
+        assert.equal(missingSpec.status, 1);
+        assert.match(missingSpec.stderr, /Usage: agenthome catalog use <spec>/);
+
+        const globalSync = runAgent(projectRoot, ["catalog", "-g", "sync"], environment);
+        assert.equal(globalSync.status, 1);
+        assert.match(globalSync.stderr, /Usage: agenthome catalog sync/);
+      });
+    });
+  });
+});
+
+test("catalog maintenance requires the catalog clone and doctor validates it", async () => {
+  await withTempDirectory("agenthome-catalog-maintenance-", async (projectRoot) => {
+    const outsideDoctor = runAgent(projectRoot, ["catalog", "doctor"]);
+    assert.equal(outsideDoctor.status, 1);
+    assert.match(outsideDoctor.stderr, /must run inside the AgentHome Git clone/);
+
+    const outsideAdd = runAgent(projectRoot, ["catalog", "add", "some", "skill"]);
+    assert.equal(outsideAdd.status, 1);
+    assert.match(outsideAdd.stderr, /must run inside the AgentHome Git clone/);
+
+    await withTempDirectory("agenthome-catalog-", async (catalogRoot) => {
+      await createCatalogFixture(catalogRoot);
+      const cloneRoot = `${catalogRoot}-work`;
+      await gitQuiet(catalogRoot, ["clone", "--quiet", catalogRoot, cloneRoot]);
+
+      const doctor = runAgent(cloneRoot, ["catalog", "doctor"]);
+      assert.equal(doctor.status, 0, doctor.stderr);
+      assert.match(doctor.stdout, /OK: 3 Skills, 1 sources, 2 Packs/);
+
+      const unknown = runAgent(cloneRoot, ["catalog", "bogus"]);
+      assert.equal(unknown.status, 1);
+      assert.match(unknown.stderr, /Usage: agenthome catalog <sync\|use\|default\|doctor\|update\|add\|remove\|pack-add\|pack-remove\|source-add>/);
+    });
+  });
+});
+
+test("catalog pack-add and source-add manage the catalog", async () => {
+  await withTempDirectory("agenthome-catalog-manage-", async (catalogRoot) => {
+    await withTempDirectory("agenthome-upstream-", async (upstreamRoot) => {
+      await createCatalogFixture(catalogRoot);
+      await createUpstreamFixture(upstreamRoot);
+      const cloneRoot = `${catalogRoot}-work`;
+      await gitQuiet(catalogRoot, ["clone", "--quiet", catalogRoot, cloneRoot]);
+
+      const packAdded = runAgent(cloneRoot, ["catalog", "pack-add", "design", "--name", "Design"]);
+      assert.equal(packAdded.status, 0, packAdded.stderr);
+      assert.match(packAdded.stdout, /Created Pack: design/);
+      const packFile = JSON.parse(await readFile(path.join(cloneRoot, "packs", "design.json"), "utf8"));
+      assert.equal(packFile.name, "Design");
+
+      const packRepeated = runAgent(cloneRoot, ["catalog", "pack-add", "design"]);
+      assert.equal(packRepeated.status, 1);
+      assert.match(packRepeated.stderr, /Pack already exists: design/);
+
+      const sourceAdded = runAgent(cloneRoot, ["catalog", "source-add", "second", upstreamRoot, "--name", "Second"]);
+      assert.equal(sourceAdded.status, 0, sourceAdded.stderr);
+      assert.match(sourceAdded.stdout, /Registered second @ [0-9a-f]{8}/);
+      assert.match(sourceAdded.stdout, /Next: agenthome catalog add second/);
+      const sources = JSON.parse(await readFile(path.join(cloneRoot, "sources.lock.json"), "utf8"));
+      assert.equal(sources.sources.some((source) => source.id === "second"), true);
+
+      const sourceRepeated = runAgent(cloneRoot, ["catalog", "source-add", "second", upstreamRoot]);
+      assert.equal(sourceRepeated.status, 1);
+      assert.match(sourceRepeated.stderr, /Source already exists: second/);
+    });
+  });
+});
+
+test("catalog add registers a source and vendors its Skills", async () => {
+  await withTempDirectory("agenthome-catalog-add-", async (catalogRoot) => {
+    await withTempDirectory("agenthome-upstream-", async (upstreamRoot) => {
+      await createCatalogFixture(catalogRoot);
+      await createUpstreamFixture(upstreamRoot);
+      const cloneRoot = `${catalogRoot}-work`;
+      await gitQuiet(catalogRoot, ["clone", "--quiet", catalogRoot, cloneRoot]);
+      const packAdded = runAgent(cloneRoot, ["catalog", "pack-add", "design"]);
+      assert.equal(packAdded.status, 0, packAdded.stderr);
+
+      const added = runAgent(cloneRoot, ["catalog", "add", upstreamRoot, "delta", "--pack", "design"]);
+      assert.equal(added.status, 0, added.stderr);
+      assert.match(added.stdout, /Added: [a-z0-9._-]+ -> delta/);
+      assert.match(added.stdout, /Packs: design/);
+
+      const packFile = JSON.parse(await readFile(path.join(cloneRoot, "packs", "design.json"), "utf8"));
+      const sourceId = packFile.sources[0].source;
+      assert.equal(packFile.sources[0].skills.includes("delta"), true);
+      assert.equal(existsSync(path.join(cloneRoot, "skills", sourceId, "delta", "SKILL.md")), true);
+      const sources = JSON.parse(await readFile(path.join(cloneRoot, "sources.lock.json"), "utf8"));
+      assert.equal(sources.sources.some((source) => source.id === sourceId), true);
+
+      const repeated = runAgent(cloneRoot, ["catalog", "add", upstreamRoot, "delta", "--pack", "design"]);
+      assert.equal(repeated.status, 0, repeated.stderr);
+      assert.match(repeated.stdout, /Already installed/);
+
+      const missing = runAgent(cloneRoot, ["catalog", "add", upstreamRoot, "nosuchskill", "--pack", "design"]);
+      assert.equal(missing.status, 1);
+      assert.match(missing.stderr, /Skill not found upstream: nosuchskill/);
+      const unchanged = JSON.parse(await readFile(path.join(cloneRoot, "packs", "design.json"), "utf8"));
+      assert.equal(unchanged.sources[0].skills.includes("nosuchskill"), false);
+    });
+  });
+});
+
+test("catalog update follows upstream revisions", async () => {
+  await withTempDirectory("agenthome-catalog-update-", async (root) => {
+    const upstreamRoot = path.join(root, "upstream");
+    const catalogRoot = path.join(root, "catalog");
+    await mkdir(path.join(upstreamRoot, "skills", "s"), { recursive: true });
+    await writeFile(path.join(upstreamRoot, "skills", "s", "SKILL.md"), "---\nname: s\n---\nv1\n");
+    await commitAll(upstreamRoot, "upstream v1");
+    const firstRevision = gitQuiet(upstreamRoot, ["rev-parse", "HEAD"]);
+
+    await mkdir(path.join(catalogRoot, "packs"), { recursive: true });
+    await mkdir(path.join(catalogRoot, "skills", "up", "s"), { recursive: true });
+    await writeFile(path.join(catalogRoot, "skills", "up", "s", "SKILL.md"), "---\nname: s\n---\nv1\n");
+    await writeFile(path.join(catalogRoot, "packs", "common.json"), `${JSON.stringify({ schemaVersion: 1, id: "common", name: "Common", sources: [{ source: "up", skills: ["s"] }] }, null, 2)}\n`);
+    await writeFile(path.join(catalogRoot, "sources.lock.json"), `${JSON.stringify({ schemaVersion: 1, sources: [{ id: "up", name: "Up", repository: upstreamRoot, skillRoot: "skills", revision: firstRevision }] }, null, 2)}\n`);
+    await writeFile(path.join(catalogRoot, "package.json"), `${JSON.stringify({ name: "update-fixture", version: "1.0.0" })}\n`);
+    await commitAll(catalogRoot, "catalog fixture");
+    const cloneRoot = path.join(root, "work");
+    await gitQuiet(catalogRoot, ["clone", "--quiet", catalogRoot, cloneRoot]);
+
+    await writeFile(path.join(upstreamRoot, "skills", "s", "SKILL.md"), "---\nname: s\n---\nv2\n");
+    await gitQuiet(upstreamRoot, ["add", "-A"]);
+    await gitQuiet(upstreamRoot, ["-c", "user.name=f", "-c", "user.email=f@e", "commit", "--quiet", "-m", "upstream v2"]);
+    const secondRevision = gitQuiet(upstreamRoot, ["rev-parse", "HEAD"]);
+
+    const check = runAgent(cloneRoot, ["catalog", "update", "--check"]);
+    assert.equal(check.status, 0, check.stderr);
+    assert.match(check.stdout, /up: update available/);
+
+    const unknown = runAgent(cloneRoot, ["catalog", "update", "bogus", "--check"]);
+    assert.equal(unknown.status, 1);
+    assert.match(unknown.stderr, /Unknown source: bogus/);
+
+    const updated = runAgent(cloneRoot, ["catalog", "update"]);
+    assert.equal(updated.status, 0, updated.stderr);
+    assert.match(updated.stdout, /Fetching upstream: Up/);
+    assert.match(updated.stdout, /Update complete/);
+    assert.match(await readFile(path.join(cloneRoot, "skills", "up", "s", "SKILL.md"), "utf8"), /v2/);
+    const sources = JSON.parse(await readFile(path.join(cloneRoot, "sources.lock.json"), "utf8"));
+    assert.equal(sources.sources[0].revision, secondRevision);
+
+    const upToDate = runAgent(cloneRoot, ["catalog", "update", "--check"]);
+    assert.equal(upToDate.status, 0, upToDate.stderr);
+    assert.match(upToDate.stdout, /up: up to date/);
+  });
+});

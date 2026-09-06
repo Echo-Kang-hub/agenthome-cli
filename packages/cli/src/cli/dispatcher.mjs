@@ -374,5 +374,14 @@ export async function runCli(options = {}) {
   if (command === "doctor") {
     return dispatchDoctor();
   }
-  throw new Error(`Unknown command: ${command}`);
+  // Anything left is either a legacy top-level command (add, self-update,
+  // uninstall, packs, tree, ...) or a Pack id. Pack ids are user-defined, so
+  // the catalog is the only source of truth for telling Packs from typos;
+  // delegate to the skills dispatcher, which resolves known commands locally
+  // before any catalog work.
+  return dispatchSkills(argumentsList, {
+    io: console,
+    cwd: process.cwd(),
+    environment: process.env,
+  });
 }

@@ -10,6 +10,7 @@ import {
   assertSafeId,
   assertSafeSkillName,
   buildCatalog,
+  cloneHead,
   cloneRevision,
   createInstallContext,
   createTempDirectory,
@@ -450,7 +451,9 @@ async function commandAdd(argumentsList, catalogRoot, io = console) {
   let source = findSource(sourceConfig, sourceReference);
   let registeredSource = false;
   if (!source) {
-    if (!sourceReference.includes("/")) {
+    // owner/repo, URLs, and SSH refs always contain "/"; local paths may use
+    // the platform separator instead (Windows: "\").
+    if (!sourceReference.includes("/") && !sourceReference.includes("\\")) {
       fail(`Unknown source: ${sourceReference}`);
     }
     source = await registerSource(catalogRoot, sourceConfig, {
@@ -807,23 +810,26 @@ async function commandCatalogDefault(options = {}) {
 export async function dispatchCatalog(argumentsList, options = {}) {
   const io = options.io ?? console;
   const scope = parseScopeArguments(argumentsList);
+  // The entry point (dispatchSkills) strips scope flags before delegating here,
+  // so the global flag must survive the delegation to keep validation intact.
+  const global = scope.global || options.global;
   const [command, ...remainingArguments] = scope.argumentsList;
   if (command === "sync") {
-    if (scope.global || remainingArguments.length > 0) {
+    if (global || remainingArguments.length > 0) {
       fail("Usage: agenthome catalog sync");
     }
     await commandCatalogSync(options);
     return;
   }
   if (command === "use") {
-    if (scope.global) {
+    if (global) {
       fail("agenthome catalog use does not accept a global scope");
     }
     await commandCatalogUse(remainingArguments, options);
     return;
   }
   if (command === "default") {
-    if (scope.global || remainingArguments.length > 0) {
+    if (global || remainingArguments.length > 0) {
       fail("Usage: agenthome catalog default");
     }
     await commandCatalogDefault(options);
@@ -841,7 +847,7 @@ export async function dispatchCatalog(argumentsList, options = {}) {
   if (!command || !maintenanceCommands.has(command)) {
     fail("Usage: agenthome catalog <sync|use|default|doctor|update|add|remove|pack-add|pack-remove|source-add>");
   }
-  if (scope.global) {
+  if (global) {
     fail(`${command} does not accept a global scope`);
   }
   const cwd = options.cwd ?? process.cwd();
@@ -870,6 +876,7 @@ export async function dispatchSkills(argumentsList, options = {}) {
       io,
       cwd: options.cwd ?? process.cwd(),
       environment: options.environment ?? process.env,
+      global: scope.global || options.global,
     });
     return;
   }
@@ -937,13 +944,16 @@ export async function dispatchSkills(argumentsList, options = {}) {
     case "uninstall":
       await commandUninstall(remainingArguments, commandOptions);
       return;
+    case "status":
+      await commandStatus(commandOptions);
+      return;
   }
 
-  // Agent runtime commands (claude/codex/opencode lifecycle, sessions, agent
-  // status) are handled by the runtime dispatcher; delegate before the Pack
-  // fallback so typos in the agent position never trigger a network fetch.
-  // The skills tree stays reachable as `agenthome skills status`.
-  if (Object.hasOwn(AGENTS, command) || command === "sessions" || command === "status") {
+  // Agent runtime commands (claude/codex/opencode lifecycle, sessions) are
+  // handled by the runtime dispatcher; delegate before the Pack fallback so
+  // typos in the agent position never trigger a network fetch. The bare
+  // `agenthome status` overview stays reachable through the main entry.
+  if (Object.hasOwn(AGENTS, command) || command === "sessions") {
     const { runCli } = await import("./dispatcher.mjs");
     return runCli({ argumentsList: scope.argumentsList });
   }

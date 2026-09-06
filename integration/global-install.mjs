@@ -52,7 +52,11 @@ async function verifyInstall(archive, environment) {
   const binDirectory = process.platform === "win32" ? prefix : path.join(prefix, "bin");
   const launcher = path.join(binDirectory, process.platform === "win32" ? "agenthome.cmd" : "agenthome");
   assert.equal(existsSync(launcher), true, `Missing global launcher: ${launcher}`);
+  const shorthand = path.join(binDirectory, process.platform === "win32" ? "ah.cmd" : "ah");
+  assert.equal(existsSync(shorthand), true, `Missing shorthand launcher: ${shorthand}`);
   await mkdir(projectRoot, { recursive: true });
+  const shorthandHelp = runLauncher(shorthand, ["--help"], projectRoot, environment);
+  assert.match(shorthandHelp.stdout, /shorthand: ah/);
   const launched = runLauncher(launcher, ["codex", "init", "--auth", "global"], projectRoot, environment);
   assert.match(launched.stdout, /Changed:/);
   assert.equal(existsSync(path.join(projectRoot, ".agents", "runtime.json")), true);
