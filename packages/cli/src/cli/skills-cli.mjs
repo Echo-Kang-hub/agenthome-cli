@@ -48,6 +48,7 @@ import {
   removeTempDirectory,
   replaceStagedFiles,
   resolveInstallPacks,
+  resolveInstallSource,
   resolvePack,
   resolvePacks,
   saveSources,
@@ -254,7 +255,7 @@ async function commandUninstallSkill(skillArguments, options = {}) {
 
 async function commandTree(packArguments, options = {}) {
   const io = options.io ?? console;
-  const catalogInfo = await resolveCatalogSource(options);
+  const catalogInfo = await resolveInstallSource(options);
   const sourceConfig = await loadSources(catalogInfo.catalogRoot);
   const catalog = await buildCatalog(sourceConfig, path.join(catalogInfo.catalogRoot, "skills"));
   if (packArguments.length === 0) {
@@ -276,7 +277,7 @@ async function commandTree(packArguments, options = {}) {
 
 async function commandPacks(options = {}) {
   const io = options.io ?? console;
-  const catalogInfo = await resolveCatalogSource(options);
+  const catalogInfo = await resolveInstallSource(options);
   const sourceConfig = await loadSources(catalogInfo.catalogRoot);
   const catalog = await buildCatalog(sourceConfig, path.join(catalogInfo.catalogRoot, "skills"));
   const packs = await loadPacks(catalogInfo.catalogRoot);
@@ -1106,7 +1107,7 @@ export async function dispatchSkills(argumentsList, options = {}) {
 
   // Anything else is a Pack id (ids are user-defined, so the catalog is the
   // only source of truth for telling Packs from typos).
-  const catalogInfo = await resolveCatalogSource(commandOptions);
+  const catalogInfo = await resolveInstallSource(commandOptions);
   const packs = await loadPacks(catalogInfo.catalogRoot);
   if (packs.has(command)) {
     await commandInstall([command, ...remainingArguments], commandOptions);
