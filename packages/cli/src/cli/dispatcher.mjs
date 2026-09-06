@@ -80,7 +80,7 @@ Skills:
   avenic skills tree [pack...]        Show source -> Skill tree
   avenic skills packs                 List available Packs
   avenic skills status [-g]           Show the installed tree
-  -g, --global                           Use the global user scope
+  -g, --global                        Use the global user scope
 
 Catalog:
   avenic catalog add <spec>           Add a catalog source (owner/repo[#ref], URL, or local path) and preview its Packs
@@ -90,7 +90,7 @@ Catalog:
   avenic catalog default              Show the configured catalog spec
   Private repos use your local git credentials (gh auth login or SSH)
   avenic catalog doctor|update|skill-add|remove|pack-add|pack-remove|source-add
-                                         (run inside your catalog Git clone)
+                                      (run inside your catalog Git clone)
 
 Update Avenic:
   avenic self-update
