@@ -441,7 +441,13 @@ async function commandAdd(argumentsList, catalogRoot, io = console) {
     }
   }
 
-  const sourceConfig = await loadSources(catalogRoot);
+  // A fresh catalog starts with zero registered sources; loadSources rejects
+  // that, so the first source registers against an empty config instead.
+  const lockData = await readJson(sourcesFile);
+  const sourceConfig =
+    Array.isArray(lockData.sources) && lockData.sources.length > 0
+      ? await loadSources(catalogRoot)
+      : { schemaVersion: lockData.schemaVersion ?? 1, sources: [] };
   const sourcesFileBefore = await readFile(sourcesFile, "utf8");
   const packFilesBefore = new Map(
     await Promise.all(
@@ -799,6 +805,30 @@ async function commandCatalogUse(argumentsList, options = {}) {
   parseCatalogSpec(spec);
   await setDefaultCatalogSpec(options.environment, spec);
   io.log(`Default catalog: ${spec}`);
+  // The spec is already saved; the fetch below is only a preview. If it fails
+  // (offline, missing git credentials, no Packs yet), the catalog remains
+  // configured and `agenthome catalog sync` can retry later.
+  try {
+    const catalogInfo = await ensureCatalog(spec, { environment: options.environment, io });
+    const sourceConfig = await loadSources(catalogInfo.catalogRoot);
+    const catalog = await buildCatalog(sourceConfig, path.join(catalogInfo.catalogRoot, "skills"));
+    const packEntries = [...(await loadPacks(catalogInfo.catalogRoot)).values()];
+    io.log(`\nPacks · ${packEntries.length}  ·  revision ${catalogInfo.revision.slice(0, 8)}`);
+    packEntries.forEach((pack, packIndex) => {
+      const resolved = resolvePack(catalog, sourceConfig, pack);
+      const lastPack = packIndex === packEntries.length - 1;
+      const childPrefix = lastPack ? "    " : "│   ";
+      const label = pack.name && pack.name !== pack.id ? `${pack.id} (${pack.name})` : pack.id;
+      io.log(`${lastPack ? "└──" : "├──"} ${label} · ${resolved.names.length} ${resolved.names.length === 1 ? "Skill" : "Skills"}`);
+      resolved.names.forEach((name, nameIndex) => {
+        io.log(`${childPrefix}${nameIndex === resolved.names.length - 1 ? "└──" : "├──"} ${name}`);
+      });
+    });
+    io.log("\nInstall: agenthome skills [pack...]");
+  } catch (error) {
+    io.log("\nSpec saved. Catalog preview unavailable:");
+    io.log(`  ${String(error.message).split("\n")[0]}`);
+  }
   io.log("Run: agenthome catalog sync");
 }
 

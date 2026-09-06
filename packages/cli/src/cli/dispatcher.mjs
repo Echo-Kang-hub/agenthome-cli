@@ -85,7 +85,7 @@ Skills:
   -g, --global                           Use the global user scope
 
 Catalog:
-  agenthome catalog use <spec>           Set the catalog source (owner/repo[#ref], URL, or local path)
+  agenthome catalog use <spec>           Set the catalog source (owner/repo[#ref], URL, or local path) and preview its Packs
   agenthome catalog sync                 Fetch or update the cached catalog
   agenthome catalog default              Show the configured catalog spec
   Private repos use your local git credentials (gh auth login or SSH)

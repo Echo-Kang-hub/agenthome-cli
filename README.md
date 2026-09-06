@@ -107,13 +107,76 @@ agenthome skills status [-g]          # 当前安装状态
 
 > 默认 catalog 为维护者提供的示例；使用前请通过 `agenthome catalog use <owner/repo>` 指向自己的 catalog。
 
+#### Catalog 结构：源 → Pack → Skill
+
+Catalog 按三层组织：
+
+- **源（source）**：Skill 的上游仓库，登记在 `sources.lock.json`（仓库地址、锁定的 commit、许可证位置）。一个 catalog 可同时聚合任意多个上游源。
+- **Pack**：`packs/*.json`，声明"从哪些源选取哪些 Skill"，是导入的基本单位；`common` 为默认 Pack，安装时自动包含。
+- **Skill**：`skills/<source-id>/<skill-name>/SKILL.md`，按源归档的副本；安装 Pack 时复制进项目。
+
+```
+my-catalog/
+├── package.json              # 标识 catalog 仓库（可选）
+├── sources.lock.json         # 上游源登记：id、仓库、锁定 commit、许可证
+├── packs/
+│   ├── common.json           # Pack 定义
+│   └── development.json
+├── skills/                   # 按源归档的 Skill 副本
+│   └── <source-id>/<skill-name>/SKILL.md
+└── licenses/                 # 上游许可证（登记源时自动保存）
+```
+
+Pack 定义示例（`packs/development.json`）：
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "development",
+  "name": "Development",
+  "sources": [{ "source": "example-source", "skills": ["beta", "gamma"] }]
+}
+```
+
+#### 构造自己的 catalog
+
+初始化仓库骨架，登记上游源、创建 Pack，校验后推送（公开或私有均可）：
+
+```bash
+mkdir my-catalog && cd my-catalog
+git init
+mkdir -p packs skills
+echo '{"schemaVersion":1,"sources":[]}' > sources.lock.json
+
+agenthome catalog pack-add common --name Common                  # 新建 Pack
+agenthome catalog add <owner/repo> --pack common                 # 登记第一个上游源并收录其全部 Skill
+agenthome catalog pack-add development --name Development
+agenthome catalog add <owner/repo> skill-a skill-b --pack development   # 挑选 Skill 进其他 Pack
+agenthome catalog doctor                                         # 校验结构
+
+git add -A && git commit -m "catalog" && git push
+```
+
+`add` 会自动登记未收录的上游源（锁定 commit、保存许可证）；省略 `[skill...]` 收录该源全部 Skill；可反复 `add` 聚合多个上游源，Pack 可跨源挑选。
+
+#### 导入 catalog 源与 Pack
+
+```bash
+agenthome catalog use <owner/repo>     # 导入 catalog 源：保存源并立即打印 Pack → Skill 预览树
+agenthome skills                       # 按 Pack 导入 Skills（默认 common）
+agenthome skills development research  # 一次导入多个 Pack
+agenthome skills -g development        # 导入到全局作用域
+```
+
+`catalog use` 拉取成功后会在终端打印该源的预览树（Pack → 其中的 Skill），一眼看清可导入内容；拉取失败不影响源保存，之后 `agenthome catalog sync` 重试。同一时间生效一个 catalog 源，该源内聚合的多个上游仓库共享所有 Pack。
+
 #### 连接私有 Skills 仓库
 
 私有仓库不需要额外配置：CLI 不接触 token，clone 与 fetch 全部由本机 git 完成。以连接私有 catalog `Echo-Kang-hub/agenthome-catalog` 为例：
 
 ```bash
 gh auth login                                            # 1. 登录 GitHub（或改用 SSH key，二选一，只需一次）
-agenthome catalog use Echo-Kang-hub/agenthome-catalog    # 2. 设置 catalog 源（换成 <你的用户名>/<你的仓库>）
+agenthome catalog use Echo-Kang-hub/agenthome-catalog    # 2. 设置 catalog 源（换成 <你的用户名>/<你的仓库>），终端会打印 Pack 预览树
 agenthome catalog sync                                   # 3. 验证可拉取（输出 40 位 commit 即成功）
 agenthome skills                                         # 4. 安装默认 Pack（common）
 ```

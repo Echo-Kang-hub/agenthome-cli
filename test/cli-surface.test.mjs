@@ -389,6 +389,13 @@ test("catalog use, default, and sync round-trip through the CLI", async () => {
         const used = runAgent(projectRoot, ["catalog", "use", catalogRoot], environment);
         assert.equal(used.status, 0, used.stderr);
         assert.match(used.stdout, /Default catalog: /);
+        assert.match(used.stdout, /Packs · 2/);
+        assert.match(used.stdout, /├── common \(Common\) · 1 Skill/);
+        assert.match(used.stdout, /│   └── alpha/);
+        assert.match(used.stdout, /└── development \(Development\) · 2 Skills/);
+        assert.match(used.stdout, /    ├── beta/);
+        assert.match(used.stdout, /    └── gamma/);
+        assert.match(used.stdout, /Install: agenthome skills \[pack\.\.\.\]/);
         assert.match(used.stdout, /Run: agenthome catalog sync/);
 
         const shown = runAgent(projectRoot, ["catalog", "default"], environment);
@@ -408,6 +415,56 @@ test("catalog use, default, and sync round-trip through the CLI", async () => {
         assert.equal(globalSync.status, 1);
         assert.match(globalSync.stderr, /Usage: agenthome catalog sync/);
       });
+    });
+  });
+});
+
+test("catalog use keeps the spec saved when the preview fetch fails", async () => {
+  await withTempDirectory("agenthome-catalog-cli-", async (projectRoot) => {
+    await withTempDirectory("agenthome-state-", async (stateRoot) => {
+      const environment = { AGENTHOME_STATE_DIR: stateRoot };
+      const missing = path.join(projectRoot, "no-such-catalog");
+
+      const used = runAgent(projectRoot, ["catalog", "use", missing], environment);
+      assert.equal(used.status, 0, used.stderr);
+      assert.match(used.stdout, /Default catalog: /);
+      assert.match(used.stdout, /Spec saved\. Catalog preview unavailable:/);
+      assert.match(used.stdout, /Run: agenthome catalog sync/);
+
+      const shown = runAgent(projectRoot, ["catalog", "default"], environment);
+      assert.equal(shown.status, 0, shown.stderr);
+      assert.equal(shown.stdout.trim(), `Default catalog: ${missing}`);
+    });
+  });
+});
+
+test("catalog add registers the first source in a fresh catalog", async () => {
+  await withTempDirectory("agenthome-fresh-catalog-", async (catalogRoot) => {
+    await withTempDirectory("agenthome-upstream-", async (upstreamRoot) => {
+      await mkdir(path.join(catalogRoot, "packs"));
+      await mkdir(path.join(catalogRoot, "skills"));
+      await writeFile(
+        path.join(catalogRoot, "sources.lock.json"),
+        `${JSON.stringify({ schemaVersion: 1, sources: [] }, null, 2)}\n`,
+      );
+      await commitAll(catalogRoot, "fresh catalog");
+      await createUpstreamFixture(upstreamRoot);
+
+      const packAdded = runAgent(catalogRoot, ["catalog", "pack-add", "common"]);
+      assert.equal(packAdded.status, 0, packAdded.stderr);
+
+      const added = runAgent(catalogRoot, ["catalog", "add", upstreamRoot, "--pack", "common"]);
+      assert.equal(added.status, 0, added.stderr);
+      assert.match(added.stdout, /Added all Skills: [a-z0-9._-]+ \(2\)/);
+      assert.match(added.stdout, /Packs: common/);
+
+      const lock = JSON.parse(await readFile(path.join(catalogRoot, "sources.lock.json"), "utf8"));
+      assert.equal(lock.schemaVersion, 1);
+      assert.equal(lock.sources.length, 1);
+
+      const doctor = runAgent(catalogRoot, ["catalog", "doctor"]);
+      assert.equal(doctor.status, 0, doctor.stderr);
+      assert.match(doctor.stdout, /OK: 2 Skills, 1 sources, 1 Packs/);
     });
   });
 });
