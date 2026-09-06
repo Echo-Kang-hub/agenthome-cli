@@ -11,16 +11,14 @@ AgentHome 的公开 CLI 与运行时：统一管理 **Skills、项目 Runtime、
 
 ## 安装
 
-发布到 npm 前，从 GitHub 安装：
+```bash
+npm install -g agenthome-cli
+```
+
+开发/预发布版本从 GitHub 安装：
 
 ```bash
 npm install -g Echo-Kang-hub/agenthome-cli#main
-```
-
-发布后：
-
-```bash
-npm install -g agenthome-cli
 ```
 
 安装后可直接运行 `agent`、`agenthome`、`ac`、`ax`、`ao`。AgentHome 使用 npm 标准 `bin`，不修改 NVM、Node、npm 或 PATH。
@@ -113,11 +111,18 @@ Catalog 命令会登记来源、固定 commit 并保存许可证；失败自动�
 
 ## 迁移：旧安装
 
-旧版本安装在 `Echo-Kang-hub/agenthome`（该仓库已改名为私有 catalog 仓库 `agenthome-catalog`）。旧 bin 仍可运行但只显示迁移指引：
+- 最老的 `agenthome` 安装（该仓库已改名为私有 catalog 仓库 `agenthome-catalog`）：旧 bin 仍可运行但只显示迁移指引。
 
 ```bash
 npm uninstall -g agenthome
-npm install -g Echo-Kang-hub/agenthome-cli#main
+npm install -g agenthome-cli
+```
+
+- 发布前的 GitHub 根包安装（`agenthome-cli-monorepo`）：它与 registry 包同名 bin 冲突，先卸载再装：
+
+```bash
+npm uninstall -g agenthome-cli-monorepo
+npm install -g agenthome-cli
 ```
 
 Skills 数据（`.claude/skills/`、`.agents/skills/`、`.agent-skills.json`、`.agent-skills.lock.json`）无需迁移，新 CLI 兼容读取。
@@ -142,17 +147,17 @@ test/                单元与 fixture 测试（catalog 用例全部本地 git f
 
 ## 发布
 
+`agenthome-cli` 已发布到 npm（MIT）。发布新版本：
+
 ```bash
-npm login
-# 编辑 packages/cli/package.json：
-#   把 "private": true 改为 false
-#   把 agentHome.packageSpec 改为 "agenthome-cli@latest"（发布后 agent update 指向 registry）
+npm login   # 已登录则跳过
+# 编辑 packages/cli/package.json（及 packages/core/package.json）：提升 version
 cd packages/cli && npm publish
 ```
 
+> `agentHome.packageSpec` 保持 `agenthome-cli@latest`，`private` 保持 `false`（已发布包）。
+>
 > 仓库根 package.json 故意**不带 `workspaces` 字段，也没有任何 install 生命周期脚本**（postinstall/build/preinstall/install/prepack/prepare）：npm 11 对 git 简写安装会把 node_modules 链接到 pacote 解包临时目录，`workspaces` 或这些脚本会让 pacote 在该目录里再跑一次嵌套 `npm install`，Windows 上两者竞争会把解包目录改残（bin 报 MODULE_NOT_FOUND）。本包零依赖，无需 workspaces（`test/packaging.test.mjs` 守护此约束）。
-
-发布后恢复 `"private": true` 再提交（`agentHome.packageSpec` 保持 registry 值），避免误发。
 
 ## 安全边界
 
