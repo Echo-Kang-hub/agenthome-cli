@@ -1,7 +1,7 @@
 # AgentHome VS Code 扩展设计
 
 日期：2026-09-06
-状态：待评审
+状态：已确认（修订 2：发布配置、esbuild 构建链、并发边界、VS Code 1.90+、架构不变量）
 仓库：Echo-Kang-hub/agenthome-cli（monorepo，新增 `packages/vscode`）
 
 ## 1. 背景与目标
@@ -22,9 +22,9 @@
         ┌───────────────  @agenthome/core（公开 npm，.mjs + .d.ts）
         │  import                  │ import
 ┌───────┴──────┐          ┌────────┴───────┐
-│ packages/cli │          │ packages/vscode│   （vsce 打包时把 core
-│ vendor 打包  │          │ 依赖 npm 版本  │     bundle 进 vsix）
-└──────────────┘          └────────────────┘
+│ packages/cli │          │ packages/vscode│   （esbuild 构建时把 core
+│ vendor 打包  │          │ 依赖 npm 版本  │     bundle 进 dist/extension.js；
+└──────────────┘          └────────────────┘      vsce 负责打包/发布 VSIX）
 ```
 
 否决的备选：
@@ -32,13 +32,31 @@
 - 子路径导出 `agenthome-cli/core`：把生成的 vendor 目录暴露为 API，扩展被 CLI 发布节奏绑架，类型声明无处安放。
 - spawn `agenthome` 解析文本：解析脆弱、交互命令不可用、要求安装 CLI、每次操作开进程。
 
+### 架构不变量（后续任何迭代不得违反）
+
+- @agenthome/core = 唯一业务逻辑层
+- CLI 与 VS Code 扩展 = 两个平行客户端
+- CLI 继续 sync-core/vendor，不依赖扩展；扩展不 spawn agenthome CLI、不解析 CLI 文本
+- CLI 中 Pack 安装/卸载、直装删除、catalog add 等编排逻辑下沉 core
+- packages/vscode 使用 TypeScript
+- TreeView 负责快速查看/操作；Webview Dashboard 负责高颜值 Overview
+- 单工作区直接使用唯一 Workspace Folder；多工作区 QuickPick 选择，不使用活动文件判断
+- services 层保持薄适配，不复制业务逻辑；UI 层不直接读写 AgentHome 状态文件，所有业务状态重新从 core 获取
+- MVP 范围保持不变
+
 ## 3. core 改动清单
 
 core 是现有业务逻辑层（~70 个导出）。以下改动全部行为保持，CLI 同步改为调用（68 个现有测试把关）。
 
 ### 3.1 发布化
 
-- `private: true` 移除；`files: ["src/", "index.d.ts", "LICENSE"]`；`license: MIT`；独立 semver。
+`packages/core/package.json` 发布配置（在现有基础上补齐）：
+
+- `private` 移除；`license: "MIT"`；`type: "module"`；`main: "src/index.mjs"`；`engines: { "node": ">=18.17" }`（与 CLI 一致）。
+- `"exports": { ".": { "types": "./index.d.ts", "import": "./src/index.mjs", "default": "./src/index.mjs" } }`。
+- 顶层 `"types": "./index.d.ts"`（兼容不读 exports 的旧工具链）；不设 `module` 字段（bundler 走 exports，无必要）。
+- `files: ["src/", "index.d.ts", "LICENSE"]`；LICENSE 从仓库根复制进包（`packages/core/LICENSE`，当前不存在）。
+- 独立 semver。
 - 版本纪律写入 `docs/development.md`：core 变更 → bump core → publish（用户执行）→ CLI `sync-core` 照旧。
 
 ### 3.2 类型契约
@@ -61,8 +79,9 @@ core 是现有业务逻辑层（~70 个导出）。以下改动全部行为保�
 
 ## 4. packages/vscode 结构
 
-- TypeScript，编译为 **ESM**（`module: ES2022`），`main: ./dist/extension.js`，`type: module`，engine `^1.90.0`（VS Code 1.87+ 支持 ESM 扩展）。
-- 依赖 `@agenthome/core`（npm 语义版本）；vsce 打包时 bundle，用户无需安装任何东西。
+- TypeScript，构建链：**esbuild**（`format: esm`, `platform: node`, `external: ["vscode"]`）把 `src/extension.ts` 及全部运行时依赖（含 `@agenthome/core`）bundle 进 `dist/extension.js`；`tsc --noEmit` 单独做类型检查。`main: ./dist/extension.js`，`type: module`，`engines.vscode: ^1.90.0`（支持 VS Code 1.90+）。
+- `@agenthome/core` 放 `devDependencies`（被 bundle 进产物，不再随包分发 node_modules）。
+- vsce 只负责生成与发布 VSIX（`vsce package` / `vsce publish`），不承担依赖 bundle 职责。**用户不需要安装 AgentHome CLI 或 @agenthome/core**。
 
 ```
 packages/vscode/
@@ -141,6 +160,11 @@ VS Code 命令 / 树节点点击
 - git/网络错误按 core 语义呈现（如 catalog add 预览失败不致命）。
 - 并发：服务层 mutation 串行化（进行中时相关命令禁用），避免同时写锁文件。
 
+### 并发边界（MVP 限制）
+
+- 扩展进程内串行化只防护扩展自身的并发，**无法阻止 VS Code 扩展与 agenthome CLI 两个进程同时修改同一项目状态/锁文件**；MVP 接受此限制。
+- 真正的跨进程 mutation lock / 原子写入属于 core 层职责，列为后续 core 改进项（CLI 一并受益），MVP 不为此扩大范围。
+
 ## 7. 测试
 
 | 层 | 测什么 | 工具 |
@@ -155,7 +179,7 @@ VS Code 命令 / 树节点点击
 ## 8. 发布
 
 - Marketplace 公开：扩展名 `AgentHome`，extensionId 拟 `agenthome.agenthome`（依赖 publisher，见开放问题），categories `Other`；README 中文为主（与 CLI 一致）。
-- 打包 `vsce package`（production 依赖自动 bundle）；发布 `vsce publish` 由用户执行（同 npm publish 约束）。
+- 构建产物 `dist/extension.js` 已由 esbuild 含入全部依赖；`vsce package` 生成 VSIX、`vsce publish` 发布（均由用户执行，同 npm publish 约束）。
 - CI（agenthome-cli 新增 workflow）：push 跑 `npm test` + `test:vscode` + 扩展构建；tag `vscode-v*` 触发打包。
 - 版本线：core / cli / vscode 三条独立 semver。
 
@@ -176,6 +200,7 @@ VS Code 命令 / 树节点点击
 - Webview SKILL.md 预览
 - JSDoc 自动生成 d.ts
 - 自动 E2E
+- core 跨进程 mutation lock / 原子写入（见第 6 节并发边界）
 
 ## 10. 里程碑
 
