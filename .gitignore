@@ -1,3 +1,12 @@
 node_modules/
 *.tgz
 .tmp/
+.agents/
+
+# Agent Runtime
+.claude/skills/
+.agents/skills/
+.agents/local/
+.agents/tmp/
+.agents/direct/
+.agents/licenses/
