@@ -8,6 +8,8 @@ import { isInside, removeEmptyDirectory } from "../util/fs.mjs";
 import { readJson, writeJson } from "../util/json.mjs";
 import { ensureCatalog, loadDefaultCatalogSpec, parseCatalogSpec } from "./catalog.mjs";
 import { assertSafeSkillName } from "./ids.mjs";
+import { loadPacks, resolvePacks } from "./packs.mjs";
+import { buildCatalog, loadSources } from "./sources.mjs";
 import { normalizePackIds, parsePackArguments } from "./packs.mjs";
 import {
   GLOBAL_TARGETS,
@@ -288,4 +290,30 @@ export async function resolveInstallSource(options, { refresh = false } = {}) {
     ? await readJson(path.join(catalogInfo.catalogRoot, "package.json"))
     : null;
   return { ...catalogInfo, packageMetadata };
+}
+
+// Install Packs into a scope: resolve the catalog, resolve the Packs,
+// hand the plan to the presentation hook, copy the Skills, and write the
+// config/lock metadata. Bare invocations (no explicit Packs) refresh the
+// configured Packs against the latest catalog.
+export async function installPacks(context, explicitPacks = [], options = {}) {
+  const io = options.io ?? console;
+  if (!context.global && isCatalogDirectory(context.root)) {
+    fail("Run installation from a work project, not from the AgentHome catalog");
+  }
+  const catalogInfo = await resolveInstallSource({
+    global: context.global,
+    cwd: context.root,
+    environment: context.environment,
+    io,
+  }, { refresh: explicitPacks.length === 0 });
+  const sourceConfig = await loadSources(catalogInfo.catalogRoot);
+  const catalog = await buildCatalog(sourceConfig, path.join(catalogInfo.catalogRoot, "skills"));
+  const packs = await loadPacks(catalogInfo.catalogRoot);
+  const packIds = await resolveInstallPacks(context, explicitPacks);
+  const resolvedPacks = resolvePacks(catalog, sourceConfig, packs, packIds);
+  await options.onPlan?.(resolvedPacks);
+  await installCopies(context, resolvedPacks, io);
+  await writeInstallMetadata(context, resolvedPacks, catalogInfo);
+  return { catalogInfo, packIds, resolvedPacks };
 }
