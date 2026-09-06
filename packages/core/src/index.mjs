@@ -92,6 +92,7 @@ export {
   directRoot,
   readDirectState,
   removeDirectSkills,
+  removeExternalSkills,
   writeDirectState,
 } from "./skills/direct.mjs";
 export { printTree } from "./skills/ui.mjs";

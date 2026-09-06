@@ -6,6 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { createInstallContext, readDirectState, removeExternalSkills } from "../packages/core/src/index.mjs";
+import { writeJson } from "../packages/core/src/util/json.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const agentBin = path.join(packageRoot, "packages", "cli", "scripts", "skills.mjs");
@@ -160,4 +162,32 @@ test("skills add fails clearly when upstream has no Skills", async () => {
     assert.equal(refused.status, 1);
     assert.match(refused.stderr, /No Skill/);
   });
+});
+
+test("removeExternalSkills refuses managed skills and removes direct ones", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "remove-direct-"));
+  try {
+    const context = createInstallContext(false, { cwd: root, environment: process.env });
+    await writeJson(context.lockFile, {
+      schemaVersion: 3,
+      sources: [{ id: "s-source", name: "S", repository: "https://github.com/example/s.git", revision: "a".repeat(40), skills: ["managed-skill"] }],
+    });
+    await assert.rejects(
+      () => removeExternalSkills(context, ["managed-skill"], { io: { log() {} } }),
+      /Managed by configured Packs/,
+    );
+    await writeJson(context.lockFile, {
+      schemaVersion: 3,
+      directSources: [{ id: "d-source", name: "D", repository: "https://github.com/example/d.git", revision: "a".repeat(40), skillRoot: "skills", skills: ["d-skill"] }],
+    });
+    const target = path.join(context.targets[0].destination, "d-skill");
+    await mkdir(target, { recursive: true });
+    await writeFile(path.join(target, "SKILL.md"), "---\nname: d-skill\n---\n");
+    const result = await removeExternalSkills(context, ["d-skill"], { io: { log() {} } });
+    assert.deepEqual(result.directRemoved, ["d-skill"]);
+    assert.equal(existsSync(target), false);
+    assert.deepEqual((await readDirectState(context)).directSources, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
