@@ -1,12 +1,12 @@
-# AgentHome VS Code 扩展设计
+# Avenic VS Code 扩展设计
 
 日期：2026-09-06
 状态：已确认（修订 2：发布配置、esbuild 构建链、并发边界、VS Code 1.90+、架构不变量）
-仓库：Echo-Kang-hub/agenthome-cli（monorepo，新增 `packages/vscode`）
+仓库：Echo-Kang-hub/avenic（单仓库多 package 结构，新增 `packages/vscode`）
 
 ## 1. 背景与目标
 
-基于现有 AgentHome CLI 开发 VS Code 扩展，以图形界面管理编码 Agent（Claude Code / Codex / OpenCode）的运行时与 Skills。
+基于现有 Avenic CLI 开发 VS Code 扩展，以图形界面管理编码 Agent（Claude Code / Codex / OpenCode）的运行时与 Skills。
 
 硬约束：
 
@@ -16,10 +16,10 @@
 
 ## 2. 架构决策
 
-方案 A（已选定）：公开发布 `@agenthome/core`，扩展以 npm 依赖复用 core。
+方案 A（已选定）：公开发布 `@avenic/core`，扩展以 npm 依赖复用 core。
 
 ```
-        ┌───────────────  @agenthome/core（公开 npm，.mjs + .d.ts）
+        ┌───────────────  @avenic/core（公开 npm，.mjs + .d.ts）
         │  import                  │ import
 ┌───────┴──────┐          ┌────────┴───────┐
 │ packages/cli │          │ packages/vscode│   （esbuild 构建时把 core
@@ -29,19 +29,19 @@
 
 否决的备选：
 
-- 子路径导出 `agenthome-cli/core`：把生成的 vendor 目录暴露为 API，扩展被 CLI 发布节奏绑架，类型声明无处安放。
-- spawn `agenthome` 解析文本：解析脆弱、交互命令不可用、要求安装 CLI、每次操作开进程。
+- 子路径导出 `avenic/core`：把生成的 vendor 目录暴露为 API，扩展被 CLI 发布节奏绑架，类型声明无处安放。
+- spawn `avenic` 解析文本：解析脆弱、交互命令不可用、要求安装 CLI、每次操作开进程。
 
 ### 架构不变量（后续任何迭代不得违反）
 
-- @agenthome/core = 唯一业务逻辑层
+- @avenic/core = 唯一业务逻辑层
 - CLI 与 VS Code 扩展 = 两个平行客户端
-- CLI 继续 sync-core/vendor，不依赖扩展；扩展不 spawn agenthome CLI、不解析 CLI 文本
+- CLI 继续 sync-core/vendor，不依赖扩展；扩展不 spawn avenic CLI、不解析 CLI 文本
 - CLI 中 Pack 安装/卸载、直装删除、catalog add 等编排逻辑下沉 core
 - packages/vscode 使用 TypeScript
 - TreeView 负责快速查看/操作；Webview Dashboard 负责高颜值 Overview
 - 单工作区直接使用唯一 Workspace Folder；多工作区 QuickPick 选择，不使用活动文件判断
-- services 层保持薄适配，不复制业务逻辑；UI 层不直接读写 AgentHome 状态文件，所有业务状态重新从 core 获取
+- services 层保持薄适配，不复制业务逻辑；UI 层不直接读写 Avenic 状态文件，所有业务状态重新从 core 获取
 - MVP 范围保持不变
 
 ## 3. core 改动清单
@@ -79,9 +79,9 @@ core 是现有业务逻辑层（~70 个导出）。以下改动全部行为保�
 
 ## 4. packages/vscode 结构
 
-- TypeScript，构建链：**esbuild**（`format: esm`, `platform: node`, `external: ["vscode"]`）把 `src/extension.ts` 及全部运行时依赖（含 `@agenthome/core`）bundle 进 `dist/extension.js`；`tsc --noEmit` 单独做类型检查。`main: ./dist/extension.js`，`type: module`，`engines.vscode: ^1.90.0`（支持 VS Code 1.90+）。
-- `@agenthome/core` 放 `devDependencies`（被 bundle 进产物，不再随包分发 node_modules）。
-- vsce 只负责生成与发布 VSIX（`vsce package` / `vsce publish`），不承担依赖 bundle 职责。**用户不需要安装 AgentHome CLI 或 @agenthome/core**。
+- TypeScript，构建链：**esbuild**（`format: esm`, `platform: node`, `external: ["vscode"]`）把 `src/extension.ts` 及全部运行时依赖（含 `@avenic/core`）bundle 进 `dist/extension.js`；`tsc --noEmit` 单独做类型检查。`main: ./dist/extension.js`，`type: module`，`engines.vscode: ^1.90.0`（支持 VS Code 1.90+）。
+- `@avenic/core` 放 `devDependencies`（被 bundle 进产物，不再随包分发 node_modules）。
+- vsce 只负责生成与发布 VSIX（`vsce package` / `vsce publish`），不承担依赖 bundle 职责。**用户不需要安装 Avenic CLI 或 @avenic/core**。
 
 ```
 packages/vscode/
@@ -110,7 +110,7 @@ packages/vscode/
 ```
 VS Code 命令 / 树节点点击
   → service（注入项目根 + 作用域）
-  → @agenthome/core 函数（唯一业务逻辑，直接读写文件系统）
+  → @avenic/core 函数（唯一业务逻辑，直接读写文件系统）
   → 结构化数据 → 视图模型 → TreeView / Dashboard 渲染
 ```
 
@@ -121,7 +121,7 @@ VS Code 命令 / 树节点点击
 
 目标：**高颜值、低信息密度、VS Code 原生体验**。
 
-### 5.1 侧边栏容器 "AgentHome"（三个 TreeView，极简）
+### 5.1 侧边栏容器 "Avenic"（三个 TreeView，极简）
 
 - **Agents 视图**：每 Agent 一行（名称 + 短状态如 `已初始化 · global`）；详情（认证/sessions 模式/CLI 可用性）进 **tooltip**；行内只放 1–2 个最高频 Codicon 图标按钮（未初始化时 init、已初始化时 doctor/刷新），其余操作进右键上下文菜单 + 命令面板。
 - **Catalog 视图**：当前 catalog 名 + revision 一行；操作（add/select/sync/default）走标题栏图标 + 上下文菜单；已注册列表默认收起为展开节点。
@@ -141,16 +141,16 @@ VS Code 命令 / 树节点点击
 
 | 命令 | 流程 |
 |---|---|
-| `agenthome.agents.init` | 选 Agent（树节点触发则已知）→ 选 auth（global/project）→ 选 sessions（global/project）→ 执行 |
-| `agenthome.agents.switchAuth` | 显示当前生效值，选 global / project / reset |
-| `agenthome.agents.switchSessions` | 显示当前值，选 global / project |
-| `agenthome.agents.sessionsImport/Writeback` | 确认后执行，显示会话数 |
-| `agenthome.catalog.add` | InputBox（owner/repo、URL 或本地路径）→ 保存 + 预览 Pack 树（失败提示"已保存，可 sync 重试"） |
-| `agenthome.catalog.select` | QuickPick 已注册列表（> 标记当前） |
-| `agenthome.skills.installPacks` | 多选未装 Packs（带 description；无 catalog 时提示先 add） |
-| `agenthome.skills.uninstallPacks` | 多选已装 Packs（common 不可选，与 CLI 语义一致） |
-| `agenthome.skills.addDirect` | InputBox `owner/repo` → withProgress clone 发现 Skills → 多选（含"全部"）→ 安装 |
-| `agenthome.skills.removeDirect` | 多选已装直装 Skills → 删除 |
+| `avenic.agents.init` | 选 Agent（树节点触发则已知）→ 选 auth（global/project）→ 选 sessions（global/project）→ 执行 |
+| `avenic.agents.switchAuth` | 显示当前生效值，选 global / project / reset |
+| `avenic.agents.switchSessions` | 显示当前值，选 global / project |
+| `avenic.agents.sessionsImport/Writeback` | 确认后执行，显示会话数 |
+| `avenic.catalog.add` | InputBox（owner/repo、URL 或本地路径）→ 保存 + 预览 Pack 树（失败提示"已保存，可 sync 重试"） |
+| `avenic.catalog.select` | QuickPick 已注册列表（> 标记当前） |
+| `avenic.skills.installPacks` | 多选未装 Packs（带 description；无 catalog 时提示先 add） |
+| `avenic.skills.uninstallPacks` | 多选已装 Packs（common 不可选，与 CLI 语义一致） |
+| `avenic.skills.addDirect` | InputBox `owner/repo` → withProgress clone 发现 Skills → 多选（含"全部"）→ 安装 |
+| `avenic.skills.removeDirect` | 多选已装直装 Skills → 删除 |
 
 所有命令同时在命令面板与树上下文菜单可用；Esc 取消静默无操作。
 
@@ -162,7 +162,7 @@ VS Code 命令 / 树节点点击
 
 ### 并发边界（MVP 限制）
 
-- 扩展进程内串行化只防护扩展自身的并发，**无法阻止 VS Code 扩展与 agenthome CLI 两个进程同时修改同一项目状态/锁文件**；MVP 接受此限制。
+- 扩展进程内串行化只防护扩展自身的并发，**无法阻止 VS Code 扩展与 avenic CLI 两个进程同时修改同一项目状态/锁文件**；MVP 接受此限制。
 - 真正的跨进程 mutation lock / 原子写入属于 core 层职责，列为后续 core 改进项（CLI 一并受益），MVP 不为此扩大范围。
 
 ## 7. 测试
@@ -178,9 +178,9 @@ VS Code 命令 / 树节点点击
 
 ## 8. 发布
 
-- Marketplace 公开：扩展名 `AgentHome`，extensionId 拟 `agenthome.agenthome`（依赖 publisher，见开放问题），categories `Other`；README 中文为主（与 CLI 一致）。
+- Marketplace 公开：扩展名 `Avenic`，extensionId 拟 `avenic.avenic`（依赖 publisher，见开放问题），categories `Other`；README 中文为主（与 CLI 一致）。
 - 构建产物 `dist/extension.js` 已由 esbuild 含入全部依赖；`vsce package` 生成 VSIX、`vsce publish` 发布（均由用户执行，同 npm publish 约束）。
-- CI（agenthome-cli 新增 workflow）：push 跑 `npm test` + `test:vscode` + 扩展构建；tag `vscode-v*` 触发打包。
+- CI（avenic 新增 workflow）：push 跑 `npm test` + `test:vscode` + 扩展构建；tag `vscode-v*` 触发打包。
 - 版本线：core / cli / vscode 三条独立 semver。
 
 ## 9. 范围

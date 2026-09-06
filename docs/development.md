@@ -1,17 +1,19 @@
-# AgentHome CLI 开发指南
+# Avenic CLI 开发指南
 
 面向贡献者：仓库结构、开发、测试、打包与发布。
 
 ## 结构
 
 ```text
-packages/core/                 平台无关核心库（runtime、sessions、skills、catalog、direct）
-packages/cli/                  命令行层（dispatcher、skills-cli、self-update）
+packages/core/                 平台无关核心库（runtime、sessions、skills、catalog、direct）；npm 包 @avenic/core
+packages/cli/                  命令行层（dispatcher、skills-cli、self-update）；npm 包 avenic
 packages/cli/vendor/core-src/  packages/core/src 的同步副本（提交进 git，发布时随包）
 integration/                   全局安装集成测试（registry 包 + GitHub 根包双模式）
 test/                          单元与 fixture 测试（catalog 用例全部本地 git fixture，不联网）
 docs/superpowers/              设计 spec 与实施 plan
 ```
+
+根 package.json 内部名 `avenic-repo`（GitHub 根安装模式的直接安装物）。
 
 ## 开发
 
@@ -37,9 +39,9 @@ npm login   # 已登录则跳过
 cd packages/cli && npm publish
 ```
 
-- `agentHome.packageSpec` 保持 `agenthome-cli@latest`（`agent update` 自更新源）。
+- `avenic.packageSpec` 保持 `avenic@latest`（`avenic self-update` 自更新源）。
 - registry 包 `private` 保持 `false`。
-- 发布物是 `packages/cli`（包名 `agenthome-cli`）与 `packages/core`（包名 `@agenthome-cli/core`，见下；原拟 `@agenthome/core`，该 scope 已被其他 npm 账号占用）。
+- 发布物是 `packages/cli`（包名 `avenic`）与 `packages/core`（包名 `@avenic/core`）。
 
 ## core 发布纪律
 
@@ -47,4 +49,4 @@ core 变更 → bump `packages/core/package.json` 版本 → `cd packages/core &
 
 ## catalog 仓库
 
-私有 catalog 仓库是纯数据仓库：`skills/`、`packs/`、`sources.lock.json`、`licenses/`，加每日 CI（auto-update-skills.yml，从 registry 安装 CLI 后运行 `agent catalog update` + `agent catalog doctor` 并提交）。不得再分发的第三方 Skills 只允许存在于该私有仓库，不进入本公开仓库。
+私有 catalog 仓库是纯数据仓库：`skills/`、`packs/`、`sources.lock.json`、`licenses/`，加每日 CI（auto-update-skills.yml，从 registry 安装 CLI 后运行 `avenic catalog update` + `avenic catalog doctor` 并提交）。不得再分发的第三方 Skills 只允许存在于该私有仓库，不进入本公开仓库。

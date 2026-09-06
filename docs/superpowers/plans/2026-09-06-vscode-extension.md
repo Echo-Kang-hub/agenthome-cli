@@ -1,8 +1,8 @@
-# AgentHome VS Code 扩展实施计划
+# Avenic VS Code 扩展实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在 agenthome-cli monorepo 新增 `packages/vscode` VS Code 扩展，通过公开发布的 `@agenthome/core` 复用全部业务逻辑，图形化管理 Agent 运行时与 Skills。
+**Goal:** 在 avenic monorepo 新增 `packages/vscode` VS Code 扩展，通过公开发布的 `@avenic/core` 复用全部业务逻辑，图形化管理 Agent 运行时与 Skills。
 
 **Architecture:** core = 唯一业务逻辑层（下沉 CLI 编排语义后公开发布）；CLI 与扩展是两个平行客户端。扩展为 TypeScript，esbuild 打包 core 进 `dist/extension.js`，vsce 打包/发布 VSIX。UI = 三个极简 TreeView + Webview Overview Dashboard + QuickPick 流程。
 
@@ -13,14 +13,14 @@
 ## Global Constraints
 
 - 根 package.json **禁止添加 `workspaces` 字段**（会触发 pacote 嵌套 install，破坏 `npm install -g <owner/repo>`；test/packaging.test.mjs 有断言把关）。
-- core 是唯一业务逻辑层；扩展不 spawn agenthome CLI、不解析 CLI 文本；CLI 继续 sync-core/vendor。
+- core 是唯一业务逻辑层；扩展不 spawn avenic CLI、不解析 CLI 文本；CLI 继续 sync-core/vendor。
 - 现有 68 个测试（`npm test`）与 `npm run test:install` 每一步后必须全绿。
-- packages/vscode 的 services 层**不 import vscode**，UI 层不直接读写 AgentHome 状态文件，所有业务状态重新从 core 获取。
+- packages/vscode 的 services 层**不 import vscode**，UI 层不直接读写 Avenic 状态文件，所有业务状态重新从 core 获取。
 - packages/vscode 为独立 npm 包（无 workspaces）；`engines.vscode: ^1.90.0`；构建产物为 ESM `dist/extension.js`。
 - 不实现 v1.1 功能（catalog 维护 UI、终端启动 agent、SKILL.md 预览、自动 d.ts、自动 E2E、跨进程 lock）。
 - 用户执行发布（npm publish / vsce publish）；本计划只到"打包就绪 + 发布命令就绪"。
 - UI 文案中文（与 CLI 一致）。
-- 仓库根：`D:\FileDownload\Projects\agenthome-cli`，Windows + Git Bash。
+- 仓库根：本仓库 checkout 根目录，Windows + Git Bash。
 
 ## 文件结构（锁定）
 
@@ -81,14 +81,14 @@ docs/development.md               [改] T9（简版）、T21（完整版）
 
 **Files:** Modify `packages/core/package.json`；Create `packages/core/LICENSE`；Test: Modify `test/packaging.test.mjs`
 
-**Interfaces:** Produces: npm 包 `@agenthome/core@5.8.0`（M2 起扩展依赖它）。
+**Interfaces:** Produces: npm 包 `@avenic/core@5.8.0`（M2 起扩展依赖它）。
 
 - [ ] **Step 1: 写失败测试（packaging.test.mjs 追加）**
 
 ```js
 test("core manifest is configured for public publishing", async () => {
   const manifest = JSON.parse(await readFile(path.join(packageRoot, "packages", "core", "package.json"), "utf8"));
-  assert.equal(manifest.name, "@agenthome/core");
+  assert.equal(manifest.name, "@avenic/core");
   assert.equal(manifest.private, undefined);
   assert.equal(manifest.license, "MIT");
   assert.equal(manifest.version, "5.8.0");
@@ -111,7 +111,7 @@ Expected: FAIL——断言失败（version/files/exports 与现状不符）。
 
 ```json
 {
-  "name": "@agenthome/core",
+  "name": "@avenic/core",
   "version": "5.8.0",
   "license": "MIT",
   "type": "module",
@@ -326,7 +326,7 @@ git commit -m "refactor(cli): commandStatus uses core skillsInstallationStatus"
 test("registerCatalog saves the spec and tolerates preview failure", async () => {
   await withTemp("catalog-register-", async (root) => {
     const state = path.join(root, "state");
-    const environment = { AGENTHOME_STATE_DIR: state };
+    const environment = { AVENIC_STATE_DIR: state };
     const missing = path.join(root, "no-such-catalog");
     const failed = await registerCatalog(missing, { environment, io: { log() {} } });
     assert.equal(failed.previewFailed, true);
@@ -379,7 +379,7 @@ async function commandCatalogAdd(argumentsList, options = {}) {
   const io = options.io ?? console;
   const [spec] = argumentsList;
   if (!spec || argumentsList.length !== 1) {
-    fail("Usage: agenthome catalog add <spec>");
+    fail("Usage: avenic catalog add <spec>");
   }
   const result = await registerCatalog(spec, { environment: options.environment, io });
   io.log(`Default catalog: ${spec}`);
@@ -394,9 +394,9 @@ async function commandCatalogAdd(argumentsList, options = {}) {
       const purpose = pack.description ? ` — ${pack.description}` : "";
       io.log(`${lastPack ? "└──" : "├──"} ${label}${purpose}`);
     });
-    io.log("\nInstall: agenthome skills install [pack...]");
+    io.log("\nInstall: avenic skills install [pack...]");
   }
-  io.log("Run: agenthome catalog sync");
+  io.log("Run: avenic catalog sync");
 }
 ```
 
@@ -428,14 +428,14 @@ test("resolveInstallSource pins the lock revision unless refreshing", async () =
     const state = path.join(root, "state");
     const catalog = path.join(root, "catalog");
     await fixtureCatalog(catalog);
-    const environment = { ...process.env, AGENTHOME_STATE_DIR: state };
+    const environment = { ...process.env, AVENIC_STATE_DIR: state };
     await setDefaultCatalogSpec(environment, catalog);
     const first = await resolveInstallSource({ cwd: root, environment }, {});
     assert.equal(first.revision.length, 40);
     await writeFile(path.join(catalog, "skills", "s", "SKILL.md"), "---\nname: s\n---\nv2\n");
     git(catalog, ["add", "-A"]);
     git(catalog, ["-c", "user.name=t", "-c", "user.email=t@e", "commit", "--quiet", "-m", "two"]);
-    await writeJson(path.join(root, ".agent-skills.lock.json"), {
+    await writeJson(path.join(root, ".avenic.lock.json"), {
       schemaVersion: 3,
       catalog: { repository: catalog, revision: first.revision },
     });
@@ -492,7 +492,7 @@ async function pinnedCatalogSpec(spec, context) {
 
 // Resolve the catalog for an install context. The project lock pins the
 // catalog commit for cross-device reproducibility; a refresh (bare
-// `agenthome skills`) intentionally bypasses the pin to pick up the latest.
+// `avenic skills`) intentionally bypasses the pin to pick up the latest.
 export async function resolveInstallSource(options, { refresh = false } = {}) {
   const spec = await loadDefaultCatalogSpec(options.environment);
   const context = createInstallContext(options.global ?? false, options);
@@ -538,7 +538,7 @@ test("installPacks installs the resolved packs and writes metadata", async () =>
     const state = path.join(root, "state");
     const catalog = path.join(root, "catalog");
     await fixtureCatalog(catalog);
-    const environment = { ...process.env, AGENTHOME_STATE_DIR: state };
+    const environment = { ...process.env, AVENIC_STATE_DIR: state };
     await setDefaultCatalogSpec(environment, catalog);
     const context = createInstallContext(false, { cwd: root, environment });
     const planned = [];
@@ -549,7 +549,7 @@ test("installPacks installs the resolved packs and writes metadata", async () =>
     const lock = await readJson(context.lockFile);
     assert.equal(lock.catalog.revision.length, 40);
     assert.equal(lock.packs[0].id, "common");
-    await assert.rejects(() => installPacks(createInstallContext(false, { cwd: catalog, environment }), [], { io: { log() {} } }), /not from the AgentHome catalog/);
+    await assert.rejects(() => installPacks(createInstallContext(false, { cwd: catalog, environment }), [], { io: { log() {} } }), /not from the Avenic catalog/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -570,7 +570,7 @@ test("installPacks installs the resolved packs and writes metadata", async () =>
 export async function installPacks(context, explicitPacks = [], options = {}) {
   const io = options.io ?? console;
   if (!context.global && isCatalogDirectory(context.root)) {
-    fail("Run installation from a work project, not from the AgentHome catalog");
+    fail("Run installation from a work project, not from the Avenic catalog");
   }
   const catalogInfo = await resolveInstallSource({
     global: context.global,
@@ -653,7 +653,7 @@ test("uninstallPacks keeps common and reinstalls remaining packs", async () => {
     const state = path.join(root, "state");
     const catalog = path.join(root, "catalog");
     await fixtureCatalog(catalog);
-    const environment = { ...process.env, AGENTHOME_STATE_DIR: state };
+    const environment = { ...process.env, AVENIC_STATE_DIR: state };
     await setDefaultCatalogSpec(environment, catalog);
     const context = createInstallContext(false, { cwd: root, environment });
     await installPacks(context, ["development"], { io: { log() {} } });
@@ -870,7 +870,7 @@ git commit -m "refactor(cli): skills remove uses core removeExternalSkills"
 
 **Files:** Create `packages/core/index.d.ts`；Modify `test/packaging.test.mjs`；Modify `packages/cli/package.json`（version 5.8.0）；Modify `docs/development.md`（发布纪律简版）
 
-**Interfaces:** Produces: `@agenthome/core` 的类型契约（扩展 M2 起 `import ... from "@agenthome/core"` 全类型化）。
+**Interfaces:** Produces: `@avenic/core` 的类型契约（扩展 M2 起 `import ... from "@avenic/core"` 全类型化）。
 
 - [ ] **Step 1: 写失败测试（packaging.test.mjs 追加）**
 
@@ -897,7 +897,7 @@ test("core type declarations cover the extension contract", async () => {
 - [ ] **Step 3: 最小实现**——创建 `packages/core/index.d.ts`，完整内容：
 
 ```ts
-// Type declarations for @agenthome/core.
+// Type declarations for @avenic/core.
 // Hand-maintained next to src/index.mjs; update both in the same change.
 
 export interface ProcessEnvLike {
@@ -1269,70 +1269,70 @@ cd packages/core && npm publish
 
 ```json
 {
-  "name": "agenthome-vscode",
-  "displayName": "AgentHome",
+  "name": "avenic-vscode",
+  "displayName": "Avenic",
   "description": "Manage Claude Code, Codex, and OpenCode runtimes and Skills catalogs from VS Code.",
   "version": "0.1.0",
-  "publisher": "agenthome",
+  "publisher": "avenic",
   "private": true,
   "license": "MIT",
   "type": "module",
   "main": "./dist/extension.js",
   "engines": { "vscode": "^1.90.0" },
   "categories": ["Other"],
-  "keywords": ["claude", "codex", "opencode", "skills", "catalog", "agenthome"],
+  "keywords": ["claude", "codex", "opencode", "skills", "catalog", "avenic"],
   "activationEvents": [],
   "contributes": {
     "viewsContainers": {
-      "activitybar": [{ "id": "agenthome", "title": "AgentHome", "icon": "media/icon.svg" }]
+      "activitybar": [{ "id": "avenic", "title": "Avenic", "icon": "media/icon.svg" }]
     },
     "views": {
-      "agenthome": [
-        { "id": "agenthome.agents", "name": "Agents" },
-        { "id": "agenthome.catalog", "name": "Catalog" },
-        { "id": "agenthome.skills", "name": "Skills" }
+      "avenic": [
+        { "id": "avenic.agents", "name": "Agents" },
+        { "id": "avenic.catalog", "name": "Catalog" },
+        { "id": "avenic.skills", "name": "Skills" }
       ]
     },
     "commands": [
-      { "command": "agenthome.agents.init", "title": "AgentHome: Initialize Agent" },
-      { "command": "agenthome.agents.deinit", "title": "AgentHome: Deinitialize Agent" },
-      { "command": "agenthome.agents.switchAuth", "title": "AgentHome: Switch Authentication" },
-      { "command": "agenthome.agents.switchSessions", "title": "AgentHome: Switch Sessions Mode" },
-      { "command": "agenthome.agents.sessionsImport", "title": "AgentHome: Import Sessions" },
-      { "command": "agenthome.agents.sessionsWriteback", "title": "AgentHome: Write Back Sessions" },
-      { "command": "agenthome.catalog.add", "title": "AgentHome: Add Catalog", "icon": "$(add)" },
-      { "command": "agenthome.catalog.select", "title": "AgentHome: Select Catalog" },
-      { "command": "agenthome.catalog.sync", "title": "AgentHome: Sync Catalog", "icon": "$(sync)" },
-      { "command": "agenthome.catalog.default", "title": "AgentHome: Show Default Catalog" },
-      { "command": "agenthome.skills.installPacks", "title": "AgentHome: Install Packs", "icon": "$(cloud-download)" },
-      { "command": "agenthome.skills.uninstallPacks", "title": "AgentHome: Uninstall Packs" },
-      { "command": "agenthome.skills.addDirect", "title": "AgentHome: Add Skills from Repository" },
-      { "command": "agenthome.skills.removeDirect", "title": "AgentHome: Remove Direct Skills" },
-      { "command": "agenthome.overview.show", "title": "AgentHome: Overview" },
-      { "command": "agenthome.refresh", "title": "AgentHome: Refresh", "icon": "$(refresh)" },
-      { "command": "agenthome.doctor", "title": "AgentHome: Doctor" }
+      { "command": "avenic.agents.init", "title": "Avenic: Initialize Agent" },
+      { "command": "avenic.agents.deinit", "title": "Avenic: Deinitialize Agent" },
+      { "command": "avenic.agents.switchAuth", "title": "Avenic: Switch Authentication" },
+      { "command": "avenic.agents.switchSessions", "title": "Avenic: Switch Sessions Mode" },
+      { "command": "avenic.agents.sessionsImport", "title": "Avenic: Import Sessions" },
+      { "command": "avenic.agents.sessionsWriteback", "title": "Avenic: Write Back Sessions" },
+      { "command": "avenic.catalog.add", "title": "Avenic: Add Catalog", "icon": "$(add)" },
+      { "command": "avenic.catalog.select", "title": "Avenic: Select Catalog" },
+      { "command": "avenic.catalog.sync", "title": "Avenic: Sync Catalog", "icon": "$(sync)" },
+      { "command": "avenic.catalog.default", "title": "Avenic: Show Default Catalog" },
+      { "command": "avenic.skills.installPacks", "title": "Avenic: Install Packs", "icon": "$(cloud-download)" },
+      { "command": "avenic.skills.uninstallPacks", "title": "Avenic: Uninstall Packs" },
+      { "command": "avenic.skills.addDirect", "title": "Avenic: Add Skills from Repository" },
+      { "command": "avenic.skills.removeDirect", "title": "Avenic: Remove Direct Skills" },
+      { "command": "avenic.overview.show", "title": "Avenic: Overview" },
+      { "command": "avenic.refresh", "title": "Avenic: Refresh", "icon": "$(refresh)" },
+      { "command": "avenic.doctor", "title": "Avenic: Doctor" }
     ],
     "menus": {
       "view/title": [
-        { "command": "agenthome.refresh", "when": "view == agenthome.agents", "group": "navigation" },
-        { "command": "agenthome.catalog.add", "when": "view == agenthome.catalog", "group": "navigation" },
-        { "command": "agenthome.catalog.sync", "when": "view == agenthome.catalog", "group": "navigation" },
-        { "command": "agenthome.skills.installPacks", "when": "view == agenthome.skills", "group": "navigation" },
-        { "command": "agenthome.overview.show", "when": "view == agenthome.agents", "group": "navigation@2" }
+        { "command": "avenic.refresh", "when": "view == avenic.agents", "group": "navigation" },
+        { "command": "avenic.catalog.add", "when": "view == avenic.catalog", "group": "navigation" },
+        { "command": "avenic.catalog.sync", "when": "view == avenic.catalog", "group": "navigation" },
+        { "command": "avenic.skills.installPacks", "when": "view == avenic.skills", "group": "navigation" },
+        { "command": "avenic.overview.show", "when": "view == avenic.agents", "group": "navigation@2" }
       ],
       "view/item/context": [
-        { "command": "agenthome.agents.init", "when": "view == agenthome.agents && viewItem == agentNotInitialized" },
-        { "command": "agenthome.agents.switchAuth", "when": "view == agenthome.agents && viewItem == agentInitialized" },
-        { "command": "agenthome.agents.switchSessions", "when": "view == agenthome.agents && viewItem == agentInitialized" },
-        { "command": "agenthome.agents.sessionsImport", "when": "view == agenthome.agents && viewItem == agentInitialized" },
-        { "command": "agenthome.agents.sessionsWriteback", "when": "view == agenthome.agents && viewItem == agentInitialized" },
-        { "command": "agenthome.agents.deinit", "when": "view == agenthome.agents && viewItem == agentInitialized" },
-        { "command": "agenthome.catalog.select", "when": "view == agenthome.catalog && viewItem == catalogEntry" },
-        { "command": "agenthome.catalog.default", "when": "view == agenthome.catalog && viewItem == catalogEntry" },
-        { "command": "agenthome.skills.installPacks", "when": "view == agenthome.skills && viewItem == scopeNode" },
-        { "command": "agenthome.skills.uninstallPacks", "when": "view == agenthome.skills && viewItem == scopeNode" },
-        { "command": "agenthome.skills.addDirect", "when": "view == agenthome.skills && viewItem == scopeNode" },
-        { "command": "agenthome.skills.removeDirect", "when": "view == agenthome.skills && viewItem == scopeNode" }
+        { "command": "avenic.agents.init", "when": "view == avenic.agents && viewItem == agentNotInitialized" },
+        { "command": "avenic.agents.switchAuth", "when": "view == avenic.agents && viewItem == agentInitialized" },
+        { "command": "avenic.agents.switchSessions", "when": "view == avenic.agents && viewItem == agentInitialized" },
+        { "command": "avenic.agents.sessionsImport", "when": "view == avenic.agents && viewItem == agentInitialized" },
+        { "command": "avenic.agents.sessionsWriteback", "when": "view == avenic.agents && viewItem == agentInitialized" },
+        { "command": "avenic.agents.deinit", "when": "view == avenic.agents && viewItem == agentInitialized" },
+        { "command": "avenic.catalog.select", "when": "view == avenic.catalog && viewItem == catalogEntry" },
+        { "command": "avenic.catalog.default", "when": "view == avenic.catalog && viewItem == catalogEntry" },
+        { "command": "avenic.skills.installPacks", "when": "view == avenic.skills && viewItem == scopeNode" },
+        { "command": "avenic.skills.uninstallPacks", "when": "view == avenic.skills && viewItem == scopeNode" },
+        { "command": "avenic.skills.addDirect", "when": "view == avenic.skills && viewItem == scopeNode" },
+        { "command": "avenic.skills.removeDirect", "when": "view == avenic.skills && viewItem == scopeNode" }
       ]
     }
   },
@@ -1344,7 +1344,7 @@ cd packages/core && npm publish
     "package": "vsce package"
   },
   "devDependencies": {
-    "@agenthome/core": "^5.8.0",
+    "@avenic/core": "^5.8.0",
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "^2.26.0",
@@ -1446,16 +1446,16 @@ export function activate(context: vscode.ExtensionContext): void {
   const catalog = new CatalogTreeProvider();
   const skills = new SkillsTreeProvider();
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider("agenthome.agents", agents),
-    vscode.window.registerTreeDataProvider("agenthome.catalog", catalog),
-    vscode.window.registerTreeDataProvider("agenthome.skills", skills),
-    vscode.commands.registerCommand("agenthome.refresh", () => {
+    vscode.window.registerTreeDataProvider("avenic.agents", agents),
+    vscode.window.registerTreeDataProvider("avenic.catalog", catalog),
+    vscode.window.registerTreeDataProvider("avenic.skills", skills),
+    vscode.commands.registerCommand("avenic.refresh", () => {
       agents.refresh();
       catalog.refresh();
       skills.refresh();
     }),
-    vscode.commands.registerCommand("agenthome.overview.show", () => {
-      void vscode.window.showInformationMessage("AgentHome Overview 将在 M4 提供");
+    vscode.commands.registerCommand("avenic.overview.show", () => {
+      void vscode.window.showInformationMessage("Avenic Overview 将在 M4 提供");
     }),
   );
 }
@@ -1547,7 +1547,7 @@ Expected: typecheck 无错误；`dist/extension.js` 生成。（本任务尚无�
 
 - [ ] **Step 5: 冒烟（手动，开发宿主）**
 
-在 VS Code 打开 `packages/vscode` 目录，按 F5（Extension Development Host）→ 侧边栏出现 AgentHome 容器与三个空视图；`agenthome.refresh` 命令可执行无报错。
+在 VS Code 打开 `packages/vscode` 目录，按 F5（Extension Development Host）→ 侧边栏出现 Avenic 容器与三个空视图；`avenic.refresh` 命令可执行无报错。
 
 - [ ] **Step 6: Commit**
 
@@ -1710,7 +1710,7 @@ import {
   initializeAgent,
   loadRuntime,
   setLocalAuth,
-} from "@agenthome/core";
+} from "@avenic/core";
 
 export interface AgentStatus {
   id: string;
@@ -1822,7 +1822,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { setDefaultCatalogSpec } from "@agenthome/core";
+import { setDefaultCatalogSpec } from "@avenic/core";
 import {
   addDirectSkill,
   discoverRepositorySkills,
@@ -1858,7 +1858,7 @@ test("skills service installs, reports, and uninstalls packs via core", async ()
     const state = path.join(root, "state");
     const catalog = path.join(root, "catalog");
     await fixtureCatalog(catalog);
-    const environment = { ...process.env, AGENTHOME_STATE_DIR: state };
+    const environment = { ...process.env, AVENIC_STATE_DIR: state };
     await setDefaultCatalogSpec(environment, catalog);
     const io = { log(): void {} };
 
@@ -1881,7 +1881,7 @@ test("skills service installs, reports, and uninstalls packs via core", async ()
 test("skills service discovers and adds direct skills", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "vscode-direct-"));
   try {
-    const environment = { ...process.env, AGENTHOME_STATE_DIR: path.join(root, "state") };
+    const environment = { ...process.env, AVENIC_STATE_DIR: path.join(root, "state") };
     const repo = path.join(root, "repo");
     await fixtureCatalog(repo);
     const names = await discoverRepositorySkills(repo, path.join(root, "clone"));
@@ -1906,20 +1906,20 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { setDefaultCatalogSpec } from "@agenthome/core";
+import { setDefaultCatalogSpec } from "@avenic/core";
 import { addCatalog, getCatalogPacks, getCatalogState, selectCatalog } from "../src/services/catalog.js";
 
 test("catalog service registers, selects, and reports catalogs", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "vscode-catalog-"));
   try {
-    const environment = { ...process.env, AGENTHOME_STATE_DIR: path.join(root, "state") };
+    const environment = { ...process.env, AVENIC_STATE_DIR: path.join(root, "state") };
     const missing = path.join(root, "missing-catalog");
     await addCatalog(missing, environment, { log(): void {} });
     const state = await getCatalogState(environment);
     assert.equal(state.current, missing);
     assert.equal(state.known[0].spec, missing);
-    await selectCatalog("Echo-Kang-hub/agenthome-catalog#main", environment);
-    assert.equal((await getCatalogState(environment)).current, "Echo-Kang-hub/agenthome-catalog#main");
+    await selectCatalog("Echo-Kang-hub/avenic-catalog#main", environment);
+    assert.equal((await getCatalogState(environment)).current, "Echo-Kang-hub/avenic-catalog#main");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -1928,7 +1928,7 @@ test("catalog service registers, selects, and reports catalogs", async () => {
 test("getCatalogPacks returns null when the catalog cannot be loaded", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "vscode-catalog-packs-"));
   try {
-    const environment = { ...process.env, AGENTHOME_STATE_DIR: path.join(root, "state") };
+    const environment = { ...process.env, AVENIC_STATE_DIR: path.join(root, "state") };
     await setDefaultCatalogSpec(environment, path.join(root, "missing-catalog"));
     assert.equal(await getCatalogPacks(environment), null);
   } finally {
@@ -1963,7 +1963,7 @@ import {
   type InstallStatus,
   type Io,
   type ResolvedPacks,
-} from "@agenthome/core";
+} from "@avenic/core";
 
 export type SkillScope = "project" | "global";
 
@@ -2051,7 +2051,7 @@ import {
   type Io,
   type KnownCatalogEntry,
   type Pack,
-} from "@agenthome/core";
+} from "@avenic/core";
 
 export interface CatalogState {
   current: string;
@@ -2357,7 +2357,7 @@ export function skillsChildren(status: SkillsStatus, node: SkillsNode, catalog: 
 
 ```ts
 import * as vscode from "vscode";
-import { AGENTS } from "@agenthome/core";
+import { AGENTS } from "@avenic/core";
 import { agentNodes, type AgentNode } from "./view-models.js";
 import { getAgentStatus } from "../services/agents.js";
 import { resolveProjectRoot } from "../project.js";
@@ -2374,7 +2374,7 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<vscode.TreeIt
     const root = resolveProjectRoot((vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath));
     if (!root) {
       const item = new vscode.TreeItem("请选择工作区文件夹（多根工作区需要指定项目）");
-      item.tooltip = "运行任一 AgentHome 命令并选择项目，或打开单根工作区";
+      item.tooltip = "运行任一 Avenic 命令并选择项目，或打开单根工作区";
       return [item];
     }
     const statuses = await Promise.all(
@@ -2462,7 +2462,7 @@ export class SkillsTreeProvider implements vscode.TreeDataProvider<vscode.TreeIt
     const root = resolveProjectRoot((vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath));
     if (!root) {
       const item = new vscode.TreeItem("请选择工作区文件夹");
-      item.tooltip = "多根工作区需要指定项目；运行 AgentHome 命令选择一次";
+      item.tooltip = "多根工作区需要指定项目；运行 Avenic 命令选择一次";
       return [item];
     }
     const status = await getSkillsStatus(root, process.env);
@@ -2802,7 +2802,7 @@ export function progressIo(report: (message: string) => void): { log(message?: s
 
 ```ts
 import * as vscode from "vscode";
-import { AGENTS } from "@agenthome/core";
+import { AGENTS } from "@avenic/core";
 import type { MutationQueue } from "../mutation-queue.js";
 import type { UiAdapter } from "../ui/adapter.js";
 import { pickAgentId, pickAuthMode, pickSessionsMode, runWithErrorHandling } from "../ui/flows.js";
@@ -2845,7 +2845,7 @@ export function registerAgentCommands(context: vscode.ExtensionContext, deps: Ag
     }));
   };
 
-  register("agenthome.agents.init", async () => {
+  register("avenic.agents.init", async () => {
     const root = await projectRoot();
     if (!root) return;
     const statuses = await loadStatuses(root);
@@ -2862,7 +2862,7 @@ export function registerAgentCommands(context: vscode.ExtensionContext, deps: Ag
     void vscode.window.showInformationMessage(`${AGENTS[agentId].displayName} 已初始化（${auth} · ${sessions}）`);
   });
 
-  register("agenthome.agents.switchAuth", async () => {
+  register("avenic.agents.switchAuth", async () => {
     const root = await projectRoot();
     if (!root) return;
     const statuses = await loadStatuses(root);
@@ -2875,7 +2875,7 @@ export function registerAgentCommands(context: vscode.ExtensionContext, deps: Ag
     refreshAll();
   });
 
-  register("agenthome.agents.switchSessions", async () => {
+  register("avenic.agents.switchSessions", async () => {
     const root = await projectRoot();
     if (!root) return;
     const statuses = await loadStatuses(root);
@@ -2888,7 +2888,7 @@ export function registerAgentCommands(context: vscode.ExtensionContext, deps: Ag
     refreshAll();
   });
 
-  register("agenthome.agents.sessionsImport", async () => {
+  register("avenic.agents.sessionsImport", async () => {
     const root = await projectRoot();
     if (!root) return;
     const statuses = await loadStatuses(root);
@@ -2900,7 +2900,7 @@ export function registerAgentCommands(context: vscode.ExtensionContext, deps: Ag
     void vscode.window.showInformationMessage("会话已导入项目");
   });
 
-  register("agenthome.agents.sessionsWriteback", async () => {
+  register("avenic.agents.sessionsWriteback", async () => {
     const root = await projectRoot();
     if (!root) return;
     const statuses = await loadStatuses(root);
@@ -2912,7 +2912,7 @@ export function registerAgentCommands(context: vscode.ExtensionContext, deps: Ag
     void vscode.window.showInformationMessage("会话已回写本机原生存储");
   });
 
-  register("agenthome.agents.deinit", async () => {
+  register("avenic.agents.deinit", async () => {
     const root = await projectRoot();
     if (!root) return;
     const statuses = await loadStatuses(root);
@@ -2959,23 +2959,23 @@ export function activate(context: vscode.ExtensionContext): void {
   const workspaceFolders = (): string[] =>
     (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
   const projectRoot = async (): Promise<string | null> =>
-    pickProjectRoot(workspaceFolders(), context.workspaceState.get<string>("agenthome.projectRoot"), async (items) => {
-      const chosen = await vscode.window.showQuickPick(items, { placeHolder: "选择 AgentHome 项目" });
-      if (chosen) await context.workspaceState.update("agenthome.projectRoot", chosen);
+    pickProjectRoot(workspaceFolders(), context.workspaceState.get<string>("avenic.projectRoot"), async (items) => {
+      const chosen = await vscode.window.showQuickPick(items, { placeHolder: "选择 Avenic 项目" });
+      if (chosen) await context.workspaceState.update("avenic.projectRoot", chosen);
       return chosen;
     });
 
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider("agenthome.agents", providers.agents),
-    vscode.window.registerTreeDataProvider("agenthome.catalog", providers.catalog),
-    vscode.window.registerTreeDataProvider("agenthome.skills", providers.skills),
-    vscode.commands.registerCommand("agenthome.refresh", () => {
+    vscode.window.registerTreeDataProvider("avenic.agents", providers.agents),
+    vscode.window.registerTreeDataProvider("avenic.catalog", providers.catalog),
+    vscode.window.registerTreeDataProvider("avenic.skills", providers.skills),
+    vscode.commands.registerCommand("avenic.refresh", () => {
       providers.agents.refresh();
       providers.catalog.refresh();
       providers.skills.refresh();
     }),
-    vscode.commands.registerCommand("agenthome.overview.show", () => {
-      void vscode.window.showInformationMessage("AgentHome Overview 将在 M4 提供");
+    vscode.commands.registerCommand("avenic.overview.show", () => {
+      void vscode.window.showInformationMessage("Avenic Overview 将在 M4 提供");
     }),
   );
 
@@ -3070,7 +3070,7 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
     }));
   };
 
-  register("agenthome.catalog.add", async () => {
+  register("avenic.catalog.add", async () => {
     const spec = await promptCatalogSpec(ui);
     if (!spec) return;
     const result = await withProgress("注册 catalog", async (report) =>
@@ -3081,7 +3081,7 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
     void vscode.window.showInformationMessage(catalogMessages(result));
   });
 
-  register("agenthome.catalog.select", async () => {
+  register("avenic.catalog.select", async () => {
     const state = await getCatalogState(process.env);
     const spec = await pickCatalog(ui, state);
     if (!spec) return;
@@ -3091,7 +3091,7 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
     providers.skills.refresh();
   });
 
-  register("agenthome.catalog.sync", async () => {
+  register("avenic.catalog.sync", async () => {
     const info = await withProgress("同步 catalog", async (report) =>
       syncCatalog(process.env, progressIo(report)),
     );
@@ -3102,7 +3102,7 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
     void vscode.window.showInformationMessage(`Catalog 已同步: ${info.revision.slice(0, 8)}`);
   });
 
-  register("agenthome.catalog.default", async () => {
+  register("avenic.catalog.default", async () => {
     const state = await getCatalogState(process.env);
     void vscode.window.showInformationMessage(`当前 catalog: ${state.current}`);
   });
@@ -3175,7 +3175,7 @@ import {
   loadDefaultCatalogSpec,
   loadPacks,
   removeTempDirectory,
-} from "@agenthome/core";
+} from "@avenic/core";
 import type { MutationQueue } from "../mutation-queue.js";
 import type { UiAdapter } from "../ui/adapter.js";
 import { pickPackIds, pickSkillNames, promptDirectSource, runWithErrorHandling } from "../ui/flows.js";
@@ -3214,7 +3214,7 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: {
     return chosen?.label as SkillScope | undefined;
   };
 
-  register("agenthome.skills.installPacks", async () => {
+  register("avenic.skills.installPacks", async () => {
     const root = await deps.projectRoot();
     if (!root) return;
     const scope = await pickScope();
@@ -3235,7 +3235,7 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: {
     providers.skills.refresh();
   });
 
-  register("agenthome.skills.uninstallPacks", async () => {
+  register("avenic.skills.uninstallPacks", async () => {
     const root = await deps.projectRoot();
     if (!root) return;
     const scope = await pickScope();
@@ -3255,7 +3255,7 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: {
     providers.skills.refresh();
   });
 
-  register("agenthome.skills.addDirect", async () => {
+  register("avenic.skills.addDirect", async () => {
     const root = await deps.projectRoot();
     if (!root) return;
     const scope = await pickScope();
@@ -3279,7 +3279,7 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: {
     providers.skills.refresh();
   });
 
-  register("agenthome.skills.removeDirect", async () => {
+  register("avenic.skills.removeDirect", async () => {
     const root = await deps.projectRoot();
     if (!root) return;
     const scope = await pickScope();
@@ -3462,18 +3462,18 @@ export function overviewHtml(nonce: string, cspSource: string, styleUri: string,
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource}; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${styleUri}">
-<title>AgentHome</title>
+<title>Avenic</title>
 </head>
 <body>
-<header class="ah-header">
-  <h1>AgentHome</h1>
-  <span id="project" class="ah-muted"></span>
+<header class="ave-header">
+  <h1>Avenic</h1>
+  <span id="project" class="ave-muted"></span>
   <vscode-button id="refresh" appearance="secondary">刷新</vscode-button>
 </header>
 <main>
-  <section id="catalog" class="ah-card"><h2>Catalog</h2><div id="catalog-body" class="ah-muted">加载中…</div></section>
-  <section id="agents" class="ah-card"><h2>Agents</h2><div id="agents-body"></div></section>
-  <section id="skills" class="ah-card"><h2>Skills</h2><div id="skills-body"></div></section>
+  <section id="catalog" class="ave-card"><h2>Catalog</h2><div id="catalog-body" class="ave-muted">加载中…</div></section>
+  <section id="agents" class="ave-card"><h2>Agents</h2><div id="agents-body"></div></section>
+  <section id="skills" class="ave-card"><h2>Skills</h2><div id="skills-body"></div></section>
 </main>
 <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
@@ -3486,16 +3486,16 @@ export function overviewHtml(nonce: string, cspSource: string, styleUri: string,
 ```css
 :root { color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
 body { padding: 8px 12px; }
-.ah-header { display: flex; align-items: center; gap: 8px; }
-.ah-header h1 { font-size: 1.2em; margin: 0; flex: 1; }
-.ah-card { background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-widget-border); border-radius: 4px; margin-top: 10px; padding: 10px; }
-.ah-card h2 { font-size: 1em; margin: 0 0 8px; color: var(--vscode-sideBarSectionHeader-foreground); }
-.ah-muted { color: var(--vscode-descriptionForeground); }
-.ah-agent { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.ah-badge { border-radius: 3px; padding: 0 6px; font-size: 0.85em; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
-.ah-row { display: flex; justify-content: space-between; padding: 3px 0; }
-.ah-ok { color: var(--vscode-charts-green); }
-.ah-warn { color: var(--vscode-charts-yellow); }
+.ave-header { display: flex; align-items: center; gap: 8px; }
+.ave-header h1 { font-size: 1.2em; margin: 0; flex: 1; }
+.ave-card { background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-widget-border); border-radius: 4px; margin-top: 10px; padding: 10px; }
+.ave-card h2 { font-size: 1em; margin: 0 0 8px; color: var(--vscode-sideBarSectionHeader-foreground); }
+.ave-muted { color: var(--vscode-descriptionForeground); }
+.ave-agent { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.ave-badge { border-radius: 3px; padding: 0 6px; font-size: 0.85em; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+.ave-row { display: flex; justify-content: space-between; padding: 3px 0; }
+.ave-ok { color: var(--vscode-charts-green); }
+.ave-warn { color: var(--vscode-charts-yellow); }
 ```
 
 `media/main.js`（textContent 渲染，无 innerHTML 注入）：
@@ -3512,7 +3512,7 @@ function el(tag, className) {
 }
 
 function badge(text, kind) {
-  const span = el("span", `ah-badge ${kind === "ok" ? "ah-ok" : "ah-warn"}`);
+  const span = el("span", `ave-badge ${kind === "ok" ? "ave-ok" : "ave-warn"}`);
   span.textContent = text;
   return span;
 }
@@ -3524,10 +3524,10 @@ function renderCatalog(catalog) {
     body.append(document.createTextNode("未配置"));
     return;
   }
-  const first = el("div", "ah-row");
+  const first = el("div", "ave-row");
   first.append(badge(catalog.current, "ok"));
   body.append(first);
-  const second = el("div", "ah-muted");
+  const second = el("div", "ave-muted");
   second.textContent = `revision: ${catalog.revision ?? "未知"} · 已注册 ${catalog.knownCount} 个`;
   body.append(second);
 }
@@ -3536,7 +3536,7 @@ function renderAgents(agents) {
   const body = document.getElementById("agents-body");
   body.textContent = "";
   for (const agent of agents) {
-    const row = el("div", "ah-agent");
+    const row = el("div", "ave-agent");
     const name = el("span");
     name.textContent = agent.displayName;
     row.append(name);
@@ -3558,10 +3558,10 @@ function renderSkills(skills) {
     return;
   }
   for (const scope of [skills.project, skills.global]) {
-    const row = el("div", "ah-row");
+    const row = el("div", "ave-row");
     const label = el("span");
     label.textContent = scope.scope === "project" ? "项目" : "全局";
-    const value = el("span", "ah-muted");
+    const value = el("span", "ave-muted");
     value.textContent = scope.packs ? scope.packs.join(" + ") : "未安装";
     row.append(label, value);
     body.append(row);
@@ -3586,7 +3586,7 @@ document.getElementById("refresh").addEventListener("click", () => vscode.postMe
 
 ```ts
 import * as vscode from "vscode";
-import { AGENTS } from "@agenthome/core";
+import { AGENTS } from "@avenic/core";
 import { overviewHtml } from "./html.js";
 import { buildDashboardState } from "./state.js";
 import type { DashboardMessage, DashboardRequest } from "./protocol.js";
@@ -3648,7 +3648,7 @@ export class OverviewProvider implements vscode.WebviewViewProvider {
 }
 ```
 
-`package.json` 增补：`views.agenthome` 数组加入 `{ "id": "agenthome.overview", "name": "Overview", "type": "webview" }`。
+`package.json` 增补：`views.avenic` 数组加入 `{ "id": "avenic.overview", "name": "Overview", "type": "webview" }`。
 
 `extension.ts` 更新（activate 内，在 `registerCatalogCommands` 之前创建 overview 并传入；顶部 import 加 `import { OverviewProvider } from "./dashboard/overview.js";`）：
 
@@ -3664,15 +3664,15 @@ export class OverviewProvider implements vscode.WebviewViewProvider {
   });
 ```
 
-并把 `agenthome.overview.show`/`agenthome.doctor` 的占位命令替换为：
+并把 `avenic.overview.show`/`avenic.doctor` 的占位命令替换为：
 
 ```ts
-    vscode.commands.registerCommand("agenthome.overview.show", () =>
-      void vscode.commands.executeCommand("agenthome.overview.focus"),
+    vscode.commands.registerCommand("avenic.overview.show", () =>
+      void vscode.commands.executeCommand("avenic.overview.focus"),
     ),
-    vscode.commands.registerCommand("agenthome.doctor", () => {
+    vscode.commands.registerCommand("avenic.doctor", () => {
       overview.refresh();
-      void vscode.commands.executeCommand("agenthome.overview.focus");
+      void vscode.commands.executeCommand("avenic.overview.focus");
     }),
 ```
 
@@ -3680,7 +3680,7 @@ export class OverviewProvider implements vscode.WebviewViewProvider {
 
 ```ts
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider("agenthome.overview", overview),
+    vscode.window.registerWebviewViewProvider("avenic.overview", overview),
   );
 ```
 
@@ -3688,7 +3688,7 @@ export class OverviewProvider implements vscode.WebviewViewProvider {
 
 - [ ] **Step 4: 跑测试确认通过** → `npm test` + `npm run build` + `npm run typecheck` → 全绿。
 
-- [ ] **Step 5: 手动冒烟**：F5 → Overview 视图显示卡片与徽章；暗/亮主题下配色正常；刷新按钮可用；`agenthome.catalog.sync` 后 Catalog 卡片 revision 更新。
+- [ ] **Step 5: 手动冒烟**：F5 → Overview 视图显示卡片与徽章；暗/亮主题下配色正常；刷新按钮可用；`avenic.catalog.sync` 后 Catalog 卡片 revision 更新。
 
 - [ ] **Step 6: Commit**
 
@@ -3706,7 +3706,7 @@ git commit -m "feat(vscode): overview webview dashboard — cards, badges, theme
 - Agents 视图：已初始化节点 description 加上 sessions（`已初始化 · global · project`）；tooltip 保持详情全量。
 - Catalog 视图：当前节点 check 图标、非当前 circle-outline（T14 已做，检查即可）。
 - Skills 视图：scopeNode 用 Codicon `folder`/`globe`、packNode 用 `package`、directNode 用 `link-external`（T14 已做，检查即可）。
-- 命令面板分类：`contributes.commands` 的 title 改为不带前缀的短名 + `"category": "AgentHome"`（如 `"title": "Initialize Agent", "category": "AgentHome"`），菜单里仍按 id 触发。
+- 命令面板分类：`contributes.commands` 的 title 改为不带前缀的短名 + `"category": "Avenic"`（如 `"title": "Initialize Agent", "category": "Avenic"`），菜单里仍按 id 触发。
 
 - [ ] **Step 2: 写 README.md（扩展首页 = Marketplace 文案）**
 
@@ -3741,12 +3741,12 @@ git commit -m "polish(vscode): codicons, command categories, marketplace README"
 - [ ] **Step 2: docs/development.md 增补两节**
 
 ```markdown
-## core 发布纪律（扩展依赖 @agenthome/core）
+## core 发布纪律（扩展依赖 @avenic/core）
 
 1. `packages/core` 变更（含 index.d.ts 签名调整）→ bump `packages/core/package.json` version（新函数=minor，破坏性=rare major）
 2. 维护者执行：`cd packages/core && npm publish`
 3. CLI 照旧：`npm run sync-core`（vendor 同步，与 npm 发布互相独立）
-4. 扩展升级依赖：`packages/vscode/package.json` 的 `@agenthome/core` 版本范围，然后 `cd packages/vscode && npm install && npm test`
+4. 扩展升级依赖：`packages/vscode/package.json` 的 `@avenic/core` 版本范围，然后 `cd packages/vscode && npm install && npm test`
 
 ## VS Code 扩展发布
 
@@ -3754,9 +3754,9 @@ git commit -m "polish(vscode): codicons, command categories, marketplace README"
 cd packages/vscode
 npm install
 npm test            # build:test + node --test
-npm run build       # esbuild → dist/extension.js（含 @agenthome/core）
-npm run package     # vsce package → agenthome-vscode-<version>.vsix
-npx vsce publish    # 维护者执行（需要 Azure DevOps PAT，publisher: agenthome）
+npm run build       # esbuild → dist/extension.js（含 @avenic/core）
+npm run package     # vsce package → avenic-vscode-<version>.vsix
+npx vsce publish    # 维护者执行（需要 Azure DevOps PAT，publisher: avenic）
 ```
 
 CI 在 tag `vscode-v*` 上执行 build + package 并上传 vsix 工件；发布由维护者执行。
@@ -3767,7 +3767,7 @@ CI 在 tag `vscode-v*` 上执行 build + package 并上传 vsix 工件；发布�
 - [ ] **Step 4: 验证打包**
 
 Run: `cd packages/vscode && npm run package`
-Expected: 生成 `agenthome-vscode-0.1.0.vsix`；`npx vsce ls` 输出含 `dist/extension.js`、`media/`、`README.md`，不含 `src/`、`test/`。
+Expected: 生成 `avenic-vscode-0.1.0.vsix`；`npx vsce ls` 输出含 `dist/extension.js`、`media/`、`README.md`，不含 `src/`、`test/`。
 
 - [ ] **Step 5: Commit**
 
@@ -3812,7 +3812,7 @@ git commit -m "chore(release): vsix packaging and publish docs"
         run: npm run package --prefix packages/vscode
       - uses: actions/upload-artifact@v4
         with:
-          name: agenthome-vscode-vsix
+          name: avenic-vscode-vsix
           path: packages/vscode/*.vsix
 ```
 
