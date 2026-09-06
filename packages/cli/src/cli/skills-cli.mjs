@@ -22,6 +22,7 @@ import {
   fail,
   findSource,
   installCopies,
+  installPacks,
   installedPackIds,
   isCatalogDirectory,
   isInside,
@@ -47,7 +48,6 @@ import {
   removeSkillDirectories,
   removeTempDirectory,
   replaceStagedFiles,
-  resolveInstallPacks,
   resolveInstallSource,
   resolvePack,
   resolvePacks,
@@ -121,24 +121,17 @@ async function pinnedCatalogSpec(spec, context) {
 async function commandInstall(explicitPacks = [], options = {}) {
   const io = options.io ?? console;
   const context = createInstallContext(options.global ?? false, options);
-  if (!options.global && isCatalogDirectory(options.cwd ?? process.cwd())) {
-    fail("Run installation from a work project, not from the AgentHome catalog");
-  }
-  const catalogInfo = await resolveCatalogSource(options, { refresh: explicitPacks.length === 0 });
-  const sourceConfig = await loadSources(catalogInfo.catalogRoot);
-  const catalog = await buildCatalog(sourceConfig, path.join(catalogInfo.catalogRoot, "skills"));
-  const packs = await loadPacks(catalogInfo.catalogRoot);
-  const packIds = await resolveInstallPacks(context, explicitPacks);
-  const resolvedPacks = resolvePacks(catalog, sourceConfig, packs, packIds);
-  const packNames = resolvedPacks.packs.map((pack) => pack.name).join(" + ");
-  printTree(resolvedPacks.groups, "Skill Installation Plan", [
-    `Packs: ${packNames}`,
-    `Scope: ${context.label}`,
-    `Root: ${context.root}`,
-    `Duplicate selections removed: ${resolvedPacks.duplicateSelections}`,
-  ], io);
-  await installCopies(context, resolvedPacks, io);
-  await writeInstallMetadata(context, resolvedPacks, catalogInfo);
+  const { resolvedPacks } = await installPacks(context, explicitPacks, {
+    io,
+    onPlan: (resolved) => {
+      printTree(resolved.groups, "Skill Installation Plan", [
+        `Packs: ${resolved.packs.map((pack) => pack.name).join(" + ")}`,
+        `Scope: ${context.label}`,
+        `Root: ${context.root}`,
+        `Duplicate selections removed: ${resolved.duplicateSelections}`,
+      ], io);
+    },
+  });
   io.log(`\nInstallation complete: ${resolvedPacks.names.length} unique Skills`);
   io.log(`Config: ${context.configFile}`);
   io.log(`Lock:   ${context.lockFile}`);

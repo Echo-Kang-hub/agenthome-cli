@@ -127,6 +127,7 @@ export {
 export {
   createInstallContext,
   installCopies,
+  installPacks,
   installedPackIds,
   isCatalogDirectory,
   previousManagedState,
