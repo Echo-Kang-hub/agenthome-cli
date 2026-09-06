@@ -82,6 +82,7 @@ export {
   loadDefaultCatalogSpec,
   loadKnownCatalogs,
   parseCatalogSpec,
+  registerCatalog,
   registerKnownCatalog,
   setDefaultCatalogSpec,
 } from "./skills/catalog.mjs";

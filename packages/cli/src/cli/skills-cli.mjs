@@ -36,6 +36,7 @@ import {
   pruneCatalogSkills,
   readDirectState,
   readJson,
+  registerCatalog,
   registerKnownCatalog,
   registerSource,
   remoteHead,
@@ -799,27 +800,20 @@ async function commandCatalogAdd(argumentsList, options = {}) {
   if (!spec || argumentsList.length !== 1) {
     fail("Usage: agenthome catalog add <spec>");
   }
-  parseCatalogSpec(spec);
-  await setDefaultCatalogSpec(options.environment, spec);
-  await registerKnownCatalog(options.environment, spec);
+  const result = await registerCatalog(spec, { environment: options.environment, io });
   io.log(`Default catalog: ${spec}`);
-  // The spec is already saved; the fetch below is only a preview. If it fails
-  // (offline, missing git credentials, no Packs yet), the catalog remains
-  // configured and `agenthome catalog sync` can retry later.
-  try {
-    const catalogInfo = await ensureCatalog(spec, { environment: options.environment, io });
-    const packEntries = [...(await loadPacks(catalogInfo.catalogRoot)).values()];
-    io.log(`\nPacks · ${packEntries.length}`);
-    packEntries.forEach((pack, packIndex) => {
-      const lastPack = packIndex === packEntries.length - 1;
+  if (result.previewFailed) {
+    io.log("\nSpec saved. Catalog preview unavailable:");
+    io.log(`  ${String(result.error.message).split("\n")[0]}`);
+  } else {
+    io.log(`\nPacks · ${result.packs.length}`);
+    result.packs.forEach((pack, packIndex) => {
+      const lastPack = packIndex === result.packs.length - 1;
       const label = pack.name && pack.name !== pack.id ? `${pack.id} (${pack.name})` : pack.id;
       const purpose = pack.description ? ` — ${pack.description}` : "";
       io.log(`${lastPack ? "└──" : "├──"} ${label}${purpose}`);
     });
     io.log("\nInstall: agenthome skills install [pack...]");
-  } catch (error) {
-    io.log("\nSpec saved. Catalog preview unavailable:");
-    io.log(`  ${String(error.message).split("\n")[0]}`);
   }
   io.log("Run: agenthome catalog sync");
 }
