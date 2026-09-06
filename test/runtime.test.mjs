@@ -12,6 +12,7 @@ import {
   effectiveAgentConfig,
   initializeAgent,
   loadRuntime,
+  projectAuthEnvironment,
   setLocalAuth,
 } from "../packages/core/src/runtime/config.mjs";
 import {
@@ -25,17 +26,36 @@ import * as claudeSessions from "../packages/core/src/runtime/adapters/claude.mj
 import * as codexSessions from "../packages/core/src/runtime/adapters/codex.mjs";
 import * as opencodeSessions from "../packages/core/src/runtime/adapters/opencode.mjs";
 import { agentHomePackageSpec, updateAgentHome } from "../packages/cli/src/cli/self-update.mjs";
-import { PROJECT_ROOT_TOKEN } from "../packages/core/src/runtime/sessions.mjs";
+import { PROJECT_ROOT_TOKEN, listFiles } from "../packages/core/src/runtime/sessions.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cliPackageRoot = path.join(packageRoot, "packages", "cli");
 
-function runCli(projectRoot, entry, argumentsList) {
+function runCli(projectRoot, entry, argumentsList, environment) {
   return spawnSync(process.execPath, [path.join(packageRoot, "packages", "cli", "bin", entry), ...argumentsList], {
     cwd: projectRoot,
     encoding: "utf8",
+    env: environment ?? process.env,
     windowsHide: true,
   });
+}
+
+async function fakeAgentBinary(projectRoot, agentId) {
+  const binDirectory = path.join(projectRoot, "bin");
+  await mkdir(binDirectory, { recursive: true });
+  const windows = process.platform === "win32";
+  // On Windows the runtime resolves executables through PowerShell for .ps1
+  // shims; spawnSync cannot launch .cmd files directly (EINVAL).
+  const script = windows
+    ? "@\"\nCLAUDE_CONFIG_DIR=$env:CLAUDE_CONFIG_DIR\nCODEX_HOME=$env:CODEX_HOME\nXDG_CONFIG_HOME=$env:XDG_CONFIG_HOME\n\"@ | Set-Content -Path $env:OUT_FILE\n"
+    : `#!/bin/sh\n{\n  echo "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR"\n  echo "CODEX_HOME=$CODEX_HOME"\n  echo "XDG_CONFIG_HOME=$XDG_CONFIG_HOME"\n} > "$OUT_FILE"\nexit 0\n`;
+  const executable = path.join(binDirectory, windows ? `${agentId}.ps1` : agentId);
+  await writeFile(executable, script);
+  if (!windows) {
+    const { chmod } = await import("node:fs/promises");
+    await chmod(executable, 0o755);
+  }
+  return binDirectory;
 }
 
 async function withTempProject(run) {
@@ -316,6 +336,77 @@ test("OpenCode uses native export and imports each portable version once", async
     assert.equal(first.added, 1);
     assert.equal(second.unchanged, 1);
     assert.equal(calls.filter((argumentsList) => argumentsList[0] === "import").length, 1);
+  });
+});
+
+test("sessions location is selectable per agent", async () => {
+  await withTempProject(async (projectRoot) => {
+    await initializeAgent(projectRoot, "codex", "global", "global");
+    assert.equal((await loadRuntime(projectRoot)).runtime.agents.codex.sessions, "global");
+    await initializeAgent(projectRoot, "codex", undefined, "project");
+    assert.equal((await loadRuntime(projectRoot)).runtime.agents.codex.sessions, "project");
+    await assert.rejects(
+      initializeAgent(projectRoot, "codex", undefined, "machine"),
+      /Sessions must be global or project/,
+    );
+  });
+});
+
+test("project auth maps each agent to a project-local config home", async () => {
+  await withTempProject(async (projectRoot) => {
+    const local = path.join(projectRoot, ".agents", "local");
+    assert.deepEqual(projectAuthEnvironment("claude", projectRoot), { CLAUDE_CONFIG_DIR: path.join(local, "claude") });
+    assert.deepEqual(projectAuthEnvironment("codex", projectRoot), { CODEX_HOME: path.join(local, "codex") });
+    assert.deepEqual(projectAuthEnvironment("opencode", projectRoot), { XDG_CONFIG_HOME: path.join(local, "opencode") });
+  });
+});
+
+test("project auth launches the agent with a project-scoped config home", async () => {
+  await withTempProject(async (projectRoot) => {
+    const binDirectory = await fakeAgentBinary(projectRoot, "claude");
+    const outFile = path.join(projectRoot, "launch.txt");
+    const environment = {
+      ...process.env,
+      PATH: `${binDirectory}${path.delimiter}${process.env.PATH}`,
+      OUT_FILE: outFile,
+    };
+    const initialized = runCli(projectRoot, "agent.mjs", ["claude", "init", "--auth", "project"], environment);
+    assert.equal(initialized.status, 0, initialized.stderr);
+    const launched = runCli(projectRoot, "agent.mjs", ["claude", "-p", "hello"], environment);
+    assert.equal(launched.status, 0, launched.stderr);
+    const output = await readFile(outFile, "utf8");
+    const expected = path.join(projectRoot, ".agents", "local", "claude");
+    assert.match(output, new RegExp(`CLAUDE_CONFIG_DIR=${expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  });
+});
+
+test("global sessions leave native storage untouched on launch", async () => {
+  await withTempProject(async (projectRoot) => {
+    const binDirectory = await fakeAgentBinary(projectRoot, "codex");
+    const codexHome = path.join(projectRoot, "codex-home");
+    const sessionDirectory = path.join(codexHome, "sessions", "2026", "09", "06");
+    await mkdir(sessionDirectory, { recursive: true });
+    await writeFile(
+      path.join(sessionDirectory, "rollout-1.jsonl"),
+      `${JSON.stringify({ type: "session_meta", payload: { id: "sess-1", cwd: projectRoot } })}\n`,
+    );
+    const environment = {
+      ...process.env,
+      PATH: `${binDirectory}${path.delimiter}${process.env.PATH}`,
+      CODEX_HOME: codexHome,
+      OUT_FILE: path.join(projectRoot, "launch.txt"),
+    };
+    const initialized = runCli(projectRoot, "agent.mjs", ["codex", "init", "--sessions", "global"], environment);
+    assert.equal(initialized.status, 0, initialized.stderr);
+    const launched = runCli(projectRoot, "agent.mjs", ["codex", "exec"], environment);
+    assert.equal(launched.status, 0, launched.stderr);
+    const portable = path.join(projectRoot, ".agents", "sessions", "codex");
+    assert.equal((await listFiles(portable)).length, 0, "global sessions must not create portable copies");
+
+    // Switching back to project sessions restores the portable sync on launch.
+    runCli(projectRoot, "agent.mjs", ["codex", "init", "--sessions", "project"], environment);
+    runCli(projectRoot, "agent.mjs", ["codex", "exec"], environment);
+    assert.ok((await listFiles(portable)).length > 0, "project sessions must capture native sessions");
   });
 });
 

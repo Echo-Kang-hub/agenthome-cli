@@ -5,6 +5,7 @@ import { getAgent } from "./agents.mjs";
 import { ensureRuntimeGitignore, removeRuntimeGitignore } from "./gitignore.mjs";
 
 const AUTH_MODES = new Set(["global", "project"]);
+const SESSIONS_MODES = new Set(["global", "project"]);
 
 async function readJsonIfExists(file, fallback) {
   if (!existsSync(file)) {
@@ -30,6 +31,13 @@ export function validateAuthMode(authMode) {
   return authMode;
 }
 
+export function validateSessionsMode(sessionsMode) {
+  if (!SESSIONS_MODES.has(sessionsMode)) {
+    throw new Error(`Sessions must be global or project: ${sessionsMode}`);
+  }
+  return sessionsMode;
+}
+
 export function runtimePaths(projectRoot) {
   const agentsRoot = path.join(projectRoot, ".agents");
   const localRoot = path.join(agentsRoot, "local");
@@ -48,21 +56,25 @@ export async function loadRuntime(projectRoot) {
   return { paths, runtime, local };
 }
 
-export async function initializeAgent(projectRoot, agentId, authMode) {
+export async function initializeAgent(projectRoot, agentId, authMode, sessionsMode) {
   getAgent(agentId);
   if (authMode) {
     validateAuthMode(authMode);
+  }
+  if (sessionsMode) {
+    validateSessionsMode(sessionsMode);
   }
   const state = await loadRuntime(projectRoot);
   state.runtime.schemaVersion ??= 1;
   state.runtime.agents ??= {};
   const previous = state.runtime.agents[agentId] ?? {};
   const effectiveAuthMode = authMode ?? previous.auth ?? "global";
+  const effectiveSessionsMode = sessionsMode ?? previous.sessions ?? "project";
   state.runtime.agents[agentId] = {
     ...previous,
     enabled: true,
     auth: effectiveAuthMode,
-    sessions: "project",
+    sessions: effectiveSessionsMode,
   };
   await mkdir(path.join(state.paths.sessionsRoot, agentId), { recursive: true });
   if (effectiveAuthMode === "project") {
@@ -70,7 +82,30 @@ export async function initializeAgent(projectRoot, agentId, authMode) {
   }
   const configChanged = await writeJsonIfChanged(state.paths.runtimeFile, state.runtime);
   const gitignoreChanged = await ensureRuntimeGitignore(projectRoot);
-  return { ...state, authMode: effectiveAuthMode, configChanged, gitignoreChanged };
+  return {
+    ...state,
+    authMode: effectiveAuthMode,
+    sessionsMode: effectiveSessionsMode,
+    configChanged,
+    gitignoreChanged,
+  };
+}
+
+// Environment overrides that scope an agent's credentials and configuration to
+// the project (stored under .agents/local/, which is always gitignored).
+export function projectAuthEnvironment(agentId, projectRoot) {
+  getAgent(agentId);
+  const localRoot = runtimePaths(projectRoot).localRoot;
+  switch (agentId) {
+    case "claude":
+      return { CLAUDE_CONFIG_DIR: path.join(localRoot, "claude") };
+    case "codex":
+      return { CODEX_HOME: path.join(localRoot, "codex") };
+    case "opencode":
+      return { XDG_CONFIG_HOME: path.join(localRoot, "opencode") };
+    default:
+      throw new Error(`Unknown Agent: ${agentId}`);
+  }
 }
 
 export async function deinitializeAgent(projectRoot, agentId, options = {}) {

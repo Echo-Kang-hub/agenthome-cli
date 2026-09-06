@@ -11,11 +11,13 @@ import {
   initializeAgent,
   loadRuntime,
   locateProjectRoot,
+  projectAuthEnvironment,
   sessionsGitIgnored,
   setLocalAuth,
   setSessionsGitIgnored,
   spawnExecutableSync,
   validateAuthMode,
+  validateSessionsMode,
 } from "#core";
 import { dispatchCatalog, dispatchSkills } from "./skills-cli.mjs";
 import { updateAgentHome } from "./self-update.mjs";
@@ -25,6 +27,7 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 function launchExecutable(executable, argumentsList, options = {}) {
   const result = spawnExecutableSync(executable, argumentsList, {
     cwd: options.cwd,
+    env: options.environment,
     stdio: options.capture ? "pipe" : "inherit",
     windowsHide: Boolean(options.capture),
   });
@@ -59,7 +62,7 @@ function printHelp() {
   console.log(`AgentHome
 
 Usage:
-  agent <claude|codex|opencode> init [--auth global|project]
+  agent <claude|codex|opencode> init [--auth global|project] [--sessions global|project]
   agent <claude|codex|opencode> deinit [--purge]
   agent <claude|codex|opencode> auth [global|project|reset]
   agent <claude|codex|opencode> status
@@ -89,7 +92,7 @@ function printAgentStatus(agent, projectRoot, state) {
     console.log(`Configured auth     ${config.configuredAuth}`);
     console.log(`Local override      ${config.localAuth ?? "None"}`);
     console.log(`Effective auth      ${config.auth}`);
-    console.log(`Sessions            ${config.sessions ?? "project"}`);
+    console.log(`Sessions            ${config.sessions === "global" ? "Global (native)" : "Project (portable)"}`);
   }
   console.log(`Official CLI        ${executableAvailable(agent.executable) ? "Available" : "Not found"}`);
 }
@@ -103,15 +106,17 @@ async function dispatchAgent(agentId, argumentsList) {
     const initArguments = [...remainingArguments];
     const authOption = takeOption(initArguments, "--auth");
     const authMode = authOption ? validateAuthMode(authOption) : undefined;
+    const sessionsOption = takeOption(initArguments, "--sessions");
+    const sessionsMode = sessionsOption ? validateSessionsMode(sessionsOption) : undefined;
     if (initArguments.length > 0) {
       throw new Error(`Unknown option: ${initArguments[0]}`);
     }
-    const result = await initializeAgent(projectRoot, agentId, authMode);
+    const result = await initializeAgent(projectRoot, agentId, authMode, sessionsMode);
     console.log("AgentHome Runtime\n");
     console.log(`Agent           ${agent.displayName}`);
     console.log(`Project         ${projectRoot}`);
     console.log(`Authentication  ${result.authMode}`);
-    console.log("Sessions        Project");
+    console.log(`Sessions        ${result.sessionsMode === "global" ? "Global" : "Project"}`);
     console.log(`Session Git     ${(await sessionsGitIgnored(projectRoot)) ? "Off" : "On"}`);
     console.log(`Configuration   ${result.configChanged ? "Updated" : "Unchanged"}`);
     console.log(`Git ignore      ${result.gitignoreChanged ? "Updated" : "Unchanged"}`);
@@ -196,16 +201,21 @@ async function dispatchAgent(agentId, argumentsList) {
   if (!config) {
     throw new Error(`${agent.displayName} is not initialized. Run: agent ${agentId} init`);
   }
-  if (config.auth === "project") {
-    throw new Error(`${agent.displayName} project authentication adapter is not implemented yet`);
-  }
+  const environment = config.auth === "project"
+    ? { ...process.env, ...projectAuthEnvironment(agentId, projectRoot) }
+    : process.env;
   const adapter = getSessionAdapter(agentId);
-  const restored = await adapter.restore(projectRoot);
-  if (restored.conflicts > 0) {
-    console.warn(`Portable session conflicts skipped: ${restored.conflicts} (kept local ${agent.displayName} data)`);
+  const portableSessions = config.sessions !== "global";
+  if (portableSessions) {
+    const restored = await adapter.restore(projectRoot, { environment });
+    if (restored.conflicts > 0) {
+      console.warn(`Portable session conflicts skipped: ${restored.conflicts} (kept local ${agent.displayName} data)`);
+    }
   }
-  const status = launchExecutable(agent.executable, argumentsList, { cwd: projectRoot });
-  await adapter.capture(projectRoot);
+  const status = launchExecutable(agent.executable, argumentsList, { cwd: projectRoot, environment });
+  if (portableSessions) {
+    await adapter.capture(projectRoot, { environment });
+  }
   return status;
 }
 

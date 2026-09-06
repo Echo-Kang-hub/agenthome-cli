@@ -7,9 +7,11 @@ export {
   effectiveAgentConfig,
   initializeAgent,
   loadRuntime,
+  projectAuthEnvironment,
   runtimePaths,
   setLocalAuth,
   validateAuthMode,
+  validateSessionsMode,
 } from "./runtime/config.mjs";
 export {
   REQUIRED_RULES,
