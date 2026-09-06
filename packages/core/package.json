@@ -1,6 +1,6 @@
 {
-  "name": "@agenthome-cli/core",
-  "version": "5.8.0",
+  "name": "@avenic/core",
+  "version": "1.0.0",
   "license": "MIT",
   "type": "module",
   "main": "src/index.mjs",

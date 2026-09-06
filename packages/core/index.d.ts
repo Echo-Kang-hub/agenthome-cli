@@ -1,4 +1,4 @@
-// Type declarations for @agenthome-cli/core.
+// Type declarations for @avenic/core.
 // Hand-maintained next to src/index.mjs; update both in the same change.
 
 export interface ProcessEnvLike {

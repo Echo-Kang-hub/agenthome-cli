@@ -1,4 +1,4 @@
-// Public API of @agenthome-cli/core.
+// Public API of @avenic/core.
 
 export { AGENTS, agentExecutableAvailable, getAgent } from "./runtime/agents.mjs";
 export {
