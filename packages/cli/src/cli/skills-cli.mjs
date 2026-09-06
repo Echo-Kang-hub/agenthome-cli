@@ -52,6 +52,7 @@ import {
   saveSources,
   setDefaultCatalogSpec,
   skillCoveredByPacks,
+  skillsInstallationStatus,
   stageSource,
   stateRoot,
   writeInstallMetadata,
@@ -294,23 +295,15 @@ async function commandPacks(options = {}) {
 async function commandStatus(options = {}) {
   const io = options.io ?? console;
   const context = createInstallContext(options.global ?? false, options);
-  if (!existsSync(context.lockFile)) {
+  const status = await skillsInstallationStatus(context);
+  if (!status) {
     fail(`${context.label} scope has no lock file; install a Pack first`);
   }
-  const manifest = await readJson(context.lockFile);
-  const groups = (manifest.sources ?? []).map((source) => ({
-    source,
-    skills: (source.skills ?? []).map((name) => ({ name })),
-  }));
-  const manifestPacks = manifest.packs ?? (manifest.pack ? [manifest.pack] : []);
-  printTree(groups, `Current ${context.label} Skills`, [
-    `Packs: ${manifestPacks.map((pack) => pack.name ?? pack.id ?? pack).join(" + ")}`,
+  printTree(status.groups, `Current ${context.label} Skills`, [
+    `Packs: ${status.packs.map((pack) => pack.name ?? pack.id ?? pack).join(" + ")}`,
   ], io);
-  const names = groups.flatMap((group) => group.skills.map((skill) => skill.name));
-  for (const targetConfig of context.targets) {
-    const directory = targetConfig.destination;
-    const present = names.filter((name) => existsSync(path.join(directory, name, "SKILL.md"))).length;
-    io.log(`${present === names.length ? "✓" : "!"} ${targetConfig.label}: ${present}/${names.length}`);
+  for (const targetConfig of status.targets) {
+    io.log(`${targetConfig.complete ? "✓" : "!"} ${targetConfig.label}: ${targetConfig.present}/${targetConfig.total}`);
   }
 }
 

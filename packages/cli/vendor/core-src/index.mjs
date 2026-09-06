@@ -133,5 +133,6 @@ export {
   removeInstallationFiles,
   removeSkillDirectories,
   resolveInstallPacks,
+  skillsInstallationStatus,
   writeInstallMetadata,
 } from "./skills/install.mjs";
