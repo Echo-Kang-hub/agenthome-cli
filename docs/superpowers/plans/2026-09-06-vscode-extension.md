@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在 avenic monorepo 新增 `packages/vscode` VS Code 扩展，通过公开发布的 `@avenic/core` 复用全部业务逻辑，图形化管理 Agent 运行时与 Skills。
+**Goal:** 在 avenic 仓库（单仓库多 package 结构）新增 `packages/vscode` VS Code 扩展，通过公开发布的 `@avenic/core` 复用全部业务逻辑，图形化管理 Agent 运行时与 Skills。
 
 **Architecture:** core = 唯一业务逻辑层（下沉 CLI 编排语义后公开发布）；CLI 与扩展是两个平行客户端。扩展为 TypeScript，esbuild 打包 core 进 `dist/extension.js`，vsce 打包/发布 VSIX。UI = 三个极简 TreeView + Webview Overview Dashboard + QuickPick 流程。
 

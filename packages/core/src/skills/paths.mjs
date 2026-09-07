@@ -46,13 +46,21 @@ export function stateRoot(environment = process.env) {
   const root = environment.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
   const current = path.join(root, "avenic");
   const legacy = path.join(root, "agent-skills");
-  if (existsSync(legacy) && !statSync(current, { throwIfNoEntry: false })?.isDirectory()) {
-    // 新路径被同名非目录占用：不能迁移进去，也绝不覆盖删除，降级继续用旧目录
-    if (existsSync(current)) return legacy;
+  if (existsSync(legacy)) {
+    let currentIsDir;
     try {
-      renameSync(legacy, current); // 同父目录原子 rename，一次性迁移
+      currentIsDir = statSync(current, { throwIfNoEntry: false })?.isDirectory();
     } catch {
-      return legacy; // 迁移失败降级：继续用旧目录，不丢数据
+      return legacy; // 任何 statSync 失败（如符号链接循环 ELOOP）都降级继续用旧目录
+    }
+    if (!currentIsDir) {
+      // 新路径被同名非目录占用：不能迁移进去，也绝不覆盖删除，降级继续用旧目录
+      if (existsSync(current)) return legacy;
+      try {
+        renameSync(legacy, current); // 同父目录原子 rename，一次性迁移
+      } catch {
+        return legacy; // 迁移失败降级：继续用旧目录，不丢数据
+      }
     }
   }
   return current;

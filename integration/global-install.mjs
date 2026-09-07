@@ -175,7 +175,7 @@ try {
   await verifyInstall(cliArchive, environment);
   await uninstall("avenic", environment);
 
-  // Mode 2: GitHub equivalent — the monorepo root tarball with synced vendor core.
+  // Mode 2: GitHub equivalent — the avenic-repo root tarball with synced vendor core.
   const rootArchive = pack(packageRoot, environment);
   await verifyInstall(rootArchive, environment);
   await verifySkills(environment);
