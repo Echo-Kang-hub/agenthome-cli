@@ -17,7 +17,8 @@
     "pack:cli": "cd packages/cli && npm pack --dry-run --json"
   },
   "files": [
-    "packages/",
+    "packages/core/",
+    "packages/cli/",
     "README.md"
   ],
   "engines": {
