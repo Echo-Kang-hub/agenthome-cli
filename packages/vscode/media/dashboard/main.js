@@ -1,55 +1,209 @@
-// Dashboard webview 脚本（T10 骨架：数据渲染通路 + ready/refresh/error 握手；视觉由 T11 完善）。
-// 安全：所有数据仅经 createElement/textContent 渲染，绝不使用 innerHTML 拼接用户字符串（设计 §4）。
+// Avenic Dashboard webview 控制器（T11 视觉层：三态 + 卡片 + 快捷动作）。
+// 安全铁律（设计 §4 / 规则 R3）：一切用户可影响字符串（项目路径、状态文本、Skill 名、
+// revision、错误消息）只经 createElement + textContent 渲染；任何代码路径都不赋值 innerHTML。
+// 数据通路（T10 SenderMessage）：只消费 { type: "data" | "error" }，其余消息忽略。
 "use strict";
 
 const vscode = acquireVsCodeApi();
 const app = document.getElementById("app");
 
-function el(name, text, className) {
-  const node = document.createElement(name);
+const state = { loading: true, error: null, data: null };
+
+// ---- 快捷动作（白名单，见 src/dashboard/protocol.ts）----
+// 点击向 host 转发 { type: "command" }；所涉命令均有无参数 QuickPick 回退，无需携带参数。
+const ACTIONS = [
+  { command: "catalog.sync", label: "同步 Catalog", iconName: "sync" },
+  { command: "skills.installPacks", label: "安装 Packs", iconName: "package" },
+  { command: "skills.addDirect", label: "添加直装 Skill", iconName: "plus" },
+  { command: "agents.init", label: "初始化 Agent", iconName: "robot" },
+  { command: "agents.sessionsImport", label: "导入会话", iconName: "import" },
+];
+// 依赖项目上下文的操作：未打开项目时置灰，避免点了才报错。
+const PROJECT_SCOPED = new Set([
+  "skills.installPacks",
+  "skills.addDirect",
+  "agents.init",
+  "agents.sessionsImport",
+]);
+
+/** 安全的元素构造：文本只经 textContent 写入。 */
+function el(tag, text, className) {
+  const node = document.createElement(tag);
   if (className !== undefined) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
 }
 
-function section(title, rows) {
-  const box = el("section", undefined, "section");
-  box.append(el("h2", title));
-  for (const row of rows) box.append(row);
+/** Codicon 图标（规则 R1）：VS Code 注入的 --vscode-icon-* data-URI 变量，名称→变量映射在 style.css。 */
+function icon(name, extraClass) {
+  const node = el("span", undefined, extraClass ? "icon " + extraClass : "icon");
+  node.setAttribute("data-icon", name);
+  node.setAttribute("aria-hidden", "true");
+  return node;
+}
+
+const ICON_BY_HINT = { "pass-filled": "pass-filled", pass: "pass", "circle-outline": "circle-outline" };
+function hintIconName(hint) {
+  return ICON_BY_HINT[hint] ?? "circle-outline";
+}
+
+// ---- 三态：loading / error / empty-friendly data ----
+
+function renderLoading() {
+  const box = el("div", undefined, "state state-loading");
+  box.append(icon("refresh", "spin"), el("p", "加载中…"));
+  app.replaceChildren(box);
+}
+
+function renderError(message) {
+  const box = el("div", undefined, "state state-error");
+  box.append(
+    icon("error"),
+    el("p", "加载失败："),
+    el("p", message, "error-message"),
+    el("p", "请检查「Avenic 输出」面板确认原因，或点击下方按钮重试。", "hint"),
+  );
+  const retry = el("button", "重试", "button");
+  retry.addEventListener("click", () => vscode.postMessage({ type: "refresh" }));
+  box.append(retry);
+  app.replaceChildren(box);
+}
+
+function topbar() {
+  const bar = el("header", undefined, "topbar");
+  bar.append(el("h1", "Avenic"));
+  const refresh = el("button", undefined, "icon-button");
+  refresh.setAttribute("title", "刷新");
+  refresh.setAttribute("aria-label", "刷新");
+  refresh.append(icon("refresh"));
+  refresh.addEventListener("click", () => vscode.postMessage({ type: "refresh" }));
+  bar.append(refresh);
+  return bar;
+}
+
+/** 顶部信息卡片（项目 / Catalog），空态友好：null 值渲染占位文本 + 提示行。 */
+function infoCard(headIcon, title, valueText, metaText, hintText) {
+  const card = el("section", undefined, "card");
+  const head = el("header", undefined, "card-head");
+  head.append(icon(headIcon), el("h3", title));
+  card.append(head);
+  card.append(el("p", valueText, "value"));
+  if (metaText !== undefined) card.append(el("p", metaText, "meta"));
+  if (hintText !== undefined) card.append(el("p", hintText, "hint"));
+  return card;
+}
+
+function blockTitle(iconName, title, count) {
+  const box = el("div", undefined, "block-title");
+  box.append(icon(iconName), el("h2", title));
+  if (count !== undefined) box.append(el("span", String(count), "count"));
+  return box;
+}
+
+function agentCard(a) {
+  const card = el("div", undefined, "card agent-card");
+  const head = el("div", undefined, "agent-head");
+  head.append(icon(hintIconName(a.iconHint)));
+  head.append(el("span", a.label, "agent-name"));
+  card.append(head);
+  card.append(el("p", a.statusText, "agent-status"));
+  card.append(el("p", a.executableAvailable ? "可执行文件就绪" : "可执行文件缺失", "agent-meta"));
+  return card;
+}
+
+function agentsBlock(agents) {
+  const box = el("section", undefined, "block");
+  box.append(blockTitle("robot", "Agents", agents.length));
+  const grid = el("div", undefined, "agent-grid");
+  for (const a of agents) grid.append(agentCard(a));
+  box.append(grid);
+  return box;
+}
+
+function skillsBlock(rows) {
+  const box = el("section", undefined, "block");
+  box.append(blockTitle("check", "Skills 健康"));
+  const list = el("div", undefined, "skill-rows");
+  if (rows.length === 0) {
+    list.append(el("p", "暂无 Skills 数据。", "hint"));
+  } else {
+    for (const s of rows) {
+      const row = el("div", undefined, "skill-row");
+      row.append(icon(s.ok ? "check" : "error"));
+      row.append(el("span", s.label, "skill-label"));
+      row.append(el("span", s.details, "skill-details"));
+      list.append(row);
+    }
+  }
+  box.append(list);
+  return box;
+}
+
+function actionsBlock(projectOpen) {
+  const box = el("section", undefined, "block quick-actions");
+  box.append(blockTitle("info", "快捷操作"));
+  const grid = el("div", undefined, "action-grid");
+  for (const a of ACTIONS) {
+    const button = el("button", undefined, "button action-button");
+    button.append(icon(a.iconName), el("span", a.label));
+    if (PROJECT_SCOPED.has(a.command) && !projectOpen) {
+      button.disabled = true;
+      button.title = "未打开项目";
+    }
+    button.setAttribute("aria-label", a.label);
+    button.addEventListener("click", () => vscode.postMessage({ type: "command", command: a.command }));
+    grid.append(button);
+  }
+  box.append(grid);
   return box;
 }
 
 function renderData(data) {
-  const projectRows = [el("p", data.projectRoot === null ? "未打开项目" : data.projectRoot)];
-  const agentRows = data.agents.map((agent) => {
-    const row = el("div", undefined, "agent-row");
-    row.append(el("span", agent.label, "agent-label"));
-    row.append(el("span", agent.statusText, "agent-status"));
-    return row;
-  });
-  const catalogRows = data.catalog === null
-    ? [el("p", "未选择")]
-    : [el("p", data.catalog.spec), el("p", "修订：" + data.catalog.revision)];
-  const skillRows = data.skillsHealth.map((entry) =>
-    el("p", entry.label + " · " + (entry.ok ? "正常" : "异常") + " · " + entry.details));
-  app.replaceChildren(
-    section("项目", projectRows),
-    section("Agents", agentRows),
-    section("Catalog", catalogRows),
-    section("Skills", skillRows),
-  );
+  const pages = [topbar()];
+
+  // 顶部状态行：项目 + Catalog（未打开项目 → “未打开项目”+ 提示；未选 Catalog → 同理）
+  const grid = el("section", undefined, "status-grid");
+  const projectHint = data.projectRoot === null
+    ? "打开项目后将自动加载 Agents 与 Skills 状态。"
+    : undefined;
+  grid.append(infoCard("folder-opened", "项目", data.projectRoot ?? "未打开项目", undefined, projectHint));
+  const catalogHint = data.catalog === null
+    ? "在 Catalog 视图选择或添加 Catalog，或直接点击下方「同步 Catalog」。"
+    : undefined;
+  grid.append(infoCard(
+    "repo", "Catalog",
+    data.catalog?.spec ?? "未选择 Catalog",
+    data.catalog === null ? undefined : "修订：" + data.catalog.revision,
+    catalogHint,
+  ));
+  pages.push(grid);
+
+  pages.push(agentsBlock(data.agents), skillsBlock(data.skillsHealth), actionsBlock(data.projectRoot !== null));
+  app.replaceChildren(...pages);
 }
 
-function renderError(message) {
-  app.replaceChildren(section("错误", [el("p", message)]));
+function render() {
+  if (state.loading) return renderLoading();
+  if (state.error !== null) return renderError(state.error);
+  if (state.data !== null) return renderData(state.data);
+  renderLoading();
 }
 
 window.addEventListener("message", (event) => {
   const msg = event.data;
   if (msg === null || typeof msg !== "object") return;
-  if (msg.type === "data") renderData(msg.payload);
-  else if (msg.type === "error") renderError(msg.message);
+  if (msg.type === "data") {
+    state.loading = false;
+    state.error = null;
+    state.data = msg.payload;
+    render();
+  } else if (msg.type === "error") {
+    state.loading = false;
+    state.error = msg.message;
+    render();
+  }
 });
 
+render();
 // 脚本就绪即宣告：provider 对 resolver 期间的早期发送会被丢弃，ready 后补发一轮
 vscode.postMessage({ type: "ready" });

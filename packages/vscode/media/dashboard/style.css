@@ -1,23 +1,203 @@
-/* Dashboard 骨架样式（T10）：仅最小排版；主题变量、Codicon 与三态视觉由 T11 完成 */
+/* ===== Avenic Dashboard 样式（T11 视觉层）=====
+   主题：颜色全部取自 VS Code 注入的 --vscode-* 变量（变量本身已随主题即时切换）；
+   深/浅自适应：webview body 上的 .vscode-dark / .vscode-light 类由 VS Code 注入，
+   这里仅补充少量对比度微调，主体无需手动判断（规则 R4）。
+   图标（codicon）：直接引用 VS Code 注入的 --vscode-icon-* 变量（data-URI SVG，
+   CSP img-src 已允许 data:），不使用 font-face / 字体文件、不请求任何远程资源（规则 R1）。 */
+
 body {
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
   color: var(--vscode-foreground);
+  margin: 0;
+  padding: 0.75rem 0.875rem 1rem;
   background: transparent;
-  padding: 0.5rem 0.75rem;
+  line-height: 1.45;
 }
 
-.section { margin-bottom: 0.75rem; }
-.section h2 {
-  font-size: 0.9rem;
-  font-weight: 600;
-  margin: 0 0 0.35rem;
-}
+h1 { font-size: 1.05rem; font-weight: 600; margin: 0; letter-spacing: 0.02em; }
+h2 { font-size: 0.76rem; font-weight: 600; margin: 0; text-transform: uppercase; letter-spacing: 0.08em; color: var(--vscode-descriptionForeground); }
+h3 { font-size: 0.8rem; font-weight: 600; margin: 0; }
+p { margin: 0; }
 
-.agent-row {
+/* ---------- codicon 图标（--vscode-icon-* data-URI 变量） ---------- */
+.icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 16px;
+}
+.icon[data-icon="refresh"]        { background-image: var(--vscode-icon-refresh); }
+.icon[data-icon="sync"]           { background-image: var(--vscode-icon-sync); }
+.icon[data-icon="plus"]           { background-image: var(--vscode-icon-plus); }
+.icon[data-icon="package"]        { background-image: var(--vscode-icon-package); }
+.icon[data-icon="robot"]          { background-image: var(--vscode-icon-robot); }
+.icon[data-icon="import"]         { background-image: var(--vscode-icon-import); }
+.icon[data-icon="folder-opened"]  { background-image: var(--vscode-icon-folder-opened); }
+.icon[data-icon="repo"]           { background-image: var(--vscode-icon-repo); }
+.icon[data-icon="check"]          { background-image: var(--vscode-icon-check); }
+.icon[data-icon="error"]          { background-image: var(--vscode-icon-error); }
+.icon[data-icon="info"]           { background-image: var(--vscode-icon-info); }
+.icon[data-icon="pass-filled"]    { background-image: var(--vscode-icon-pass-filled); }
+.icon[data-icon="circle-outline"] { background-image: var(--vscode-icon-circle-outline); }
+
+.spin { animation: spin 1.2s steps(8) infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- 通用布局 ---------- */
+.topbar {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.2rem 0;
+  margin-bottom: 0.35rem;
 }
-.agent-label { font-weight: 600; }
+.icon-button {
+  display: flex;
+  align-items: center;
+  padding: 0.15rem;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.icon-button:hover { background: var(--vscode-toolbar-hoverBackground, rgb(128 128 128 / 0.2)); }
+
+.card {
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-widget-border, rgb(128 128 128 / 0.35));
+  border-radius: 6px;
+  padding: 0.55rem 0.65rem;
+  min-width: 0;
+}
+/* 深浅主题微调：仅对比度差异，主色一律取自 --vscode-* 变量 */
+body.vscode-light .card { border-color: rgb(128 128 128 / 0.5); }
+body.vscode-dark .card  { border-color: rgb(128 128 128 / 0.35); }
+body.vscode-high-contrast .card { border-color: var(--vscode-contrastBorder); }
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+.card-head .icon { width: 15px; height: 15px; background-size: 15px; }
+
+.value { font-size: 0.95rem; word-break: break-all; }
+.meta  { font-size: 0.8rem; color: var(--vscode-descriptionForeground); margin-top: 0.15rem; }
+.hint  { font-size: 0.8rem; color: var(--vscode-descriptionForeground); margin-top: 0.25rem; }
+
+.block { margin: 0 0 1rem; }
+.block-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 0.45rem;
+}
+.block-title .icon { width: 15px; height: 15px; background-size: 15px; }
+.count {
+  margin-left: 0.15rem;
+  padding: 0 0.4rem;
+  border-radius: 8px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+/* ---------- 顶部状态卡片行 ---------- */
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.5rem;
+  margin: 0.65rem 0 1rem;
+}
+
+/* ---------- Agent 卡片 ---------- */
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.5rem;
+}
+.agent-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.3rem;
+  min-width: 0;
+}
+.agent-head .icon { width: 14px; height: 14px; background-size: 14px; }
+.agent-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-status { font-size: 0.82rem; }
+.agent-meta { font-size: 0.75rem; color: var(--vscode-descriptionForeground); margin-top: 0.15rem; }
+
+/* ---------- Skills 健康 ---------- */
+.skill-rows { padding: 0.1rem 0.6rem 0.1rem 0.2rem; }
+.skill-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid rgb(128 128 128 / 0.12);
+}
+.skill-row:last-child { border-bottom: none; }
+.skill-row .icon { width: 14px; height: 14px; background-size: 14px; }
+.skill-row.ok .icon { opacity: 1; }
+.skill-label { font-weight: 500; flex: none; }
+.skill-details { color: var(--vscode-descriptionForeground); }
+
+/* ---------- 快捷动作 ---------- */
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 0.45rem;
+}
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  border: none;
+  border-radius: 4px;
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.button:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+}
+.button:disabled { opacity: 0.45; cursor: default; }
+.button .icon { width: 14px; height: 14px; background-size: 14px; }
+
+/* ---------- loading / error 状态 ---------- */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.6rem 0.25rem;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+}
+.state .icon { width: 22px; height: 22px; background-size: 22px; }
+.state .hint { font-size: 0.8rem; }
+.state-error { color: var(--vscode-errorForeground); }
+.state-error .error-message {
+  color: var(--vscode-errorForeground);
+  max-width: 100%;
+  word-break: break-all;
+}
+.state-error .button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+.state-error .button:hover { background: var(--vscode-button-hoverBackground); }
