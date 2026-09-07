@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { registerAgentsCommands } from "./commands/agents-commands.ts";
+import { registerCatalogCommands } from "./commands/catalog-commands.ts";
 import { rememberedProjectRoot, resolveProjectRoot } from "./project.ts";
 import { pickProjectRoot } from "./ui/flows.ts";
 import { MutationQueue } from "./ui/mutation-queue.ts";
@@ -32,6 +33,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.createTreeView("avenic.skills", { treeDataProvider: skills }),
   );
   registerAgentsCommands(context, { queue, resolveRoot, refresh });
+  registerCatalogCommands(context, { queue, refresh });
 }
 
 export function deactivate(): void {}

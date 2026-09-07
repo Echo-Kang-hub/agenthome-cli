@@ -27,7 +27,11 @@
       { "command": "avenic.agents.switchAuth", "title": "Avenic: 切换认证模式", "category": "Avenic" },
       { "command": "avenic.agents.switchSessions", "title": "Avenic: 切换会话存储", "category": "Avenic" },
       { "command": "avenic.agents.sessionsImport", "title": "Avenic: 导入会话", "category": "Avenic" },
-      { "command": "avenic.agents.sessionsWriteback", "title": "Avenic: 写回会话", "category": "Avenic" }
+      { "command": "avenic.agents.sessionsWriteback", "title": "Avenic: 写回会话", "category": "Avenic" },
+      { "command": "avenic.catalog.add", "title": "Avenic: 添加 Catalog", "category": "Avenic" },
+      { "command": "avenic.catalog.select", "title": "Avenic: 选择 Catalog", "category": "Avenic" },
+      { "command": "avenic.catalog.default", "title": "Avenic: 默认 Catalog", "category": "Avenic" },
+      { "command": "avenic.catalog.sync", "title": "Avenic: 同步 Catalog", "category": "Avenic" }
     ],
     "menus": {
       "view/item/context": [
@@ -37,6 +41,17 @@
         { "command": "avenic.agents.switchSessions", "when": "view == avenic.agents && viewItem == agent" },
         { "command": "avenic.agents.sessionsImport", "when": "view == avenic.agents && viewItem == agent" },
         { "command": "avenic.agents.sessionsWriteback", "when": "view == avenic.agents && viewItem == agent" }
+      ],
+      "view/title": [
+        { "command": "avenic.catalog.add", "when": "view == avenic.catalog" },
+        { "command": "avenic.catalog.select", "when": "view == avenic.catalog" },
+        { "command": "avenic.catalog.sync", "when": "view == avenic.catalog" }
+      ],
+      "commandPalette": [
+        { "command": "avenic.catalog.add" },
+        { "command": "avenic.catalog.select" },
+        { "command": "avenic.catalog.default" },
+        { "command": "avenic.catalog.sync" }
       ]
     }
   },
