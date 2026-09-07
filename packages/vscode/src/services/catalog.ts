@@ -3,7 +3,8 @@ import { defaultCatalogFile, ensureCatalog, loadDefaultCatalogSpec, loadKnownCat
 import type { CatalogInfo, KnownCatalogEntry } from "@avenic/core";
 
 export async function defaultSpec(environment = process.env): Promise<string | null> {
-  if (!environment.AVENIC_CATALOG_SPEC && !existsSync(defaultCatalogFile(environment))) {
+  const explicitEnvSpec = environment.AVENIC_CATALOG_SPEC ?? environment.AGENTHOME_CATALOG_SPEC;
+  if (!explicitEnvSpec && !existsSync(defaultCatalogFile(environment))) {
     return null; // 未配置默认 → null（视图显示「未选择」）
   }
   try { return await loadDefaultCatalogSpec(environment); }

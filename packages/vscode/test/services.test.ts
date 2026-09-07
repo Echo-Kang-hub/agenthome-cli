@@ -25,9 +25,25 @@ test("agents service reports null effective config on fresh project", async () =
 test("catalog service default spec is null on isolated state dir", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
   try {
-    const env = { ...process.env, AVENIC_STATE_DIR: dir };
+    const env: Record<string, string | undefined> = { ...process.env, AVENIC_STATE_DIR: dir };
+    delete env.AVENIC_CATALOG_SPEC;
+    delete env.AGENTHOME_CATALOG_SPEC;
     assert.equal(await defaultSpec(env), null);
     assert.ok(Array.isArray(await listKnown(env)));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("catalog service default spec honors legacy AGENTHOME_CATALOG_SPEC", async (t) => {
+  t.mock.method(console, "warn", () => {}); // core 对旧名打印 deprecation 警告，测试输出保持无噪声
+  const dir = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
+  try {
+    const env: Record<string, string | undefined> = { ...process.env, AVENIC_STATE_DIR: dir };
+    delete env.AVENIC_CATALOG_SPEC;
+    delete env.AGENTHOME_CATALOG_SPEC;
+    env.AGENTHOME_CATALOG_SPEC = "some/repo#main";
+    assert.equal(await defaultSpec(env), "some/repo#main");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
