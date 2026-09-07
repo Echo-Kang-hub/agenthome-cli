@@ -18,7 +18,8 @@
       "avenic": [
         { "id": "avenic.agents", "name": "Agents", "contextualTitle": "Avenic · Agents" },
         { "id": "avenic.catalog", "name": "Catalog", "contextualTitle": "Avenic · Catalog" },
-        { "id": "avenic.skills", "name": "Skills", "contextualTitle": "Avenic · Skills" }
+        { "id": "avenic.skills", "name": "Skills", "contextualTitle": "Avenic · Skills" },
+        { "id": "avenic.overview", "type": "webview", "name": "Overview", "contextualTitle": "Avenic · Overview" }
       ]
     },
     "commands": [

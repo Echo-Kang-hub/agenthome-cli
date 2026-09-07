@@ -1,0 +1,23 @@
+/* Dashboard 骨架样式（T10）：仅最小排版；主题变量、Codicon 与三态视觉由 T11 完成 */
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: transparent;
+  padding: 0.5rem 0.75rem;
+}
+
+.section { margin-bottom: 0.75rem; }
+.section h2 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+}
+
+.agent-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.2rem 0;
+}
+.agent-label { font-weight: 600; }

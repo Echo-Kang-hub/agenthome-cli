@@ -1,6 +1,6 @@
 import {
   AGENTS,
-  agentExecutableAvailable,
+  agentExecutableAvailable as coreAgentExecutableAvailable,
   clearLocalAuth,
   deinitializeAgent,
   effectiveAgentConfig,
@@ -23,11 +23,16 @@ export function listAgents(): Agent[] {
   return Object.keys(AGENTS).map((id) => getAgent(id)); // AGENTS 值不含 id，getAgent 补齐
 }
 
+// dashboard 专用薄包装（cwd 域，无 environment 参数——与 agentStatus 一致）
+export function agentExecutableAvailable(agentId: string): boolean {
+  return coreAgentExecutableAvailable(agentId);
+}
+
 export async function agentStatus(projectRoot: string, agentId: string): Promise<AgentStatus> {
   const state = await loadRuntime(projectRoot);
   return {
     agent: getAgent(agentId),
-    executableAvailable: agentExecutableAvailable(agentId),
+    executableAvailable: coreAgentExecutableAvailable(agentId),
     effective: effectiveAgentConfig(state, agentId),
   };
 }

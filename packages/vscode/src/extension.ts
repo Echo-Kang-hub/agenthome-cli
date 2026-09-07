@@ -5,6 +5,7 @@ import { registerSkillsCommands } from "./commands/skills-commands.ts";
 import { rememberedProjectRoot, resolveProjectRoot } from "./project.ts";
 import { pickProjectRoot } from "./ui/flows.ts";
 import { MutationQueue } from "./ui/mutation-queue.ts";
+import { OverviewProvider } from "./dashboard/overview.ts";
 import { AgentsViewProvider } from "./views/agents-view.ts";
 import { CatalogViewProvider } from "./views/catalog-view.ts";
 import { SkillsViewProvider } from "./views/skills-view.ts";
@@ -18,8 +19,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const agents = new AgentsViewProvider(root);
   const catalog = new CatalogViewProvider(root);
   const skills = new SkillsViewProvider(root);
+  const overview = new OverviewProvider(root, context.extensionUri);
   const queue = new MutationQueue();
-  const refresh = () => { agents.refresh(); catalog.refresh(); skills.refresh(); };
+  // 数据单向：任何变更后视图/仪表盘重读真实状态（设计 §3），不反向写 core
+  const refresh = () => { agents.refresh(); catalog.refresh(); skills.refresh(); overview.refresh(); };
   // 同步根解析：单根直接返回；多根/null 时经 T6 pickProjectRoot 引导用户选定（workspaceFolders 实时读取，避免激活期闭包过期）
   const resolveRoot = async (): Promise<string | null> => {
     const r = root();
@@ -32,6 +35,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.createTreeView("avenic.agents", { treeDataProvider: agents }),
     vscode.window.createTreeView("avenic.catalog", { treeDataProvider: catalog }),
     vscode.window.createTreeView("avenic.skills", { treeDataProvider: skills }),
+    vscode.window.registerWebviewViewProvider(OverviewProvider.viewType, overview),
   );
   registerAgentsCommands(context, { queue, resolveRoot, refresh });
   registerCatalogCommands(context, { queue, refresh });
