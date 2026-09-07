@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildDashboardData } from "../src/dashboard/state.ts";
 import { isWebviewMessage } from "../src/dashboard/protocol.ts";
-import { testEnv } from "./helpers.ts";
+import { select } from "../src/services/catalog.ts";
+import { makeCatalogFixture, testEnv } from "./helpers.ts";
 
 test("buildDashboardData includes all sections on fresh project", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
@@ -42,21 +43,39 @@ test("buildDashboardData renders the not-opened state for null root", async () =
   }
 });
 
+test("buildDashboardData reads the pinned catalog revision (not the placeholder '—')", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
+  try {
+    const catalogDir = path.join(root, "catalog");
+    const project = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(project, { recursive: true });
+    await makeCatalogFixture(catalogDir);
+    await select(catalogDir, env); // 注册并设为默认（本地 git fixture，无网络）
+    const data = await buildDashboardData(project, env);
+    assert.ok(data.catalog !== null);
+    assert.equal(data.catalog.spec, catalogDir);
+    assert.match(data.catalog.revision, /^[0-9a-f]{40}$/, "revision 读取缓存 fixture 的真实 commit，而非 '—'");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("protocol guard accepts valid webview messages", () => {
   assert.ok(isWebviewMessage({ type: "ready" }));
   assert.ok(isWebviewMessage({ type: "refresh" }));
   for (const command of ["catalog.sync", "skills.installPacks", "skills.addDirect", "agents.init", "agents.sessionsImport"]) {
     assert.ok(isWebviewMessage({ type: "command", command }));
   }
-  assert.ok(isWebviewMessage({ type: "report", message: "all good" }));
+  assert.ok(!isWebviewMessage({ type: "report", message: "all good" })); // report 类型已删除：一律拒绝
   assert.ok(!isWebviewMessage({ type: "boom" }));
   assert.ok(!isWebviewMessage(null));
 });
 
-test("protocol guard rejects malformed report payloads", () => {
+test("protocol guard rejects report messages (dead type removed, sender and handler gone)", () => {
   assert.ok(!isWebviewMessage({ type: "report" })); // 缺 message → 拒
   assert.ok(!isWebviewMessage({ type: "report", message: 42 })); // 非字符串 → 拒
-  assert.ok(!isWebviewMessage({ type: "report", message: null }));
+  assert.ok(!isWebviewMessage({ type: "report", message: "all good" })); // 完整载荷同样拒绝
 });
 
 test("protocol guard rejects command not in allowlist", () => {

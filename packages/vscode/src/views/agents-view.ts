@@ -13,7 +13,7 @@ export class AgentsViewProvider implements vscode.TreeDataProvider<vscode.TreeIt
 
   async getChildren(): Promise<vscode.TreeItem[]> {
     const root = this.projectRoot();
-    if (root === null) return [new vscode.TreeItem("打开一个项目文件夹", vscode.TreeItemCollapsibleState.None)];
+    if (root === null) return [new vscode.TreeItem("打开项目文件夹", vscode.TreeItemCollapsibleState.None)];
     const statuses = await Promise.all(listAgents().map((a) => agentStatus(root, a.id)));
     return agentsToViewModels(statuses).map((m) => {
       const item = new vscode.TreeItem(m.label, vscode.TreeItemCollapsibleState.None);

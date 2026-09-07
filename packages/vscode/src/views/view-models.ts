@@ -13,17 +13,20 @@ export function agentsToViewModels(statuses: AgentStatus[]): AgentViewItem[] {
   }));
 }
 
-export interface CatalogViewItem { kind: "current" | "entry"; label: string; description: string; tooltip: string; }
+export interface CatalogViewItem { kind: "current" | "entry"; label: string; description: string; }
 export function catalogToViewModels(defaultSpec: string | null, known: KnownCatalogEntry[]): CatalogViewItem[] {
   const current = known.find((k) => k.spec === defaultSpec);
   const first = [] as CatalogViewItem[];
-  if (defaultSpec) first.push({ kind: "current", label: defaultSpec, description: current?.name ?? "", tooltip: `当前默认 Catalog · revision 见 sync` });
-  return first.concat(known.filter((k) => k.spec !== defaultSpec).map((k) => ({ kind: "entry", label: k.spec, description: k.name, tooltip: k.spec })));
+  if (defaultSpec) first.push({ kind: "current", label: defaultSpec, description: current?.name ?? "" });
+  return first.concat(known.filter((k) => k.spec !== defaultSpec).map((k) => ({ kind: "entry", label: k.spec, description: k.name })));
 }
 
 export interface SkillsViewItem { kind: "group" | "pack" | "skill" | "direct"; label: string; description: string; iconHint: string; }
-export function skillsToViewModels(status: InstallStatus | null): SkillsViewItem[] {
-  if (status === null) return [{ kind: "group", label: "尚未安装 Skills", description: "打开一个新项目根后安装 Pack", iconHint: "info" }];
+// 空态提示按作用域区分：项目组保留项目味提示；全局组不得含项目根引用（零工作区窗口也成立）
+export const PROJECT_EMPTY_HINT = "打开一个新项目根后安装 Pack";
+export const GLOBAL_EMPTY_HINT = "全局域 Pack 请从命令面板安装";
+export function skillsToViewModels(status: InstallStatus | null, emptyHint: string = PROJECT_EMPTY_HINT): SkillsViewItem[] {
+  if (status === null) return [{ kind: "group", label: "尚未安装 Skills", description: emptyHint, iconHint: "info" }];
   const complete = status.targets.filter((t) => t.complete).length;
   return [
     { kind: "group", label: "Installed Packs", description: status.names.length > 0 ? status.names.join(", ") : "无", iconHint: "package" },

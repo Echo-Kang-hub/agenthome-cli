@@ -12,3 +12,12 @@ export class MutationQueue {
     return next;
   }
 }
+
+// 命令层 mutation 模板：成功或失败都 refresh —— 失败时树/Dashboard 不得滞留旧数据（T8 Minor A）
+export async function runMutation<T>(queue: MutationQueue, fn: () => Promise<T>, refresh: () => void): Promise<T> {
+  try {
+    return await queue.run(fn);
+  } finally {
+    refresh();
+  }
+}

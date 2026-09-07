@@ -42,7 +42,7 @@ function icon(name, extraClass) {
   return node;
 }
 
-const ICON_BY_HINT = { "pass-filled": "pass-filled", pass: "pass", "circle-outline": "circle-outline" };
+const ICON_BY_HINT = { "pass-filled": "pass-filled", "circle-outline": "circle-outline" };
 function hintIconName(hint) {
   return ICON_BY_HINT[hint] ?? "circle-outline";
 }

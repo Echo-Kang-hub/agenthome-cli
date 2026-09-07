@@ -147,7 +147,7 @@ body.vscode-high-contrast .card { border-color: var(--vscode-contrastBorder); }
   align-items: center;
   gap: 0.45rem;
   padding: 0.3rem 0;
-  border-bottom: 1px solid rgb(128 128 128 / 0.12);
+  border-bottom: 1px solid var(--vscode-widget-border, rgb(128 128 128 / 0.12));
 }
 .skill-row:last-child { border-bottom: none; }
 .skill-row .icon { width: 14px; height: 14px; background-size: 14px; }

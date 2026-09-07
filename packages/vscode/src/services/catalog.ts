@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
-import { defaultCatalogFile, ensureCatalog, loadDefaultCatalogSpec, loadKnownCatalogs, registerCatalog, setDefaultCatalogSpec } from "@avenic/core";
-import type { CatalogInfo, KnownCatalogEntry } from "@avenic/core";
+import { defaultCatalogFile, ensureCatalog, loadDefaultCatalogSpec, loadKnownCatalogs, registerCatalog, resolveInstallSource, setDefaultCatalogSpec } from "@avenic/core";
+import type { CatalogInfo, KnownCatalogEntry, ProcessEnvLike } from "@avenic/core";
 
 export async function defaultSpec(environment = process.env): Promise<string | null> {
   const explicitEnvSpec = environment.AVENIC_CATALOG_SPEC || environment.AGENTHOME_CATALOG_SPEC;
@@ -25,4 +25,12 @@ export function select(spec: string, environment = process.env): Promise<unknown
 
 export function sync(spec: string, environment = process.env): Promise<CatalogInfo> {
   return ensureCatalog(spec, { environment });
+}
+
+// 读取当前锁定的 catalog revision（Dashboard「修订」）：refresh:false 走项目 lock 的 pinned spec，
+// 不绕过 pin 去拉最新；任何错误（未配置/无缓存/解析失败）返回 null，调用方降级为「—」占位符。
+export function pinnedRevision(cwd: string, environment: ProcessEnvLike = process.env): Promise<string | null> {
+  return resolveInstallSource({ global: false, cwd, environment }, { refresh: false })
+    .then((info) => info.revision)
+    .catch(() => null);
 }

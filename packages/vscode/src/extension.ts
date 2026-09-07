@@ -17,7 +17,7 @@ export function activate(context: vscode.ExtensionContext): void {
     return resolveProjectRoot(live) ?? rememberedProjectRoot(live, context.workspaceState);
   };
   const agents = new AgentsViewProvider(root);
-  const catalog = new CatalogViewProvider(root);
+  const catalog = new CatalogViewProvider();
   const skills = new SkillsViewProvider(root);
   const overview = new OverviewProvider(root, context.extensionUri);
   const queue = new MutationQueue();

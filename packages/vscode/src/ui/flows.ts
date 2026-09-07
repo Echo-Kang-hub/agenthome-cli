@@ -1,4 +1,17 @@
 import { rememberProjectRoot, rememberedProjectRoot } from "../project.ts";
+import type { MutationQueue } from "./mutation-queue.ts";
+
+// busy 守卫提示（spec §6 进行中时相关命令禁用）；消息经 notify 注入使守卫可脱离 vscode 单测
+export const BUSY_WARNING = "Avenic：操作进行中，请稍候。";
+export const NO_CANDIDATES_WARNING = "Avenic：没有可操作的选项。";
+
+// 命令体最前的守卫：mutation 进行中提示并返回 false（调用方直接 return 不入队）；
+// MutationQueue 本身仍是守卫之后的安全网（串行化顺序执行）。
+export function assertIdle(queue: MutationQueue, notify: (message: string) => void = () => {}): boolean {
+  if (!queue.busy) return true;
+  notify(BUSY_WARNING);
+  return false;
+}
 
 export async function pickOne<T extends { label: string }>(
   options: T[],
@@ -8,8 +21,12 @@ export async function pickOne<T extends { label: string }>(
   return quickPick(options);
 }
 
-export async function pickMany<T extends { label: string }>(options: T[], multi: (items: T[]) => Promise<T[] | undefined>): Promise<T[]> {
-  if (options.length === 0) return [];
+export async function pickManyOrNotify<T extends { label: string }>(
+  options: T[],
+  multi: (items: T[]) => Promise<T[] | undefined>,
+  notify: () => void,
+): Promise<T[]> {
+  if (options.length === 0) { notify(); return []; } // 零候选：警告并返回，绝不弹空 picker 逼 Esc
   return (await multi(options)) ?? [];
 }
 

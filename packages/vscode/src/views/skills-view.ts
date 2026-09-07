@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { status } from "../services/skills.ts";
-import { skillsToViewModels, type SkillsViewItem } from "./view-models.ts";
+import { GLOBAL_EMPTY_HINT, PROJECT_EMPTY_HINT, skillsToViewModels, type SkillsViewItem } from "./view-models.ts";
 
 export class SkillsViewProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private readonly emitter = new vscode.EventEmitter<vscode.TreeItem | undefined>();
@@ -17,12 +17,15 @@ export class SkillsViewProvider implements vscode.TreeDataProvider<vscode.TreeIt
     if (element !== undefined) return this.scopeChildren.get(element) ?? [];
     this.scopeChildren.clear();
     const root = this.projectRoot();
-    if (root === null) return [new vscode.TreeItem("打开项目文件夹", vscode.TreeItemCollapsibleState.None)];
-    const [project, global] = await Promise.all([status("project", root), status("global")]);
+    // 全局作用域组与项目根无关（零工作区窗口仍有全局 Skills）；项目组无根时不读项目状态（避免落到 process.cwd 域），直接显示提示行
+    const [project, global] = await Promise.all([
+      root === null ? null : status("project", root),
+      status("global"),
+    ]);
     const projectNode = new vscode.TreeItem("项目作用域", vscode.TreeItemCollapsibleState.Expanded);
     const globalNode = new vscode.TreeItem("全局作用域", vscode.TreeItemCollapsibleState.Expanded);
-    this.scopeChildren.set(projectNode, this.fromViewModels(skillsToViewModels(project)));
-    this.scopeChildren.set(globalNode, this.fromViewModels(skillsToViewModels(global)));
+    this.scopeChildren.set(projectNode, this.fromViewModels(skillsToViewModels(project, PROJECT_EMPTY_HINT)));
+    this.scopeChildren.set(globalNode, this.fromViewModels(skillsToViewModels(global, GLOBAL_EMPTY_HINT)));
     return [projectNode, globalNode];
   }
 

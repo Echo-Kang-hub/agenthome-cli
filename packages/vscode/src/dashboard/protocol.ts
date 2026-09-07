@@ -1,8 +1,7 @@
 export type WebviewMessage =
   | { type: "ready" }
   | { type: "refresh" }
-  | { type: "command"; command: "catalog.sync" | "skills.installPacks" | "skills.addDirect" | "agents.init" | "agents.sessionsImport" }
-  | { type: "report"; message: string };
+  | { type: "command"; command: "catalog.sync" | "skills.installPacks" | "skills.addDirect" | "agents.init" | "agents.sessionsImport" };
 
 export type SenderMessage =
   | { type: "data"; payload: DashboardData }
@@ -29,7 +28,6 @@ export function isWebviewMessage(value: unknown): value is WebviewMessage {
   if (typeof value !== "object" || value === null) return false;
   const msg = value as Record<string, unknown>;
   if (msg.type === "ready" || msg.type === "refresh") return true;
-  if (msg.type === "report") return typeof msg.message === "string";
   if (msg.type === "command") return typeof msg.command === "string" && ALLOWED_COMMANDS.includes(msg.command);
   return false;
 }

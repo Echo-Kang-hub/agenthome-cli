@@ -24,9 +24,15 @@ export function lastProjectRoot(state: StateLike): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+// win32 大小写不敏感的比较（已记忆的根与工作区列表仅大小写差异时仍命中快路径，避免强迫重选）
+export function sameRootPath(a: string, b: string, platform: NodeJS.Platform): boolean {
+  if (platform === "win32") return a.toLowerCase() === b.toLowerCase();
+  return a === b;
+}
+
 // 记忆根经当前工作区文件夹列表校验后才算有效（stale/移除的文件夹不返回）
-export function rememberedProjectRoot(folders: readonly WorkspaceFolderLike[], state: StateLike): string | null {
+export function rememberedProjectRoot(folders: readonly WorkspaceFolderLike[], state: StateLike, platform: NodeJS.Platform = process.platform): string | null {
   const last = lastProjectRoot(state);
-  if (last !== null && folders.some((f) => f.uri.fsPath === last)) return last;
+  if (last !== null && folders.some((f) => sameRootPath(f.uri.fsPath, last, platform))) return last;
   return null;
 }

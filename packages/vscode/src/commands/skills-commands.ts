@@ -2,8 +2,8 @@ import * as vscode from "vscode";
 import * as skills from "../services/skills.ts";
 import type { Scope } from "../services/skills.ts";
 import { defaultSpec as catalogDefaultSpec } from "../services/catalog.ts";
-import { MutationQueue } from "../ui/mutation-queue.ts";
-import { pickMany } from "../ui/flows.ts";
+import { MutationQueue, runMutation } from "../ui/mutation-queue.ts";
+import { assertIdle, NO_CANDIDATES_WARNING, pickManyOrNotify } from "../ui/flows.ts";
 import { showError } from "./errors.ts";
 import { withProgress } from "./progress.ts";
 
@@ -37,14 +37,19 @@ async function pickScope(): Promise<Scope | null> {
 export function registerSkillsCommands(context: vscode.ExtensionContext, deps: SkillsDeps): void {
   // 决议 3：try/catch 覆盖整个命令体（交互与队列内拒绝同样经 showError）；
   // 交互在队列外，仅 mutation 服务调用进 deps.queue.run——避免嵌套入队死锁；
-  // deps.refresh 每次成功 mutation 后调用；directList 只读不排队不刷新。
+  // runMutation 保证成功/失败都 refresh；busy 守卫在命令体最前（spec §6）；
+  // 零候选经 pickManyOrNotify 警告并返回，绝不弹空 picker（T9 残余）；directList 只读不排队不刷新。
   const register = (id: string, fn: () => Promise<void>) =>
     context.subscriptions.push(vscode.commands.registerCommand(id, async () => {
       try { await fn(); }
       catch (err) { await showError(err); }
     }));
 
+  const busy = () => !assertIdle(deps.queue, (message) => void vscode.window.showWarningMessage(message));
+  const warnNoOptions = () => void vscode.window.showWarningMessage(NO_CANDIDATES_WARNING);
+
   register("avenic.skills.installPacks", async () => {
+    if (busy()) return;
     const scope = await pickScope();
     if (scope === null) return;
     const cwd = await scopeCwd(scope, deps);
@@ -54,48 +59,47 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     const installed = await skills.installedPackIds(scope, cwd);
     // 只列举未安装的 Pack；描述兜底 id
     const candidates = Array.from(all.values()).filter((p) => !(installed ?? []).includes(p.id)).map((p) => ({ label: p.name, description: p.description ?? p.id, id: p.id }));
-    const chosen = await pickMany(candidates, async (items) => vscode.window.showQuickPick(items, { canPickMany: true }));
+    const chosen = await pickManyOrNotify(candidates, async (items) => vscode.window.showQuickPick(items, { canPickMany: true }), warnNoOptions);
     if (chosen.length === 0) return;
-    await deps.queue.run(() => withProgress("安装 Packs", async (report) => { report(`安装 ${chosen.length} 个 Pack…`); return skills.installPacks(scope, chosen.map((c) => c.id), cwd); }));
-    deps.refresh();
+    await runMutation(deps.queue, () => withProgress("安装 Packs", async (report) => { report(`安装 ${chosen.length} 个 Pack…`); return skills.installPacks(scope, chosen.map((c) => c.id), cwd); }), () => deps.refresh());
   });
 
   register("avenic.skills.uninstallPacks", async () => {
+    if (busy()) return;
     const scope = await pickScope();
     if (scope === null) return;
     const cwd = await scopeCwd(scope, deps);
     if (cwd === null) return;
     // common 永驻不可卸（core normalizePackIds 注入、uninstallPacks 跳过 common——与 CLI 语义一致，spec §5.3）
     const installed = ((await skills.installedPackIds(scope, cwd)) ?? []).filter((id) => id !== "common");
-    const chosen = await vscode.window.showQuickPick(installed.map((id) => ({ label: id })), { canPickMany: true });
-    if (chosen === undefined || chosen.length === 0) return;
-    await deps.queue.run(() => withProgress("卸载 Packs", async (report) => { report(`卸载 ${chosen.length} 个 Pack…`); return skills.uninstallPacks(scope, chosen.map((c) => c.label), cwd); }));
-    deps.refresh();
+    const chosen = await pickManyOrNotify(installed.map((id) => ({ label: id })), async (items) => vscode.window.showQuickPick(items, { canPickMany: true }), warnNoOptions);
+    if (chosen.length === 0) return;
+    await runMutation(deps.queue, () => withProgress("卸载 Packs", async (report) => { report(`卸载 ${chosen.length} 个 Pack…`); return skills.uninstallPacks(scope, chosen.map((c) => c.label), cwd); }), () => deps.refresh());
   });
 
   register("avenic.skills.addDirect", async () => {
+    if (busy()) return;
     const scope = await pickScope();
     if (scope === null) return;
     const cwd = await scopeCwd(scope, deps);
     if (cwd === null) return;
     const repo = await vscode.window.showInputBox({ prompt: "owner/repo 或仓库 URL" });
     if (repo === undefined || repo.trim() === "") return;
-    const result = await deps.queue.run(() => withProgress("添加直装 Skills", async (report) => { report("发现 Skills…"); return skills.addDirect(scope, repo.trim(), [], cwd); }));
+    const result = await runMutation(deps.queue, () => withProgress("添加直装 Skills", async (report) => { report("发现 Skills…"); return skills.addDirect(scope, repo.trim(), [], cwd); }), () => deps.refresh());
     await vscode.window.showInformationMessage(`已添加 ${result.names.length} 个 Skills：${result.names.join(", ")}`);
-    deps.refresh();
   });
 
   register("avenic.skills.removeDirect", async () => {
+    if (busy()) return;
     const scope = await pickScope();
     if (scope === null) return;
     const cwd = await scopeCwd(scope, deps);
     if (cwd === null) return;
     const state = await skills.directSkills(scope, cwd);
     const direct = state.directSources.flatMap((s) => s.skills);
-    const chosen = await vscode.window.showQuickPick(direct.map((n) => ({ label: n })), { canPickMany: true });
-    if (chosen === undefined || chosen.length === 0) return;
-    await deps.queue.run(() => withProgress("移除直装 Skills", async (report) => { report(`移除 ${chosen.length} 个 Skill…`); return skills.removeDirect(scope, chosen.map((c) => c.label), cwd); }));
-    deps.refresh();
+    const chosen = await pickManyOrNotify(direct.map((n) => ({ label: n })), async (items) => vscode.window.showQuickPick(items, { canPickMany: true }), warnNoOptions);
+    if (chosen.length === 0) return;
+    await runMutation(deps.queue, () => withProgress("移除直装 Skills", async (report) => { report(`移除 ${chosen.length} 个 Skill…`); return skills.removeDirect(scope, chosen.map((c) => c.label), cwd); }), () => deps.refresh());
   });
 
   // 只读命令：直接展示直装来源 → Skill 列表（空时提示），不排队、不 refresh

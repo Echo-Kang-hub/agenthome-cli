@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as catalog from "../services/catalog.ts";
-import { MutationQueue } from "../ui/mutation-queue.ts";
-import { pickOne } from "../ui/flows.ts";
+import { MutationQueue, runMutation } from "../ui/mutation-queue.ts";
+import { assertIdle, pickOne } from "../ui/flows.ts";
 import { showError } from "./errors.ts";
 import { withProgress } from "./progress.ts";
 
@@ -13,6 +13,7 @@ export interface CatalogDeps {
 }
 
 export function registerCatalogCommands(context: vscode.ExtensionContext, deps: CatalogDeps): void {
+  // 决议 2：busy 守卫在命令体最前（spec §6 进行中时相关命令禁用）；runMutation 保证成功/失败都 refresh。
   const register = (id: string, fn: () => Promise<void>) =>
     context.subscriptions.push(vscode.commands.registerCommand(id, async () => {
       try {
@@ -21,26 +22,31 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
       } catch (err) { await showError(err); }
     }));
 
+  const busy = () => !assertIdle(deps.queue, (message) => void vscode.window.showWarningMessage(message));
+
   register("avenic.catalog.add", async () => {
+    if (busy()) return;
     const spec = await vscode.window.showInputBox({ prompt: "Catalog spec（owner/repo、URL 或本地路径）", value: "Echo-Kang-hub/avenic-catalog#main" });
     if (spec === undefined || spec.trim() === "") return;
-    const result = await deps.queue.run(() => withProgress("添加 Catalog", async (report) => { report("保存并预览…"); return catalog.add(spec.trim()); }));
+    // runMutation：失败/预览失败后同样 refresh——注册状态已变更，树与 Dashboard 不得停留在旧数据（T8 Minor A）
+    const result = await runMutation(deps.queue, () => withProgress("添加 Catalog", async (report) => { report("保存并预览…"); return catalog.add(spec.trim()); }), () => deps.refresh());
     if (result.previewFailed) await vscode.window.showWarningMessage("已保存，可 sync 重试（Preview 失败不致命）");
     else await vscode.window.showInformationMessage(`Catalog 已添加并预览 ${result.packs.length} 个 Pack`);
-    deps.refresh();
   });
 
   register("avenic.catalog.select", async () => {
+    if (busy()) return;
     const known = await catalog.listKnown();
     if (known.length === 0) { await vscode.window.showInformationMessage("暂无已注册 Catalog，先执行 Avenic: Catalog 添加"); return; }
     const picked = await pickOne(known.map((k) => ({ label: k.spec, description: k.name })), async (items) => vscode.window.showQuickPick(items));
     if (picked === undefined) return;
-    await deps.queue.run(() => catalog.select(picked.label));
-    deps.refresh();
+    await runMutation(deps.queue, () => catalog.select(picked.label), () => deps.refresh());
   });
 
-  // 只读命令（仅读 defaultSpec + 提示），不排队；「修改」内联触发 select（select 自行排队，无嵌套等待）
+  // 只读命令（仅读 defaultSpec + 提示），不排队；「修改」内联触发 select（select 自行排队，无嵌套等待）；
+  // 仍带 busy 守卫：select 是 mutation，进行中不重复触发。
   register("avenic.catalog.default", async () => {
+    if (busy()) return;
     const current = await catalog.defaultSpec();
     const info = await vscode.window.showInformationMessage(`当前默认 Catalog：${current ?? "未设置"}`, "修改");
     if (info === undefined) return;
@@ -48,10 +54,10 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
   });
 
   register("avenic.catalog.sync", async () => {
+    if (busy()) return;
     const spec = await catalog.defaultSpec();
     if (spec === null) { await vscode.window.showWarningMessage("未选择默认 Catalog"); return; }
-    const info = await deps.queue.run(() => withProgress("同步 Catalog", async (report) => { report("拉取并解析…"); return catalog.sync(spec); }));
+    const info = await runMutation(deps.queue, () => withProgress("同步 Catalog", async (report) => { report("拉取并解析…"); return catalog.sync(spec); }), () => deps.refresh());
     await vscode.window.showInformationMessage(`已同步 ${spec} → revision ${info.revision}`);
-    deps.refresh();
   });
 }

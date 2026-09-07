@@ -64,7 +64,3 @@ export function importSessions(projectRoot: string, agentId: string) {
 export function writebackSessions(projectRoot: string, agentId: string) {
   return getSessionAdapter(agentId).capture(projectRoot);
 }
-
-export function sessionsStatus(projectRoot: string, agentId: string) {
-  return getSessionAdapter(agentId).status(projectRoot);
-}

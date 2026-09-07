@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PROJECT_ROOT_STATE_KEY, lastProjectRoot, rememberProjectRoot, rememberedProjectRoot, resolveProjectRoot } from "../src/project.ts";
+import { PROJECT_ROOT_STATE_KEY, lastProjectRoot, rememberProjectRoot, rememberedProjectRoot, resolveProjectRoot, sameRootPath } from "../src/project.ts";
 
 function fakeState() {
   const data = new Map<string, unknown>();
@@ -50,4 +50,14 @@ test("remembered root returns null with no memory", () => {
 
 test("state key is stable", () => {
   assert.equal(PROJECT_ROOT_STATE_KEY, "avenic.projectRoot");
+});
+
+test("sameRootPath compares case-insensitively on win32", () => {
+  assert.equal(sameRootPath("C:/Proj", "c:/proj", "win32"), true);
+  assert.equal(sameRootPath("C:/a", "C:/b", "win32"), false);
+});
+
+test("sameRootPath compares exactly on non-win32 platforms", () => {
+  assert.equal(sameRootPath("/alpha/proj", "/alpha/PROJ", "linux"), false);
+  assert.equal(sameRootPath("/alpha/proj", "/alpha/proj", "darwin"), true);
 });
