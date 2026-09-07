@@ -65,7 +65,8 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     if (scope === null) return;
     const cwd = await scopeCwd(scope, deps);
     if (cwd === null) return;
-    const installed = (await skills.installedPackIds(scope, cwd)) ?? [];
+    // common 永驻不可卸（core normalizePackIds 注入、uninstallPacks 跳过 common——与 CLI 语义一致，spec §5.3）
+    const installed = ((await skills.installedPackIds(scope, cwd)) ?? []).filter((id) => id !== "common");
     const chosen = await vscode.window.showQuickPick(installed.map((id) => ({ label: id })), { canPickMany: true });
     if (chosen === undefined || chosen.length === 0) return;
     await deps.queue.run(() => withProgress("卸载 Packs", async (report) => { report(`卸载 ${chosen.length} 个 Pack…`); return skills.uninstallPacks(scope, chosen.map((c) => c.label), cwd); }));
