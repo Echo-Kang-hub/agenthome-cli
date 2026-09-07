@@ -27,3 +27,23 @@ jobs:
         run: npm run pack:cli
       - name: GitHub root package dry run
         run: npm pack --dry-run --json
+
+  vscode:
+    name: VS Code extension package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install VS Code extension dependencies
+        run: npm --prefix packages/vscode install
+      - name: Typecheck
+        run: npm --prefix packages/vscode run typecheck
+      - name: Production build
+        run: npm --prefix packages/vscode run build
+      - name: Unit tests
+        run: npm --prefix packages/vscode test
+      - name: Package VSIX
+        run: npm --prefix packages/vscode run package

@@ -69,10 +69,12 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && node build-tests.mjs"
+    "test": "npm run typecheck && node build-tests.mjs",
+    "package": "npm run build && vsce package --out dist/avenic.vsix"
   },
   "devDependencies": {
     "@avenic/core": "^1.0.0",
+    "@vscode/vsce": "^3.0.0",
     "@types/node": "^18.19.0",
     "@types/vscode": "^1.90.0",
     "esbuild": "^0.21.0",
