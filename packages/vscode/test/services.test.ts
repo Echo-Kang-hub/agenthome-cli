@@ -49,6 +49,19 @@ test("catalog service default spec honors legacy AGENTHOME_CATALOG_SPEC", async 
   }
 });
 
+test("catalog service default spec treats empty primary as unset like core", async (t) => {
+  t.mock.method(console, "warn", () => {}); // core 对旧名打印 deprecation 警告，测试输出保持无噪声
+  const dir = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
+  try {
+    const env: Record<string, string | undefined> = { ...process.env, AVENIC_STATE_DIR: dir };
+    env.AVENIC_CATALOG_SPEC = "";
+    env.AGENTHOME_CATALOG_SPEC = "some/repo#main";
+    assert.equal(await defaultSpec(env), "some/repo#main");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("skills service status is null on fresh project root", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
   try {
