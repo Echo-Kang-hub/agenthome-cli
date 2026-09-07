@@ -1,0 +1,25 @@
+{
+  "name": "avenic",
+  "displayName": "Avenic",
+  "description": "管理 Avenic Agent 运行时与 Skills 的图形界面",
+  "publisher": "avenic",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/Echo-Kang-hub/avenic.git" },
+  "main": "./dist/extension.js",
+  "type": "module",
+  "engines": { "vscode": "^1.90.0" },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && node build-tests.mjs"
+  },
+  "devDependencies": {
+    "@avenic/core": "^1.0.0",
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.5.0"
+  }
+}

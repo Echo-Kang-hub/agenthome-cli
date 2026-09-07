@@ -1,0 +1,7 @@
+src/**
+node_modules/**
+test/**
+tsconfig.json
+build.mjs
+build-tests.mjs
+.test-out/**
