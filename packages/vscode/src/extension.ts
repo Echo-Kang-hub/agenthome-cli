@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { registerAgentsCommands } from "./commands/agents-commands.ts";
-import { resolveProjectRoot } from "./project.ts";
+import { rememberedProjectRoot, resolveProjectRoot } from "./project.ts";
 import { pickProjectRoot } from "./ui/flows.ts";
 import { MutationQueue } from "./ui/mutation-queue.ts";
 import { AgentsViewProvider } from "./views/agents-view.ts";
@@ -8,7 +8,11 @@ import { CatalogViewProvider } from "./views/catalog-view.ts";
 import { SkillsViewProvider } from "./views/skills-view.ts";
 
 export function activate(context: vscode.ExtensionContext): void {
-  const root = () => resolveProjectRoot(vscode.workspace.workspaceFolders ?? []);
+  // 多根：resolveProjectRoot 返回 null，此时回退到记忆根（经当前文件夹列表校验）；无记忆则 null → 视图提示行
+  const root = () => {
+    const live = vscode.workspace.workspaceFolders ?? [];
+    return resolveProjectRoot(live) ?? rememberedProjectRoot(live, context.workspaceState);
+  };
   const agents = new AgentsViewProvider(root);
   const catalog = new CatalogViewProvider(root);
   const skills = new SkillsViewProvider(root);

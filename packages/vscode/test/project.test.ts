@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PROJECT_ROOT_STATE_KEY, lastProjectRoot, rememberProjectRoot, resolveProjectRoot } from "../src/project.ts";
+import { PROJECT_ROOT_STATE_KEY, lastProjectRoot, rememberProjectRoot, rememberedProjectRoot, resolveProjectRoot } from "../src/project.ts";
 
 function fakeState() {
   const data = new Map<string, unknown>();
@@ -28,6 +28,24 @@ test("remember/last round-trips through state", () => {
   assert.equal(lastProjectRoot(state), null);
   rememberProjectRoot(state, "C:/proj");
   assert.equal(lastProjectRoot(state), "C:/proj");
+});
+
+test("remembered root returns the folder when memory matches a live folder", () => {
+  const state = fakeState();
+  rememberProjectRoot(state, "C:/b");
+  const folders = [{ uri: { fsPath: "C:/a" } }, { uri: { fsPath: "C:/b" } }];
+  assert.equal(rememberedProjectRoot(folders, state), "C:/b");
+});
+
+test("remembered root returns null for stale memory not in live folders", () => {
+  const state = fakeState();
+  rememberProjectRoot(state, "C:/gone");
+  assert.equal(rememberedProjectRoot([{ uri: { fsPath: "C:/a" } }], state), null);
+});
+
+test("remembered root returns null with no memory", () => {
+  const state = fakeState();
+  assert.equal(rememberedProjectRoot([{ uri: { fsPath: "C:/a" } }, { uri: { fsPath: "C:/b" } }], state), null);
 });
 
 test("state key is stable", () => {

@@ -15,12 +15,13 @@ export interface AgentDeps {
 export function registerAgentsCommands(context: vscode.ExtensionContext, deps: AgentDeps): void {
   const register = (id: string, fn: (root: string, agentId: string) => Promise<void>) =>
     context.subscriptions.push(vscode.commands.registerCommand(id, async (treeItem?: vscode.TreeItem) => {
-      const root = await deps.resolveRoot();
-      if (root === null) { await vscode.window.showWarningMessage("请先打开一个项目文件夹"); return; }
-      // 树节点触发时 args[0] 是 T5 的 TreeItem（item.id 已设为 agent id）；命令面板触发时走 QuickPick
-      const chosen = treeItem?.id ?? (await vscode.window.showQuickPick(agents.listAgents().map((a) => ({ label: a.displayName, id: a.id }))))?.id;
-      if (chosen === undefined) return;
       try {
+        // try/catch 覆盖整个命令体：resolveRoot / QuickPick 的拒绝同样经 showError 呈现
+        const root = await deps.resolveRoot();
+        if (root === null) { await vscode.window.showWarningMessage("未选择项目文件夹"); return; }
+        // 树节点触发时 args[0] 是 T5 的 TreeItem（item.id 已设为 agent id）；命令面板触发时走 QuickPick
+        const chosen = treeItem?.id ?? (await vscode.window.showQuickPick(agents.listAgents().map((a) => ({ label: a.displayName, id: a.id }))))?.id;
+        if (chosen === undefined) return;
         await deps.queue.run(async () => {
           await withProgress("Avenic Agent 操作", (report) => fn(root, chosen).then(() => { report("完成"); }));
           deps.refresh();

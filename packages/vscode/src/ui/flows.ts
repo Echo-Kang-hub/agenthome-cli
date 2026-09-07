@@ -1,4 +1,4 @@
-import { lastProjectRoot, rememberProjectRoot } from "../project.ts";
+import { rememberProjectRoot, rememberedProjectRoot } from "../project.ts";
 
 export async function pickOne<T extends { label: string }>(
   options: T[],
@@ -20,8 +20,8 @@ export async function pickProjectRoot(
 ): Promise<string | null> {
   if (folders.length === 0) return null;
   if (folders.length === 1) return folders[0].uri.fsPath;
-  const last = lastProjectRoot(state);
-  if (last !== null && folders.some((f) => f.uri.fsPath === last)) return last; // 记忆命中且仍在工作区 → 直接使用
+  const last = rememberedProjectRoot(folders, state); // 记忆命中且仍在工作区 → 直接使用（校验逻辑与 project.ts 单一来源）
+  if (last !== null) return last;
   const chosen = await pick(folders.map((f) => ({ label: f.uri.fsPath, fsPath: f.uri.fsPath })));
   if (chosen === undefined) return null;
   rememberProjectRoot(state, chosen.fsPath);

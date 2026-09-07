@@ -23,3 +23,10 @@ export function lastProjectRoot(state: StateLike): string | null {
   const value = state.get(PROJECT_ROOT_STATE_KEY);
   return typeof value === "string" && value.length > 0 ? value : null;
 }
+
+// 记忆根经当前工作区文件夹列表校验后才算有效（stale/移除的文件夹不返回）
+export function rememberedProjectRoot(folders: readonly WorkspaceFolderLike[], state: StateLike): string | null {
+  const last = lastProjectRoot(state);
+  if (last !== null && folders.some((f) => f.uri.fsPath === last)) return last;
+  return null;
+}
