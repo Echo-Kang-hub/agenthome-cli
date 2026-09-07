@@ -19,3 +19,12 @@ test("busy reflects in-flight mutation", async () => {
   await p;
   assert.equal(queue.busy, false);
 });
+
+test("queued follow-up keeps busy during its execution", async () => {
+  const queue = new MutationQueue();
+  let sawBusy = false;
+  const p1 = queue.run(async () => { await new Promise((r) => setTimeout(r, 10)); });
+  const p2 = queue.run(async () => { sawBusy = queue.busy; });
+  await Promise.all([p1, p2]);
+  assert.equal(sawBusy, true);
+});
