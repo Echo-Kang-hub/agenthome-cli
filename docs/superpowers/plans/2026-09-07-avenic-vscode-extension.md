@@ -34,7 +34,7 @@ packages/vscode/                          [新包]
 ├── package.json                          [新] T1；T5 加 contributes.views；T7–T9 加 commands/menus；T10 加 webview 条目
 ├── tsconfig.json                         [新] T1（typecheck 用，noEmit）
 ├── build.mjs                             [新] T1 esbuild 生产构建；T12 开 minify
-├── test-build.mjs                        [新] T1 esbuild 测试构建（test/*.test.ts → .test-out）→ node --test
+├── build-tests.mjs                        [新] T1 esbuild 测试构建（test/*.test.ts → .test-out）→ node --test
 ├── .vscodeignore                         [新] T1；T12 补 .test-out
 ├── media/
 │   ├── icon.svg                          [新] T1 活动栏图标
@@ -68,7 +68,7 @@ packages/vscode/                          [新包]
 │       ├── protocol.ts                   [新] T10 类型化 postMessage 协议（纯类型 + 守卫）
 │       ├── state.ts                      [新] T10 DashboardData 组装（无 vscode）
 │       └── overview.ts                   [新] T10 WebviewViewProvider
-└── test/                                 [新] 每任务对应 *.test.ts（经 test-build.mjs 跑 node --test）
+└── test/                                 [新] 每任务对应 *.test.ts（经 build-tests.mjs 跑 node --test）
 ```
 
 根仓库改动（仅两处）：
@@ -84,7 +84,7 @@ packages/vscode/                          [新包]
 **Goal:** 建立 packages/vscode 可构建、可测、可类型检查的包骨架，激活桩可被 VS Code 加载不崩溃。
 
 **Files:**
-- Create: `packages/vscode/package.json`、`packages/vscode/tsconfig.json`、`packages/vscode/build.mjs`、`packages/vscode/test-build.mjs`、`packages/vscode/.vscodeignore`、`packages/vscode/media/icon.svg`、`packages/vscode/src/extension.ts`
+- Create: `packages/vscode/package.json`、`packages/vscode/tsconfig.json`、`packages/vscode/build.mjs`、`packages/vscode/build-tests.mjs`、`packages/vscode/.vscodeignore`、`packages/vscode/media/icon.svg`、`packages/vscode/src/extension.ts`
 - Test: `packages/vscode/test/manifest.test.ts`
 
 **Interfaces:**
@@ -148,7 +148,7 @@ Expected: FAIL——`package.json` 不存在 / `.test-out` 未生成。
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && node test-build.mjs"
+    "test": "npm run typecheck && node build-tests.mjs"
   },
   "devDependencies": {
     "@avenic/core": "^1.0.0",
@@ -198,7 +198,7 @@ await build({
 console.log("built dist/extension.js");
 ```
 
-`packages/vscode/test-build.mjs`：
+`packages/vscode/build-tests.mjs`：
 
 ```js
 import { build } from "esbuild";
@@ -227,7 +227,7 @@ node_modules/**
 test/**
 tsconfig.json
 build.mjs
-test-build.mjs
+build-tests.mjs
 .test-out/**
 ```
 
