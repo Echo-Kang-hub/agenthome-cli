@@ -20,6 +20,24 @@
         { "id": "avenic.catalog", "name": "Catalog", "contextualTitle": "Avenic · Catalog" },
         { "id": "avenic.skills", "name": "Skills", "contextualTitle": "Avenic · Skills" }
       ]
+    },
+    "commands": [
+      { "command": "avenic.agents.init", "title": "Avenic: 初始化 Agent", "category": "Avenic" },
+      { "command": "avenic.agents.deinit", "title": "Avenic: 移除 Agent", "category": "Avenic" },
+      { "command": "avenic.agents.switchAuth", "title": "Avenic: 切换认证模式", "category": "Avenic" },
+      { "command": "avenic.agents.switchSessions", "title": "Avenic: 切换会话存储", "category": "Avenic" },
+      { "command": "avenic.agents.sessionsImport", "title": "Avenic: 导入会话", "category": "Avenic" },
+      { "command": "avenic.agents.sessionsWriteback", "title": "Avenic: 写回会话", "category": "Avenic" }
+    ],
+    "menus": {
+      "view/item/context": [
+        { "command": "avenic.agents.init", "when": "view == avenic.agents && viewItem == agent" },
+        { "command": "avenic.agents.deinit", "when": "view == avenic.agents && viewItem == agent" },
+        { "command": "avenic.agents.switchAuth", "when": "view == avenic.agents && viewItem == agent" },
+        { "command": "avenic.agents.switchSessions", "when": "view == avenic.agents && viewItem == agent" },
+        { "command": "avenic.agents.sessionsImport", "when": "view == avenic.agents && viewItem == agent" },
+        { "command": "avenic.agents.sessionsWriteback", "when": "view == avenic.agents && viewItem == agent" }
+      ]
     }
   },
   "scripts": {

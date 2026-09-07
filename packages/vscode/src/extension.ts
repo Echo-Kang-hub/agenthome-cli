@@ -1,20 +1,33 @@
 import * as vscode from "vscode";
+import { registerAgentsCommands } from "./commands/agents-commands.ts";
 import { resolveProjectRoot } from "./project.ts";
+import { pickProjectRoot } from "./ui/flows.ts";
+import { MutationQueue } from "./ui/mutation-queue.ts";
 import { AgentsViewProvider } from "./views/agents-view.ts";
 import { CatalogViewProvider } from "./views/catalog-view.ts";
 import { SkillsViewProvider } from "./views/skills-view.ts";
 
 export function activate(context: vscode.ExtensionContext): void {
-  const folders = vscode.workspace.workspaceFolders;
-  const root = () => resolveProjectRoot(folders ?? []);
+  const root = () => resolveProjectRoot(vscode.workspace.workspaceFolders ?? []);
   const agents = new AgentsViewProvider(root);
   const catalog = new CatalogViewProvider(root);
   const skills = new SkillsViewProvider(root);
+  const queue = new MutationQueue();
+  const refresh = () => { agents.refresh(); catalog.refresh(); skills.refresh(); };
+  // 同步根解析：单根直接返回；多根/null 时经 T6 pickProjectRoot 引导用户选定（workspaceFolders 实时读取，避免激活期闭包过期）
+  const resolveRoot = async (): Promise<string | null> => {
+    const r = root();
+    if (r !== null) return r;
+    const picked = await pickProjectRoot([...(vscode.workspace.workspaceFolders ?? [])], context.workspaceState, async (candidates) => vscode.window.showQuickPick(candidates));
+    if (picked !== null) refresh(); // 选定后让 TreeView 从「打开项目文件夹」提示行刷新为真实数据
+    return picked;
+  };
   context.subscriptions.push(
     vscode.window.createTreeView("avenic.agents", { treeDataProvider: agents }),
     vscode.window.createTreeView("avenic.catalog", { treeDataProvider: catalog }),
     vscode.window.createTreeView("avenic.skills", { treeDataProvider: skills }),
   );
+  registerAgentsCommands(context, { queue, resolveRoot, refresh });
 }
 
 export function deactivate(): void {}
