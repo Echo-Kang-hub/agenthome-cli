@@ -5,25 +5,13 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { add, defaultSpec, listKnown, select, sync } from "../src/services/catalog.ts";
-import { makeCatalogFixture } from "./helpers.ts";
-
-// 与 services.test.ts 同法：剥离宿主环境里所有 AVENIC_/AGENTHOME_ 变量（含 CATALOG_SPEC/STATE_DIR
-// 旧名），再注入隔离的 AVENIC_STATE_DIR——测试机无关，不受用户本机配置影响。
-function sanitizedEnv(stateDir: string): Record<string, string | undefined> {
-  const env: Record<string, string | undefined> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (key.startsWith("AVENIC_") || key.startsWith("AGENTHOME_")) continue;
-    env[key] = value;
-  }
-  env.AVENIC_STATE_DIR = stateDir;
-  return env;
-}
+import { makeCatalogFixture, testEnv } from "./helpers.ts";
 
 test("catalog add → select → sync round-trip with local fixture", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "avenic-catalog-"));
   try {
     const catalogDir = path.join(root, "catalog");
-    const env = sanitizedEnv(path.join(root, "state"));
+    const env = testEnv(path.join(root, "state"));
     await makeCatalogFixture(catalogDir);
     const added = await add(catalogDir, env);
     assert.equal(added.previewFailed, false);

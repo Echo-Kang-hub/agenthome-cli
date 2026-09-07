@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { registerAgentsCommands } from "./commands/agents-commands.ts";
 import { registerCatalogCommands } from "./commands/catalog-commands.ts";
+import { registerSkillsCommands } from "./commands/skills-commands.ts";
 import { rememberedProjectRoot, resolveProjectRoot } from "./project.ts";
 import { pickProjectRoot } from "./ui/flows.ts";
 import { MutationQueue } from "./ui/mutation-queue.ts";
@@ -34,6 +35,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   registerAgentsCommands(context, { queue, resolveRoot, refresh });
   registerCatalogCommands(context, { queue, refresh });
+  registerSkillsCommands(context, { queue, resolveRoot, refresh });
 }
 
 export function deactivate(): void {}
