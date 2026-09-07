@@ -49,7 +49,6 @@ window.addEventListener("message", (event) => {
   if (msg === null || typeof msg !== "object") return;
   if (msg.type === "data") renderData(msg.payload);
   else if (msg.type === "error") renderError(msg.message);
-  else if (msg.type === "refresh") vscode.postMessage({ type: "ready" }); // 重载请求：等待 provider 重发数据
 });
 
 // 脚本就绪即宣告：provider 对 resolver 期间的早期发送会被丢弃，ready 后补发一轮

@@ -52,6 +52,7 @@ export class OverviewProvider implements vscode.WebviewViewProvider {
   }
 
   private async sendData(): Promise<void> {
+    if (this.view === undefined) return; // 视图未打开：不做任何状态构建，避免每个 mutation 触发 spawnSync 探测
     try {
       const data = await buildDashboardData(this.projectRoot());
       this.post({ type: "data", payload: data });
