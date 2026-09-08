@@ -127,6 +127,7 @@ export {
 } from "./skills/vendor.mjs";
 export {
   createInstallContext,
+  detectedSkillNames,
   installCopies,
   installPacks,
   installedPackIds,

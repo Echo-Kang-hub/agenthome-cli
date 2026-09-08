@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cp, mkdir, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -239,6 +239,29 @@ export async function removeInstallationFiles(context) {
   if (context.legacyProfileFile) {
     await rm(context.legacyProfileFile, { force: true });
   }
+}
+
+// Read-only scan of the target directories this context writes to: the
+// skills present on disk (directory containing SKILL.md), deduplicated and
+// sorted, regardless of metadata. Detects content the install records do
+// not track (legacy/external installs, manual copies). Never writes.
+export async function detectedSkillNames(context) {
+  const names = new Set();
+  for (const target of context.targets) {
+    let entries;
+    try {
+      entries = await readdir(target.destination, { withFileTypes: true });
+    } catch {
+      continue; // 目标目录不存在＝无内容
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (existsSync(path.join(target.destination, entry.name, "SKILL.md"))) {
+        names.add(entry.name);
+      }
+    }
+  }
+  return [...names].sort();
 }
 
 // Structured `skills status` data: the manifest's packs and per-target

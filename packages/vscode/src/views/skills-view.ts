@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { status } from "../services/skills.ts";
-import { GLOBAL_EMPTY_HINT, PROJECT_EMPTY_HINT, skillsToViewModels, type SkillsViewItem } from "./view-models.ts";
+import { detected, status } from "../services/skills.ts";
+import { GLOBAL_EMPTY_HINT, PROJECT_EMPTY_HINT, skillsToViewModels, type SkillsViewGroup, type SkillsViewItem } from "./view-models.ts";
 
 export class SkillsViewProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private readonly emitter = new vscode.EventEmitter<vscode.TreeItem | undefined>();
@@ -18,24 +18,41 @@ export class SkillsViewProvider implements vscode.TreeDataProvider<vscode.TreeIt
     this.scopeChildren.clear();
     const root = this.projectRoot();
     // 全局作用域组与项目根无关（零工作区窗口仍有全局 Skills）；项目组无根时不读项目状态（避免落到 process.cwd 域），直接显示提示行
-    const [project, global] = await Promise.all([
+    // 未托管检测（detected）同样只读磁盘：项目组无根时跳过扫描，全局组恒扫描
+    const [project, global, projectDetected, globalDetected] = await Promise.all([
       root === null ? null : status("project", root),
       status("global"),
+      root === null ? [] : detected("project", root),
+      detected("global"),
     ]);
     const projectNode = new vscode.TreeItem("项目作用域", vscode.TreeItemCollapsibleState.Expanded);
     const globalNode = new vscode.TreeItem("全局作用域", vscode.TreeItemCollapsibleState.Expanded);
-    this.scopeChildren.set(projectNode, this.fromViewModels(skillsToViewModels(project, PROJECT_EMPTY_HINT)));
-    this.scopeChildren.set(globalNode, this.fromViewModels(skillsToViewModels(global, GLOBAL_EMPTY_HINT)));
+    this.scopeChildren.set(projectNode, this.fromViewModels(skillsToViewModels(project, projectDetected, PROJECT_EMPTY_HINT)));
+    this.scopeChildren.set(globalNode, this.fromViewModels(skillsToViewModels(global, globalDetected, GLOBAL_EMPTY_HINT)));
     return [projectNode, globalNode];
   }
 
-  private fromViewModels(items: SkillsViewItem[]): vscode.TreeItem[] {
-    return items.map((m) => {
-      const item = new vscode.TreeItem(m.label, vscode.TreeItemCollapsibleState.None);
-      item.description = m.description;
-      item.contextValue = m.kind; // T9 命令菜单 when 绑定按 group/pack/skill/direct 分类
-      item.iconPath = new vscode.ThemeIcon(m.iconHint);
+  private fromViewModels(groups: SkillsViewGroup[]): vscode.TreeItem[] {
+    return groups.map((group) => {
+      const item = new vscode.TreeItem(
+        group.item.label,
+        group.children !== undefined ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
+      );
+      item.description = group.item.description;
+      item.contextValue = group.item.kind; // T9 命令菜单 when 绑定按 group/pack/skill/direct 分类
+      item.iconPath = new vscode.ThemeIcon(group.item.iconHint);
+      if (group.children !== undefined) {
+        this.scopeChildren.set(item, group.children.map((child) => this.leaf(child)));
+      }
       return item;
     });
+  }
+
+  private leaf(model: SkillsViewItem): vscode.TreeItem {
+    const item = new vscode.TreeItem(model.label, vscode.TreeItemCollapsibleState.None);
+    item.description = model.description;
+    item.contextValue = model.kind;
+    item.iconPath = new vscode.ThemeIcon(model.iconHint);
+    return item;
   }
 }

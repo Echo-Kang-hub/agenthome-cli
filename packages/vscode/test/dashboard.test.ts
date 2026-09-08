@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -58,6 +58,22 @@ test("buildDashboardData reads the pinned catalog revision (not the placeholder 
     assert.match(data.catalog.revision, /^[0-9a-f]{40}$/, "revision 读取缓存 fixture 的真实 commit，而非 '—'");
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("skillsHealth reports untracked on-disk skills when no install metadata", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
+  try {
+    await mkdir(path.join(dir, ".agents", "skills", "alpha"), { recursive: true });
+    await writeFile(path.join(dir, ".agents", "skills", "alpha", "SKILL.md"), "# alpha");
+    await mkdir(path.join(dir, ".agents", "skills", "bravo"), { recursive: true });
+    await writeFile(path.join(dir, ".agents", "skills", "bravo", "SKILL.md"), "# bravo");
+    const data = await buildDashboardData(dir, testEnv(dir));
+    assert.equal(data.skillsHealth.length, 1);
+    assert.equal(data.skillsHealth[0].ok, false);
+    assert.equal(data.skillsHealth[0].details, "2 个 Skill 未托管");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
 

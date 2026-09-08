@@ -312,6 +312,7 @@ export interface InstallStatus {
   targets: Array<InstallTarget & { present: number; total: number; complete: boolean }>;
 }
 export function skillsInstallationStatus(context: InstallContext): Promise<InstallStatus | null>;
+export function detectedSkillNames(context: InstallContext): Promise<string[]>;
 
 export interface DirectSourceState {
   directSources: Array<Source & { skills: string[] }>;

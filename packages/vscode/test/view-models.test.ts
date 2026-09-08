@@ -35,12 +35,42 @@ test("catalog model is empty only when genuinely nothing to show", () => {
 });
 
 test("skills empty-state copy is scope-aware", () => {
-  assert.equal(skillsToViewModels(null, PROJECT_EMPTY_HINT)[0].description, "打开一个新项目根后安装 Pack");
-  assert.equal(skillsToViewModels(null, GLOBAL_EMPTY_HINT)[0].description, "全局域 Pack 请从命令面板安装");
+  const groups = skillsToViewModels(null, [], PROJECT_EMPTY_HINT);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].item.description, "打开一个新项目根后安装 Pack");
+  assert.equal(groups[0].item.label, "尚未安装 Skills");
+  const global = skillsToViewModels(null, [], GLOBAL_EMPTY_HINT);
+  assert.equal(global[0].item.description, "全局域 Pack 请从命令面板安装");
 });
 
 test("skills status maps to grouped items", () => {
   const items = skillsToViewModels({ groups: [], names: ["pack-a"], packs: [{ id: "pack-a", name: "Pack A" }], targets: [] });
   assert.ok(items.length >= 1); // 分组（Installed Packs / Catalog Packs / Direct Skills）
-  assert.equal(items[0].kind, "group");
+  assert.equal(items[0].item.kind, "group");
+});
+
+test("skills null with untracked on-disk skills shows detected group (children) above the empty hint", () => {
+  const groups = skillsToViewModels(null, ["alpha", "beta"], PROJECT_EMPTY_HINT);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].item.kind, "detected");
+  assert.equal(groups[0].item.label, "检测到 2 个 Skill（未托管）");
+  assert.deepEqual(groups[0].children?.map((c) => c.label), ["alpha", "beta"]);
+  assert.equal(groups[0].children?.[0].kind, "detected");
+  assert.equal(groups[1].item.label, "尚未安装 Skills");
+});
+
+test("skills status with stray files shows detected-untracked group first", () => {
+  const status = { groups: [], names: ["managed-one"], packs: [{ id: "pack-a", name: "Pack A" }], targets: [] };
+  const groups = skillsToViewModels(status, ["managed-one", "stray"], PROJECT_EMPTY_HINT);
+  assert.equal(groups.length, 4);
+  assert.equal(groups[0].item.kind, "detected");
+  assert.equal(groups[0].item.label, "检测到 1 个 Skill（未托管）");
+  assert.deepEqual(groups[0].children?.map((c) => c.label), ["stray"]);
+});
+
+test("fully managed status adds no detected group", () => {
+  const status = { groups: [], names: ["managed-one"], packs: [], targets: [] };
+  const groups = skillsToViewModels(status, ["managed-one"], PROJECT_EMPTY_HINT);
+  assert.equal(groups.length, 3);
+  assert.ok(groups.every((g) => g.item.kind === "group"));
 });

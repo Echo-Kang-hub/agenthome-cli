@@ -1,6 +1,6 @@
 import { agentExecutableAvailable, agentStatus, listAgents } from "../services/agents.ts";
 import { defaultSpec, pinnedRevision } from "../services/catalog.ts";
-import { status as skillsStatus } from "../services/skills.ts";
+import { detected as detectedSkillNames, status as skillsStatus } from "../services/skills.ts";
 import type { DashboardData } from "./protocol.ts";
 
 // 纯数据组装（无 vscode import）：所有可执行/网络/状态读取都走 services 层 + 注入的 environment，
@@ -35,12 +35,16 @@ export async function buildDashboardData(projectRoot: string | null, environment
   );
   const spec = await defaultSpec(environment);
   const skills = await skillsStatus("project", projectRoot, environment).catch(() => null);
+  // 磁盘检测（未托管内容：旧版/外部工具安装、手工拷贝）——只读，任何错误降级为空
+  const detected = await detectedSkillNames("project", projectRoot, environment).catch(() => []);
+  const untracked = skills === null ? detected : detected.filter((name) => !skills.names.includes(name));
+  const untrackedRow = { label: "Skills", ok: false, details: `${untracked.length} 个 Skill 未托管` };
   return {
     projectRoot,
     agents,
     catalog: spec === null ? null : { spec, revision: (await pinnedRevision(projectRoot, environment)) ?? "—" },
     skillsHealth: skills === null
-      ? [{ label: "Skills", ok: false, details: "尚未安装" }]
-      : skills.targets.map((t) => ({ label: t.label, ok: t.complete, details: `${t.present}/${t.total}` })),
+      ? [untracked.length > 0 ? untrackedRow : { label: "Skills", ok: false, details: "尚未安装" }]
+      : skills.targets.map((t) => ({ label: t.label, ok: t.complete, details: `${t.present}/${t.total}` })).concat(untracked.length > 0 ? [untrackedRow] : []),
   };
 }
