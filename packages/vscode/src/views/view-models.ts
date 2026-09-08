@@ -62,7 +62,7 @@ export interface SkillsViewItem {
   label: string;
   description: string;
   iconHint: string;
-  // 子行（递归）：source 行 → 该来源的 Skill 行；detected/adopted 行无子级（叶子带命令键位）
+  // 子行（递归）：pack 行 → source 行 → Skill 行；detected/adopted 行无子级（叶子带命令键位）
   children?: SkillsViewItem[];
 }
 // 树形分组：item 为主行，children 为可展开的子行
@@ -70,7 +70,52 @@ export interface SkillsViewGroup { item: SkillsViewItem; children?: SkillsViewIt
 // 空态提示按作用域区分：项目组保留项目味提示；全局组不得含项目根引用（零工作区窗口也成立）
 export const PROJECT_EMPTY_HINT = "打开一个新项目根后安装 Pack";
 export const GLOBAL_EMPTY_HINT = "全局域 Pack 请从命令面板安装";
-export function skillsToViewModels(status: InstallStatus | null, detected: string[] = [], emptyHint: string = PROJECT_EMPTY_HINT): SkillsViewGroup[] {
+
+// Installed Packs 层次（installedPackLayers 的输出，结构性声明避免 services 依赖环）：
+// 每个 Pack 一行，其下是 pack.sources 定义的来源分组（来源名 → Skill 列表）。
+export interface InstalledPackLayerView {
+  packId: string;
+  packName: string;
+  groups: Array<{ sourceId: string; sourceName: string; skills: string[] }>;
+}
+
+// Pack 层子行：Pack 行 → 来源行 → Skill 行。仅显示磁盘上真实存在的 Skill（与 status.names
+// 求交——缓存 Catalog 可能领先/滞后于安装，不得展示未安装的内容）；不在任何 Pack 层内的
+// 托管名缀为 adopted 行（「识别为 Pack 接管」候选）。layers 为空（未缓存/无 Pack 记录）
+// 返回 null，调用方回退为锁文件合并的来源行。
+function packLayerRows(layers: InstalledPackLayerView[], installed: Set<string>): SkillsViewItem[] | null {
+  if (layers.length === 0) return null;
+  const covered = new Set<string>();
+  const packRows = layers.map((layer) => {
+    const groups: SkillsViewItem[] = [];
+    for (const group of layer.groups) {
+      const present = group.skills.filter((name) => installed.has(name));
+      if (present.length === 0) continue;
+      present.forEach((name) => covered.add(name));
+      groups.push({
+        kind: "source",
+        label: group.sourceName,
+        description: `${present.length} 个 Skill`,
+        iconHint: "repo",
+        children: present.map((name) => ({ kind: "skill", label: name, description: group.sourceId, iconHint: "file" })),
+      });
+    }
+    const total = groups.reduce((sum, group) => sum + (group.children?.length ?? 0), 0);
+    return {
+      kind: "pack" as const,
+      label: layer.packName,
+      description: `${total} 个 Skill`,
+      iconHint: "package" as const,
+      children: groups,
+    };
+  });
+  const adoptedRows = [...installed].filter((name) => !covered.has(name)).map((name) => ({
+    kind: "adopted" as const, label: name, description: "已托管 · 无 Pack 记录", iconHint: "file" as const,
+  }));
+  return [...packRows, ...adoptedRows];
+}
+
+export function skillsToViewModels(status: InstallStatus | null, detected: string[] = [], emptyHint: string = PROJECT_EMPTY_HINT, layers: InstalledPackLayerView[] = []): SkillsViewGroup[] {
   // 磁盘检测（core detectedSkillNames）减去托管记录 = 未托管内容（旧版/外部工具安装、手工拷贝）
   const managed = status === null ? [] : status.names;
   const untracked = detected.filter((name) => !managed.includes(name));
@@ -87,39 +132,48 @@ export function skillsToViewModels(status: InstallStatus | null, detected: strin
     });
   }
   if (status === null) {
-    groups.push({ item: { kind: "group", label: "尚未安装 Skills", description: emptyHint, iconHint: "info" } });
+    // 矛盾修复：已有「未托管检测」行时不再叠加「尚未安装」空态——两者并存互相矛盾
+    //（未托管检测本身就是「尚未安装管理」的证据，空态只应出现在真正一无所有时）。
+    if (untracked.length === 0) {
+      groups.push({ item: { kind: "group", label: "尚未安装 Skills", description: emptyHint, iconHint: "info" } });
+    }
     return groups;
   }
+  const installed = new Set(managed);
+  // Installed Packs 子级：Pack → source → Skill（层次来自本地缓存 Catalog 的 pack.sources）；
+  // 无层次（未缓存）时回退为锁文件合并的来源行。两种形态都把"仅托管无 Pack 记录"的名缀为
+  // adopted 行——正是「识别为 Pack 接管」的候选（行级键位 avenic.skills.adoptPack）。
+  const children: SkillsViewItem[] = packLayerRows(layers, installed) ?? (() => {
+    const covered = new Set<string>();
+    const rows = status.groups.map((group): SkillsViewItem => {
+      group.skills.forEach((skill) => covered.add(skill.name));
+      return {
+        kind: "source",
+        label: group.source.name ?? group.source.id,
+        description: `${group.skills.length} 个 Skill`,
+        iconHint: "repo",
+        children: group.skills.map((skill) => ({
+          kind: "skill" as const,
+          label: skill.name,
+          description: group.source.id,
+          iconHint: "file" as const,
+        })),
+      };
+    });
+    return rows.concat(
+      status.names
+        .filter((name) => !covered.has(name))
+        .map((name): SkillsViewItem => ({ kind: "adopted", label: name, description: "已托管 · 无 Pack 记录", iconHint: "file" })),
+    );
+  })();
+  // 安装目标完成度并入 Installed Packs 描述（原「完整性」分组是对用户无意义的内部术语，已移除）
   const complete = status.targets.filter((t) => t.complete).length;
-  // Installed Packs 子级按来源分组（层次：Pack → source → Skill，来源名直接可见）；
-  // 不在任何 source 分组内、仅由"托管"记录的 Skill（旧版包残留）缀为 adopted 行——
-  // 这些正是「识别为 Pack 接管」的候选（行级键位 avenic.skills.adoptPack）。
-  const covered = new Set<string>();
-  const sourceRows = status.groups.map((group) => {
-    group.skills.forEach((skill) => covered.add(skill.name));
-    return {
-      kind: "source" as const,
-      label: group.source.name ?? group.source.id,
-      description: `${group.skills.length} 个 Skill`,
-      iconHint: "repo" as const,
-      children: group.skills.map((skill) => ({
-        kind: "skill" as const,
-        label: skill.name,
-        description: group.source.id,
-        iconHint: "file" as const,
-      })),
-    };
-  });
-  const adoptedRows = status.names
-    .filter((name) => !covered.has(name))
-    .map((name) => ({ kind: "adopted" as const, label: name, description: "已托管 · 无 Pack 记录", iconHint: "file" as const }));
   groups.push(
     {
-      item: { kind: "group", label: "Installed Packs", description: `${status.names.length} 个 Skill / ${status.packs.length} 个 Pack`, iconHint: "package" },
-      children: [...sourceRows, ...adoptedRows],
+      item: { kind: "group", label: "Installed Packs", description: `${status.names.length} 个 Skill / ${status.packs.length} 个 Pack · 安装目标 ${complete}/${status.targets.length}`, iconHint: "package" },
+      children,
     },
     { item: { kind: "group", label: "Catalog Packs", description: `${status.packs.length} 个 Pack / ${status.groups.length} 个分组`, iconHint: "repo" } },
-    { item: { kind: "group", label: "完整性", description: `${complete}/${status.targets.length} 个 target 完成`, iconHint: "verify" } },
   );
   return groups;
 }

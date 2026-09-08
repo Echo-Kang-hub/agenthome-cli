@@ -60,9 +60,12 @@ function catalogCacheDirectory(spec: string, environment: ProcessEnvLike): strin
 
 // Catalog 树只读预览的缓存根优先路径：已缓存（packs 目录存在）直接返回缓存目录；
 // 否则经 ensureCatalog（git fetch）取最新——语义等同「展开即同步一次」。任何错误返回 null。
-async function catalogRootFor(spec: string, environment: ProcessEnvLike): Promise<string | null> {
+// cachedOnly：Installed Packs 层次展示必须零网络（视图每次加载都走），未缓存 → null，
+// 调用方回退为扁平来源行，绝不在加载时触发 fetch。
+async function catalogRootFor(spec: string, environment: ProcessEnvLike, options: { cachedOnly?: boolean } = {}): Promise<string | null> {
   const cached = catalogCacheDirectory(spec, environment);
   if (existsSync(path.join(cached, "packs"))) return cached;
+  if (options.cachedOnly === true) return null;
   try {
     const info = await ensureCatalog(spec, { environment });
     return info.catalogRoot;
@@ -81,12 +84,15 @@ export async function packsFor(spec: string, environment = process.env): Promise
 // Pack 的源码层次（Cache-first，无网络）：loadSources + buildCatalog + resolvePack，
 // 输出按 pack.sources 顺序的 group（source 元数据 + 该来源下的 Skill 名）。任一环节
 // 失败（离线无缓存、Pack 引用损坏）返回 null，视图回退为扁平 Skill 列表。
+// cachedOnly：Installed Packs 层次展示（packRow 行）用——未缓存直接 null，绝不 fetch。
 export interface PackStructure {
+  id: string;
+  name: string;
   groups: Array<{ source: Source; skills: Array<{ name: string; directory: string }> }>;
   names: string[];
 }
-export async function packStructure(spec: string, packId: string, environment = process.env): Promise<PackStructure | null> {
-  const root = await catalogRootFor(spec, environment);
+export async function packStructure(spec: string, packId: string, environment = process.env, options: { cachedOnly?: boolean } = {}): Promise<PackStructure | null> {
+  const root = await catalogRootFor(spec, environment, options);
   if (root === null) return null;
   try {
     const sourceConfig = await loadSources(root);
@@ -96,6 +102,8 @@ export async function packStructure(spec: string, packId: string, environment = 
     if (pack === undefined) return null;
     const resolved = resolvePack(catalog, sourceConfig, pack);
     return {
+      id: pack.id,
+      name: pack.name,
       groups: resolved.groups.map((group) => ({
         source: group.source,
         skills: group.skills.map((skill) => ({ name: skill.name, directory: skill.directory })),

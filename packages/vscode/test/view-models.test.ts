@@ -50,14 +50,14 @@ test("skills empty-state copy is scope-aware", () => {
 
 test("skills status maps to grouped items", () => {
   const items = skillsToViewModels({ groups: [], names: ["pack-a"], packs: [{ id: "pack-a", name: "Pack A" }], targets: [] });
-  assert.ok(items.length >= 1); // 分组（Installed Packs / Catalog Packs / 完整性）
+  assert.ok(items.length >= 1); // 分组（Installed Packs / Catalog Packs）
   assert.equal(items[0].item.kind, "group");
   // Installed Packs 组可展开：无 source 分组兜底时，仅托管记录的行按 adopted 呈现（可识别为 Pack）
   assert.deepEqual(items[0].children?.map((c) => c.label), ["pack-a"]);
   assert.equal(items[0].children?.[0].kind, "adopted");
 });
 
-test("installed packs children layer by source group (Pack → source → skill)", () => {
+test("installed packs children fall back to merged source rows without layers", () => {
   const group = (id: string, name: string, skills: string[]) => {
     const source = { id, name, repository: `https://github.com/${id}`, revision: "a".repeat(40) };
     return { source, skills: skills.map((skill) => ({ name: skill, directory: skill, source })) };
@@ -72,7 +72,7 @@ test("installed packs children layer by source group (Pack → source → skill)
     targets: [],
   });
   const children = items[0].children!;
-  // 两个 source 分组行 + 一个 adopted 兜底行
+  // 两个 source 分组行 + 一个 adopted 兜底行（层次数据缺失时的锁文件合并视图）
   assert.deepEqual(children.map((c) => c.kind), ["source", "source", "adopted"]);
   assert.equal(children[0].label, "Superpowers");
   assert.equal(children[0].description, "2 个 Skill");
@@ -80,25 +80,71 @@ test("installed packs children layer by source group (Pack → source → skill)
   assert.equal(children[0].children?.[1].kind, "skill");
   assert.equal(children[2].label, "legacy-one");
   assert.equal(children[2].kind, "adopted");
-  // Catalog Packs 与完整性分组保持为纯信息行
+  // Catalog Packs 保持为纯信息行（「完整性」分组已移除，完成度并入 Installed Packs 描述）
   assert.equal(items[1].item.label, "Catalog Packs");
-  assert.equal(items[2].item.label, "完整性");
+  assert.equal(items.length, 2);
 });
 
-test("skills null with untracked on-disk skills shows detected group (children) above the empty hint", () => {
+test("installed packs children layer as pack rows (Pack → source → skill)", () => {
+  const layers = [{
+    packId: "development", packName: "Development",
+    groups: [
+      { sourceId: "superpowers", sourceName: "Superpowers", skills: ["writing-plans", "debugging"] },
+      { sourceId: "anthropic", sourceName: "Anthropic", skills: ["docx"] },
+    ],
+  }];
+  const items = skillsToViewModels({
+    groups: [],
+    names: ["writing-plans", "debugging", "docx", "legacy-one"],
+    packs: [{ id: "development", name: "Development" }],
+    targets: [{ agents: ["claude-code"], label: "Claude Code", destination: "", present: 3, total: 3, complete: true }],
+  }, [], PROJECT_EMPTY_HINT, layers);
+  const children = items[0].children!;
+  // 一个 Pack 行 + 一个 adopted 兜底行（legacy-one 不在任何 Pack 层内）
+  assert.deepEqual(children.map((c) => c.kind), ["pack", "adopted"]);
+  assert.equal(children[0].label, "Development");
+  assert.equal(children[0].description, "3 个 Skill");
+  assert.deepEqual(children[0].children?.map((s) => s.kind), ["source", "source"]);
+  assert.deepEqual(children[0].children?.map((s) => s.label), ["Superpowers", "Anthropic"]);
+  assert.deepEqual(children[0].children?.[0].children?.map((s) => s.label), ["writing-plans", "debugging"]);
+  assert.equal(children[0].children?.[0].children?.[1].kind, "skill");
+  assert.equal(children[0].children?.[0].children?.[1].description, "superpowers");
+  assert.equal(children[1].label, "legacy-one");
+  assert.equal(children[1].kind, "adopted");
+  // 完成度并入 Installed Packs 描述，不再单独成组
+  assert.match(items[0].item.description, /安装目标 1\/1/);
+});
+
+test("pack layers show only skills actually installed (catalog may lead the lock)", () => {
+  const layers = [{
+    packId: "development", packName: "Development",
+    groups: [{ sourceId: "demo", sourceName: "Demo", skills: ["alpha", "future-skill"] }],
+  }];
+  const items = skillsToViewModels({
+    groups: [],
+    names: ["alpha"],
+    packs: [{ id: "development", name: "Development" }],
+    targets: [],
+  }, [], PROJECT_EMPTY_HINT, layers);
+  const pack = items[0].children![0];
+  assert.equal(pack.label, "Development");
+  assert.deepEqual(pack.children?.[0].children?.map((s) => s.label), ["alpha"]); // future-skill 被过滤
+});
+
+test("skills null with untracked on-disk skills shows only the detected group (no contradictory empty hint)", () => {
+  // 矛盾修复：已有「检测到 N 个（未托管）」时不得再出现「尚未安装 Skills」空态
   const groups = skillsToViewModels(null, ["alpha", "beta"], PROJECT_EMPTY_HINT);
-  assert.equal(groups.length, 2);
+  assert.equal(groups.length, 1);
   assert.equal(groups[0].item.kind, "detected");
   assert.equal(groups[0].item.label, "检测到 2 个 Skill（未托管）");
   assert.deepEqual(groups[0].children?.map((c) => c.label), ["alpha", "beta"]);
   assert.equal(groups[0].children?.[0].kind, "detected");
-  assert.equal(groups[1].item.label, "尚未安装 Skills");
 });
 
 test("skills status with stray files shows detected-untracked group first", () => {
   const status = { groups: [], names: ["managed-one"], packs: [{ id: "pack-a", name: "Pack A" }], targets: [] };
   const groups = skillsToViewModels(status, ["managed-one", "stray"], PROJECT_EMPTY_HINT);
-  assert.equal(groups.length, 4);
+  assert.equal(groups.length, 3);
   assert.equal(groups[0].item.kind, "detected");
   assert.equal(groups[0].item.label, "检测到 1 个 Skill（未托管）");
   assert.deepEqual(groups[0].children?.map((c) => c.label), ["stray"]);
@@ -107,7 +153,7 @@ test("skills status with stray files shows detected-untracked group first", () =
 test("fully managed status adds no detected group", () => {
   const status = { groups: [], names: ["managed-one"], packs: [], targets: [] };
   const groups = skillsToViewModels(status, ["managed-one"], PROJECT_EMPTY_HINT);
-  assert.equal(groups.length, 3);
+  assert.equal(groups.length, 2);
   assert.ok(groups.every((g) => g.item.kind === "group"));
 });
 

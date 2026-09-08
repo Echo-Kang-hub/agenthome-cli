@@ -6,6 +6,27 @@ import type { DashboardData } from "./protocol.ts";
 // 纯数据组装（无 vscode import）：所有可执行/网络/状态读取都走 services 层 + 注入的 environment，
 // 使测试可以经 testEnv 隔离宿主配置；revision 只读本地缓存（cachedRevision —— 无 git fetch，
 // 修复"每次打开 Overview 都加载很久"），任何读取错误降级为 "—"。
+
+// 安装目标里的 agent id → 面板标签（target 按运行时分组，面板按代理一一平等分行）。
+// 注意 AGENTS 注册表只有 claude/codex/opencode，而安装目标使用 "claude-code"/"universal"。
+const AGENT_LABELS: Record<string, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  opencode: "OpenCode",
+  universal: "universal agents",
+};
+
+// 每个安装目标含多个 agent（如 Codex / OpenCode / universal agents 共用一个目标、
+// 共用一套安装目录），拆成四条平等独立行：label 按 agent 名，ok/details 取自目标。
+function skillsHealthRows(skills: { targets: Array<{ agents: string[]; complete: boolean; present: number; total: number }> }): Array<{ label: string; ok: boolean; details: string }> {
+  return skills.targets.flatMap((target) =>
+    target.agents.map((agentId) => ({
+      label: AGENT_LABELS[agentId] ?? agentId,
+      ok: target.complete,
+      details: `${target.present}/${target.total}`,
+    })),
+  );
+}
 export async function buildDashboardData(projectRoot: string | null, environment: NodeJS.ProcessEnv = process.env): Promise<DashboardData> {
   if (projectRoot === null) {
     return {
@@ -45,6 +66,6 @@ export async function buildDashboardData(projectRoot: string | null, environment
     catalog: spec === null ? null : { spec, revision: (await cachedRevision(projectRoot, environment)) ?? "—" },
     skillsHealth: skills === null
       ? [untracked.length > 0 ? untrackedRow : { label: "Skills", ok: false, details: "尚未安装" }]
-      : skills.targets.map((t) => ({ label: t.label, ok: t.complete, details: `${t.present}/${t.total}` })).concat(untracked.length > 0 ? [untrackedRow] : []),
+      : skillsHealthRows(skills).concat(untracked.length > 0 ? [untrackedRow] : []),
   };
 }

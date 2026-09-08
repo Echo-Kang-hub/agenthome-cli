@@ -105,9 +105,10 @@ function infoCard(headIcon, title, valueText, metaText, hintText) {
   return card;
 }
 
-function blockTitle(iconName, title, count) {
+// 区块标题为终端注释行「# 标题」（# 前缀由 CSS ::before 渲染）：不加图标，让标题本身安静
+function blockTitle(title, count) {
   const box = el("div", undefined, "block-title");
-  box.append(icon(iconName), el("h2", title));
+  box.append(el("h2", title));
   if (count !== undefined) box.append(el("span", String(count), "count"));
   return box;
 }
@@ -125,7 +126,7 @@ function agentCard(a) {
 
 function agentsBlock(agents) {
   const box = el("section", undefined, "block");
-  box.append(blockTitle("robot", "Agents", agents.length));
+  box.append(blockTitle("Agents", agents.length));
   const grid = el("div", undefined, "agent-grid");
   for (const a of agents) grid.append(agentCard(a));
   box.append(grid);
@@ -134,7 +135,7 @@ function agentsBlock(agents) {
 
 function skillsBlock(rows) {
   const box = el("section", undefined, "block");
-  box.append(blockTitle("check", "Skills 健康"));
+  box.append(blockTitle("Skills 健康"));
   const list = el("div", undefined, "skill-rows");
   if (rows.length === 0) {
     list.append(el("p", "暂无 Skills 数据。", "hint"));
@@ -154,7 +155,7 @@ function skillsBlock(rows) {
 
 function actionsBlock(projectOpen) {
   const box = el("section", undefined, "block quick-actions");
-  box.append(blockTitle("info", "快捷操作"));
+  box.append(blockTitle("快捷操作"));
   const grid = el("div", undefined, "action-grid");
   for (const a of ACTIONS) {
     const button = el("button", undefined, "button action-button");

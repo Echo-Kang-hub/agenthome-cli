@@ -19,6 +19,7 @@ import {
   type Pack,
   type ProcessEnvLike,
 } from "@avenic/core";
+import { defaultSpec, packStructure } from "./catalog.ts";
 
 export type Scope = "project" | "global";
 type Env = ProcessEnvLike;
@@ -60,6 +61,40 @@ export async function adoptedOnlyNames(scope: Scope, cwd?: string, environment: 
   if (current === null) return [];
   const covered = new Set(current.groups.flatMap((group) => group.skills.map((skill) => skill.name)));
   return current.names.filter((name) => !covered.has(name));
+}
+
+// Installed Packs 的层次化结构（Pack → source → Skill）：对每个已托管 Pack id（config.packs）
+// 走 packStructure(cachedOnly) 从 「本地缓存 Catalog」还原 pack.sources 层次——零网络。
+// 未缓存/无效 Pack 跳过（视图回退为合并的来源行）；任何错误降级为空数组。
+export interface InstalledPackLayer {
+  packId: string;
+  packName: string;
+  groups: Array<{ sourceId: string; sourceName: string; skills: string[] }>;
+}
+export async function installedPackLayers(scope: Scope, cwd?: string, environment: Env = process.env): Promise<InstalledPackLayer[]> {
+  try {
+    const spec = await defaultSpec(environment);
+    if (spec === null) return [];
+    const ids = await coreInstalledPackIds(context(scope, cwd, environment));
+    if (ids === null) return [];
+    const layers: InstalledPackLayer[] = [];
+    for (const packId of [...ids].sort()) {
+      const structure = await packStructure(spec, packId, environment, { cachedOnly: true });
+      if (structure === null) continue;
+      layers.push({
+        packId: structure.id,
+        packName: structure.name,
+        groups: structure.groups.map((group) => ({
+          sourceId: group.source.id,
+          sourceName: group.source.name ?? group.source.id,
+          skills: group.skills.map((skill) => skill.name),
+        })),
+      });
+    }
+    return layers;
+  } catch {
+    return [];
+  }
 }
 
 export async function availablePacks(scope: Scope, cwd?: string, environment: Env = process.env): Promise<Map<string, Pack>> {

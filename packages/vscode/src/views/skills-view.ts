@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { detected, status } from "../services/skills.ts";
+import { detected, installedPackLayers, status } from "../services/skills.ts";
 import { GLOBAL_EMPTY_HINT, PROJECT_EMPTY_HINT, skillsToViewModels, type SkillsViewGroup, type SkillsViewItem } from "./view-models.ts";
 
 export class SkillsViewProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
@@ -18,17 +18,20 @@ export class SkillsViewProvider implements vscode.TreeDataProvider<vscode.TreeIt
     this.scopeChildren.clear();
     const root = this.projectRoot();
     // 全局作用域组与项目根无关（零工作区窗口仍有全局 Skills）；项目组无根时不读项目状态（避免落到 process.cwd 域），直接显示提示行
-    // 未托管检测（detected）同样只读磁盘：项目组无根时跳过扫描，全局组恒扫描
-    const [project, global, projectDetected, globalDetected] = await Promise.all([
+    // 未托管检测（detected）同样只读磁盘：项目组无根时跳过扫描，全局组恒扫描；
+    // Pack 层次（installedPackLayers）恒走本地缓存零网络，未缓存时视图内回退合并来源行。
+    const [project, global, projectDetected, globalDetected, projectLayers, globalLayers] = await Promise.all([
       root === null ? null : status("project", root),
       status("global"),
       root === null ? [] : detected("project", root),
       detected("global"),
+      root === null ? [] : installedPackLayers("project", root),
+      installedPackLayers("global"),
     ]);
     const projectNode = new vscode.TreeItem("项目作用域", vscode.TreeItemCollapsibleState.Expanded);
     const globalNode = new vscode.TreeItem("全局作用域", vscode.TreeItemCollapsibleState.Expanded);
-    this.scopeChildren.set(projectNode, this.fromViewModels(skillsToViewModels(project, projectDetected, PROJECT_EMPTY_HINT), "project"));
-    this.scopeChildren.set(globalNode, this.fromViewModels(skillsToViewModels(global, globalDetected, GLOBAL_EMPTY_HINT), "global"));
+    this.scopeChildren.set(projectNode, this.fromViewModels(skillsToViewModels(project, projectDetected, PROJECT_EMPTY_HINT, projectLayers), "project"));
+    this.scopeChildren.set(globalNode, this.fromViewModels(skillsToViewModels(global, globalDetected, GLOBAL_EMPTY_HINT, globalLayers), "global"));
     return [projectNode, globalNode];
   }
 

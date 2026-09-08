@@ -6,6 +6,7 @@ import test from "node:test";
 import { buildDashboardData } from "../src/dashboard/state.ts";
 import { isWebviewMessage } from "../src/dashboard/protocol.ts";
 import { select, sync } from "../src/services/catalog.ts";
+import { installPacks } from "../src/services/skills.ts";
 import { makeCatalogFixture, testEnv } from "./helpers.ts";
 
 test("buildDashboardData includes all sections on fresh project", async () => {
@@ -92,6 +93,26 @@ test("skillsHealth reports untracked on-disk skills when no install metadata", a
     assert.equal(data.skillsHealth[0].details, "2 个 Skill 未托管");
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("skillsHealth splits shared targets into four equal per-agent rows", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
+  try {
+    const catalogDir = path.join(root, "catalog");
+    const project = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(project, { recursive: true });
+    await makeCatalogFixture(catalogDir);
+    await select(catalogDir, env);
+    await installPacks("project", ["common"], project, env); // alpha 装入两个 target
+    const data = await buildDashboardData(project, env);
+    // Claude Code 与 Codex / OpenCode / universal agents 平级分行，不再合并成两行
+    assert.deepEqual(data.skillsHealth.map((r) => r.label), ["Claude Code", "Codex", "OpenCode", "universal agents"]);
+    assert.ok(data.skillsHealth.every((r) => r.ok));
+    assert.ok(data.skillsHealth.every((r) => r.details === "1/1"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

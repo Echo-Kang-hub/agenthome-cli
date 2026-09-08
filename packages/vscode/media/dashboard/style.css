@@ -17,8 +17,11 @@ body {
   max-width: 100%;
 }
 
+/* 等宽终端：所有字号角色共用编辑器等宽字体，角色差异靠权重 + ANSI 色（h1 品牌绿、h2 注释灰、
+   value 常规、meta 黄色）。区块标题不做 ALL-CAPS 徽标（AI 设计默认款）——终端注释「# 区块名」
+   更贴近本工具素材，且普通大小写对中文可读性更好。 */
 h1 { font-size: 1rem; font-weight: 700; margin: 0; letter-spacing: 0.18em; color: var(--vscode-terminal-ansiGreen, var(--vscode-foreground)); }
-h2 { font-size: 0.72rem; font-weight: 600; margin: 0; text-transform: uppercase; letter-spacing: 0.16em; color: var(--vscode-descriptionForeground); }
+h2 { font-size: 0.72rem; font-weight: 600; margin: 0; letter-spacing: 0.02em; color: var(--vscode-descriptionForeground); }
 h3 { font-size: 0.78rem; font-weight: 600; margin: 0; }
 p { margin: 0; }
 
@@ -50,6 +53,10 @@ p { margin: 0; }
 
 .spin { animation: spin 1.2s steps(8) infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* 动效克制：唯一常态动画是光标闪烁；用户系统请求减少动态时全部停用 */
+@media (prefers-reduced-motion: reduce) {
+  .spin, .cursor, .loading-dots::after { animation: none !important; }
+}
 
 /* ---------- 顶栏：AVENIC 提示符 + 闪烁光标 ---------- */
 .topbar {
@@ -127,9 +134,12 @@ p { margin: 0; }
   margin: 0 0 0.4rem;
   font-size: 0.72rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
   color: var(--vscode-terminal-ansiGreen, var(--vscode-descriptionForeground));
+}
+/* 终端注释标记「# 区块名」：结构与内容同源（配置/脚本里的注释行即如此），替代 ALL-CAPS 徽标 */
+.block-title::before {
+  content: "# ";
+  color: var(--vscode-descriptionForeground);
 }
 .block-title .icon { width: 13px; height: 13px; background-size: 13px; }
 .count {
@@ -184,13 +194,16 @@ p { margin: 0; }
   white-space: nowrap;
 }
 
-/* ---------- 快捷操作：终端按钮（方角、边框字色） ---------- */
-.action-grid { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+/* ---------- 快捷操作：终端按钮（方角、边框字色） ----------
+   gap 保证按钮之间明显缝隙（包裹换行时同样成立）；文字与图标在按钮内水平居中
+   （justify-content: center —— 此前缺失导致内容左偏）。 */
+.action-grid { display: flex; flex-wrap: wrap; gap: 0.55rem 0.6rem; }
 .button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;   /* 按钮内文字居中 */
   gap: 0.35rem;
-  padding: 0.28rem 0.6rem;
+  padding: 0.3rem 0.7rem;
   border: 1px solid var(--vscode-button-secondaryBackground, var(--vscode-widget-border));
   border-radius: 2px;
   background: none;
@@ -198,6 +211,7 @@ p { margin: 0; }
   font-family: inherit;
   font-size: 0.8rem;
   cursor: pointer;
+  flex: 0 0 auto;            /* 按钮按内容宽排布，不拉伸；缝隙由 grid gap 承担 */
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -206,6 +220,8 @@ p { margin: 0; }
 .button:hover:not(:disabled) { border-color: var(--vscode-terminal-ansiGreen, var(--vscode-focusBorder)); color: var(--vscode-terminal-ansiGreen, var(--vscode-foreground)); }
 .button:disabled { opacity: 0.45; cursor: default; }
 .button .icon { width: 12px; height: 12px; background-size: 12px; }
+/* 键盘可达性底线：焦点环可见，不破坏极客观感 */
+.button:focus-visible, .icon-button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
 
 /* ---------- loading / error 状态 ---------- */
 .state {
