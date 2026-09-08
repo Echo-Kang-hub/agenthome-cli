@@ -29,15 +29,17 @@ export class CatalogViewProvider implements vscode.TreeDataProvider<vscode.TreeI
         return item;
       });
     }
-    const spec = (element as vscode.TreeItem & { catalogSpec?: string }).catalogSpec;
-    if (spec !== undefined) {
-      const children = await this.packChildren(spec);
-      this.scopeChildren.set(element, children);
-      return children;
-    }
+    // 判定顺序关键：pack 行同时挂 packId/packSpec，条目行只挂 catalogSpec——先判 packId
+    // 再判 catalogSpec（旧版两属性都叫 catalogSpec 导致 pack 行误重列出 packs，子树无限嵌套）
     const packId = (element as vscode.TreeItem & { packId?: string }).packId;
     if (packId !== undefined) {
       const children = this.skillChildren(element, packId);
+      this.scopeChildren.set(element, children);
+      return children;
+    }
+    const spec = (element as vscode.TreeItem & { catalogSpec?: string }).catalogSpec;
+    if (spec !== undefined) {
+      const children = await this.packChildren(spec);
       this.scopeChildren.set(element, children);
       return children;
     }
@@ -52,10 +54,11 @@ export class CatalogViewProvider implements vscode.TreeDataProvider<vscode.TreeI
     }
     return catalogPacksToViewModels([...packs.values()]).map((model) => {
       const item = this.row(model);
-      const stamped = item as vscode.TreeItem & { packId?: string; skillNames?: string[]; catalogSpec?: string };
+      // pack 行挂 packId（展开判名字段）+ packSpec（安装命令校验用），绝不复用条目行的 catalogSpec
+      const stamped = item as vscode.TreeItem & { packId?: string; skillNames?: string[]; packSpec?: string };
       stamped.packId = model.id!;
       stamped.skillNames = [...new Set(packs.get(model.id!)!.sources.flatMap((s) => s.skills))];
-      stamped.catalogSpec = spec; // 安装命令校验：仅默认 Catalog 的 Pack 可直接安装
+      stamped.packSpec = spec; // 安装命令校验：仅默认 Catalog 的 Pack 可直接安装
       return item;
     });
   }

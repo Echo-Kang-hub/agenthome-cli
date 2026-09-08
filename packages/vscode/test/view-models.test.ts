@@ -50,8 +50,11 @@ test("skills empty-state copy is scope-aware", () => {
 
 test("skills status maps to grouped items", () => {
   const items = skillsToViewModels({ groups: [], names: ["pack-a"], packs: [{ id: "pack-a", name: "Pack A" }], targets: [] });
-  assert.ok(items.length >= 1); // 分组（Installed Packs / Catalog Packs / Direct Skills）
+  assert.ok(items.length >= 1); // 分组（Installed Packs / Catalog Packs / 完整性）
   assert.equal(items[0].item.kind, "group");
+  // Installed Packs 组可展开：每行一个 Skill（含托管来源），用户能直接看到装了什么
+  assert.deepEqual(items[0].children?.map((c) => c.label), ["pack-a"]);
+  assert.equal(items[0].children?.[0].kind, "skill");
 });
 
 test("skills null with untracked on-disk skills shows detected group (children) above the empty hint", () => {

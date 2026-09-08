@@ -69,11 +69,13 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
   // core 按默认 Catalog spec 解析 Pack → 非默认 Catalog 的 Pack 必须先选中；作用域经交互选择。
   register("avenic.catalog.installPack", async (arg?: unknown) => {
     if (busy()) return;
-    const { packId, catalogSpec } = (arg ?? {}) as { packId?: string; catalogSpec?: string };
+    // packSpec 与 catalogSpec 均可能承载来源 spec（provider 挂 packSpec；兼容早期命名）
+    const { packId, catalogSpec, packSpec } = (arg ?? {}) as { packId?: string; catalogSpec?: string; packSpec?: string };
     if (packId === undefined) { await vscode.window.showWarningMessage("请在 Catalog 树中右键 Pack 行安装"); return; }
     const current = await catalog.defaultSpec();
     if (current === null) { await vscode.window.showWarningMessage("尚未选择默认 Catalog，请先执行 Avenic: Catalog 添加"); return; }
-    if (catalogSpec !== undefined && catalogSpec !== current) {
+    const sourceSpec = catalogSpec ?? packSpec;
+    if (sourceSpec !== undefined && sourceSpec !== current) {
       await vscode.window.showWarningMessage("该 Pack 属于非默认 Catalog，先执行 Avenic: Catalog 选择再安装"); return;
     }
     const scope = await pickScope();

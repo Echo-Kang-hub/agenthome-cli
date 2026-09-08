@@ -73,7 +73,11 @@ export function skillsToViewModels(status: InstallStatus | null, detected: strin
   }
   const complete = status.targets.filter((t) => t.complete).length;
   groups.push(
-    { item: { kind: "group", label: "Installed Packs", description: status.names.length > 0 ? status.names.join(", ") : "无", iconHint: "package" } },
+    {
+      item: { kind: "group", label: "Installed Packs", description: `${status.names.length} 个 Skill / ${status.packs.length} 个 Pack`, iconHint: "package" },
+      // 每行一个 Skill：含托管（adopted）与 Pack 安装来源，点击行无操作仅展示（查看入口）
+      children: status.names.map((name) => ({ kind: "skill", label: name, description: "已安装", iconHint: "file" })),
+    },
     { item: { kind: "group", label: "Catalog Packs", description: `${status.packs.length} 个 Pack / ${status.groups.length} 个分组`, iconHint: "repo" } },
     { item: { kind: "group", label: "完整性", description: `${complete}/${status.targets.length} 个 target 完成`, iconHint: "verify" } },
   );
