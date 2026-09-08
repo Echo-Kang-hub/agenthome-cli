@@ -22,8 +22,8 @@ export function catalogToViewModels(defaultSpec: string | null, known: KnownCata
   return first.concat(known.filter((k) => k.spec !== defaultSpec).map((k) => ({ kind: "entry", label: k.spec, description: k.name })));
 }
 
-// Catalog 树子级行：pack（可展开）/ skill / hint（未缓存提示）
-export interface CatalogChildItem { kind: "pack" | "skill" | "hint"; label: string; description: string; iconHint: string; id?: string; }
+// Catalog 树子级行：pack（可展开）/ source（分组，可再展开）/ skill / hint（未缓存提示）
+export interface CatalogChildItem { kind: "pack" | "source" | "skill" | "hint"; label: string; description: string; iconHint: string; id?: string; }
 
 export function catalogPacksToViewModels(packs: Pack[]): CatalogChildItem[] {
   return [...packs].sort((a, b) => a.id.localeCompare(b.id)).map((pack) => ({
@@ -35,7 +35,19 @@ export function catalogPacksToViewModels(packs: Pack[]): CatalogChildItem[] {
   }));
 }
 
-// Pack → Skill 行：保持 pack.sources 顺序，同名 Skill 只出现一次，描述标来源 source id
+// Pack 的源码分组行（层次来自 packStructure 的 resolvePack 结果）：保持 pack.sources 顺序，
+// 每来源一行（label 用来源 name，缺省回退 id），描述为该来源下的 Skill 数。
+export interface CatalogSourceGroupModel { label: string; description: string; sourceId: string; skills: string[]; }
+export function catalogSourceGroupsToViewModels(structure: { groups: Array<{ source: { id: string; name?: string }; skills: Array<{ name: string }> }> }): CatalogSourceGroupModel[] {
+  return structure.groups.map((group) => ({
+    label: group.source.name ?? group.source.id,
+    description: `${group.skills.length} 个 Skill`,
+    sourceId: group.source.id,
+    skills: group.skills.map((skill) => skill.name),
+  }));
+}
+
+// Pack → Skill 行（离线/无层次时的扁平回退）：保持 pack.sources 顺序，同名 Skill 只出现一次
 export function catalogPackSkillsToViewModels(pack: Pack): CatalogChildItem[] {
   const seen = new Set<string>();
   return pack.sources.flatMap((source) =>
@@ -45,8 +57,15 @@ export function catalogPackSkillsToViewModels(pack: Pack): CatalogChildItem[] {
   );
 }
 
-export interface SkillsViewItem { kind: "group" | "pack" | "skill" | "direct" | "detected"; label: string; description: string; iconHint: string; }
-// 树形分组：item 为主行，children 为可展开的子行（当前仅"未托管检测"组使用）
+export interface SkillsViewItem {
+  kind: "group" | "pack" | "source" | "skill" | "direct" | "adopted" | "detected";
+  label: string;
+  description: string;
+  iconHint: string;
+  // 子行（递归）：source 行 → 该来源的 Skill 行；detected/adopted 行无子级（叶子带命令键位）
+  children?: SkillsViewItem[];
+}
+// 树形分组：item 为主行，children 为可展开的子行
 export interface SkillsViewGroup { item: SkillsViewItem; children?: SkillsViewItem[]; }
 // 空态提示按作用域区分：项目组保留项目味提示；全局组不得含项目根引用（零工作区窗口也成立）
 export const PROJECT_EMPTY_HINT = "打开一个新项目根后安装 Pack";
@@ -72,11 +91,32 @@ export function skillsToViewModels(status: InstallStatus | null, detected: strin
     return groups;
   }
   const complete = status.targets.filter((t) => t.complete).length;
+  // Installed Packs 子级按来源分组（层次：Pack → source → Skill，来源名直接可见）；
+  // 不在任何 source 分组内、仅由"托管"记录的 Skill（旧版包残留）缀为 adopted 行——
+  // 这些正是「识别为 Pack 接管」的候选（行级键位 avenic.skills.adoptPack）。
+  const covered = new Set<string>();
+  const sourceRows = status.groups.map((group) => {
+    group.skills.forEach((skill) => covered.add(skill.name));
+    return {
+      kind: "source" as const,
+      label: group.source.name ?? group.source.id,
+      description: `${group.skills.length} 个 Skill`,
+      iconHint: "repo" as const,
+      children: group.skills.map((skill) => ({
+        kind: "skill" as const,
+        label: skill.name,
+        description: group.source.id,
+        iconHint: "file" as const,
+      })),
+    };
+  });
+  const adoptedRows = status.names
+    .filter((name) => !covered.has(name))
+    .map((name) => ({ kind: "adopted" as const, label: name, description: "已托管 · 无 Pack 记录", iconHint: "file" as const }));
   groups.push(
     {
       item: { kind: "group", label: "Installed Packs", description: `${status.names.length} 个 Skill / ${status.packs.length} 个 Pack`, iconHint: "package" },
-      // 每行一个 Skill：含托管（adopted）与 Pack 安装来源，点击行无操作仅展示（查看入口）
-      children: status.names.map((name) => ({ kind: "skill", label: name, description: "已安装", iconHint: "file" })),
+      children: [...sourceRows, ...adoptedRows],
     },
     { item: { kind: "group", label: "Catalog Packs", description: `${status.packs.length} 个 Pack / ${status.groups.length} 个分组`, iconHint: "repo" } },
     { item: { kind: "group", label: "完整性", description: `${complete}/${status.targets.length} 个 target 完成`, iconHint: "verify" } },

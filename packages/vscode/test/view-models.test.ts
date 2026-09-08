@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { agentsToViewModels, catalogPackSkillsToViewModels, catalogPacksToViewModels, catalogToViewModels, GLOBAL_EMPTY_HINT, PROJECT_EMPTY_HINT, skillsToViewModels } from "../src/views/view-models.ts";
+import { agentsToViewModels, catalogPackSkillsToViewModels, catalogPacksToViewModels, catalogSourceGroupsToViewModels, catalogToViewModels, GLOBAL_EMPTY_HINT, PROJECT_EMPTY_HINT, skillsToViewModels } from "../src/views/view-models.ts";
 
 test("uninitialized agent renders as 未初始化", () => {
   const items = agentsToViewModels([{ agent: { id: "claude", displayName: "Claude Code", executable: "claude" }, executableAvailable: true, effective: null }]);
@@ -52,9 +52,37 @@ test("skills status maps to grouped items", () => {
   const items = skillsToViewModels({ groups: [], names: ["pack-a"], packs: [{ id: "pack-a", name: "Pack A" }], targets: [] });
   assert.ok(items.length >= 1); // 分组（Installed Packs / Catalog Packs / 完整性）
   assert.equal(items[0].item.kind, "group");
-  // Installed Packs 组可展开：每行一个 Skill（含托管来源），用户能直接看到装了什么
+  // Installed Packs 组可展开：无 source 分组兜底时，仅托管记录的行按 adopted 呈现（可识别为 Pack）
   assert.deepEqual(items[0].children?.map((c) => c.label), ["pack-a"]);
-  assert.equal(items[0].children?.[0].kind, "skill");
+  assert.equal(items[0].children?.[0].kind, "adopted");
+});
+
+test("installed packs children layer by source group (Pack → source → skill)", () => {
+  const group = (id: string, name: string, skills: string[]) => {
+    const source = { id, name, repository: `https://github.com/${id}`, revision: "a".repeat(40) };
+    return { source, skills: skills.map((skill) => ({ name: skill, directory: skill, source })) };
+  };
+  const items = skillsToViewModels({
+    groups: [
+      group("superpowers", "Superpowers", ["writing-plans", "debugging"]),
+      group("anthropic", "Anthropic", ["docx"]),
+    ],
+    names: ["writing-plans", "debugging", "docx", "legacy-one"],
+    packs: [{ id: "development", name: "Development" }],
+    targets: [],
+  });
+  const children = items[0].children!;
+  // 两个 source 分组行 + 一个 adopted 兜底行
+  assert.deepEqual(children.map((c) => c.kind), ["source", "source", "adopted"]);
+  assert.equal(children[0].label, "Superpowers");
+  assert.equal(children[0].description, "2 个 Skill");
+  assert.deepEqual(children[0].children?.map((s) => s.label), ["writing-plans", "debugging"]);
+  assert.equal(children[0].children?.[1].kind, "skill");
+  assert.equal(children[2].label, "legacy-one");
+  assert.equal(children[2].kind, "adopted");
+  // Catalog Packs 与完整性分组保持为纯信息行
+  assert.equal(items[1].item.label, "Catalog Packs");
+  assert.equal(items[2].item.label, "完整性");
 });
 
 test("skills null with untracked on-disk skills shows detected group (children) above the empty hint", () => {
@@ -104,4 +132,18 @@ test("catalog pack expands to deduped skill rows keeping source order", () => {
   assert.deepEqual(rows.map((r) => r.label), ["alpha", "beta", "gamma"]); // 同名 beta 只出现一次
   assert.equal(rows[2].description, "other"); // 描述标来源 source id
   assert.ok(rows.every((r) => r.kind === "skill"));
+});
+
+test("catalog source groups map to layered rows preserving pack.sources order", () => {
+  const rows = catalogSourceGroupsToViewModels({
+    groups: [
+      { source: { id: "superpowers", name: "Superpowers" }, skills: [{ name: "writing-plans" }, { name: "debugging" }] },
+      { source: { id: "othmanadi", name: "Othmanadi" }, skills: [{ name: "planning" }] },
+    ],
+  });
+  assert.deepEqual(rows.map((r) => [r.label, r.skills]), [
+    ["Superpowers", ["writing-plans", "debugging"]],
+    ["Othmanadi", ["planning"]],
+  ]);
+  assert.equal(rows[0].description, "2 个 Skill");
 });

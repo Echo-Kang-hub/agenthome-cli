@@ -1,11 +1,11 @@
 import { agentExecutableAvailable, agentStatus, listAgents } from "../services/agents.ts";
-import { defaultSpec, pinnedRevision } from "../services/catalog.ts";
+import { cachedRevision, defaultSpec } from "../services/catalog.ts";
 import { detected as detectedSkillNames, status as skillsStatus } from "../services/skills.ts";
 import type { DashboardData } from "./protocol.ts";
 
 // 纯数据组装（无 vscode import）：所有可执行/网络/状态读取都走 services 层 + 注入的 environment，
-// 使测试可以经 testEnv 隔离宿主配置；revision 读缓存的锁定值（reads the pinned revision via core，
-// 集成 testEnv + 本地 fixture 验证），任何读取错误降级为 "—"。
+// 使测试可以经 testEnv 隔离宿主配置；revision 只读本地缓存（cachedRevision —— 无 git fetch，
+// 修复"每次打开 Overview 都加载很久"），任何读取错误降级为 "—"。
 export async function buildDashboardData(projectRoot: string | null, environment: NodeJS.ProcessEnv = process.env): Promise<DashboardData> {
   if (projectRoot === null) {
     return {
@@ -42,7 +42,7 @@ export async function buildDashboardData(projectRoot: string | null, environment
   return {
     projectRoot,
     agents,
-    catalog: spec === null ? null : { spec, revision: (await pinnedRevision(projectRoot, environment)) ?? "—" },
+    catalog: spec === null ? null : { spec, revision: (await cachedRevision(projectRoot, environment)) ?? "—" },
     skillsHealth: skills === null
       ? [untracked.length > 0 ? untrackedRow : { label: "Skills", ok: false, details: "尚未安装" }]
       : skills.targets.map((t) => ({ label: t.label, ok: t.complete, details: `${t.present}/${t.total}` })).concat(untracked.length > 0 ? [untrackedRow] : []),

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { catalogCacheRoot, defaultCatalogFile, ensureCatalog, loadDefaultCatalogSpec, loadKnownCatalogs, loadPacks, parseCatalogSpec, registerCatalog, repositoryIdentity, resolveInstallSource, setDefaultCatalogSpec } from "@avenic/core";
-import type { CatalogInfo, KnownCatalogEntry, Pack, ProcessEnvLike } from "@avenic/core";
+import { buildCatalog, catalogCacheRoot, currentRepositoryState, defaultCatalogFile, ensureCatalog, loadDefaultCatalogSpec, loadKnownCatalogs, loadPacks, loadSources, parseCatalogSpec, registerCatalog, repositoryIdentity, resolvePack, setDefaultCatalogSpec } from "@avenic/core";
+import type { CatalogInfo, KnownCatalogEntry, Pack, ProcessEnvLike, Source } from "@avenic/core";
 
 export async function defaultSpec(environment = process.env): Promise<string | null> {
   const explicitEnvSpec = environment.AVENIC_CATALOG_SPEC || environment.AGENTHOME_CATALOG_SPEC;
@@ -28,15 +28,23 @@ export function sync(spec: string, environment = process.env): Promise<CatalogIn
   return ensureCatalog(spec, { environment });
 }
 
-// 读取当前锁定的 catalog revision（Dashboard「修订」）：refresh:false 走项目 lock 的 pinned spec，
-// 不绕过 pin 去拉最新；任何错误（未配置/无缓存/解析失败）返回 null，调用方降级为「—」占位符。
-export function pinnedRevision(cwd: string, environment: ProcessEnvLike = process.env): Promise<string | null> {
-  return resolveInstallSource({ global: false, cwd, environment }, { refresh: false })
-    .then((info) => info.revision)
-    .catch(() => null);
+// 读取「本地缓存 Catalog」的修订（Overview「修订」行）：零网络——只读缓存目录的 git
+// HEAD（git rev-parse/status），绝不做 fetch/clone。缓存缺失（未同步过）返回 null，
+// 调用方降级为「—」占位符。旧实现走 resolveInstallSource → ensureCatalog，每次加载
+// 都 git fetch --depth 1，是 Overview「每次打开加载很久」的根因。
+export async function cachedRevision(_cwd: string, environment: ProcessEnvLike = process.env): Promise<string | null> {
+  try {
+    const spec = await loadDefaultCatalogSpec(environment);
+    const root = catalogCacheDirectory(spec, environment);
+    if (!existsSync(root)) return null;
+    const state = currentRepositoryState(root);
+    return state.revision ?? null;
+  } catch {
+    return null;
+  }
 }
 
-// core skill/catalog.mjs cacheDirectory 的算法镜像（cacheDirectory 非导出）：slug 规则与
+// core catalog.mjs cacheDirectory 的算法镜像（cacheDirectory 非导出）：slug 规则与
 // repositoryIdentity 完全一致，仅借用公开的 catalogCacheRoot/repositoryIdentity，不改 core。
 function catalogCacheDirectory(spec: string, environment: ProcessEnvLike): string {
   const { repository } = parseCatalogSpec(spec);
@@ -50,17 +58,50 @@ function catalogCacheDirectory(spec: string, environment: ProcessEnvLike): strin
   return path.join(catalogCacheRoot(environment), slug);
 }
 
-// Catalog 树的只读预览：优先读本地缓存（无网络，离线/国内直连可用）；缓存缺失时才经
-// ensureCatalog（git fetch）——语义等同「展开即同步一次」。装好后返回 Pack 映射，失败返回 null。
-export async function packsFor(spec: string, environment = process.env): Promise<Map<string, Pack> | null> {
-  const cached = path.join(catalogCacheDirectory(spec, environment), "packs");
-  if (existsSync(cached)) {
-    try { return await loadPacks(catalogCacheDirectory(spec, environment)); }
-    catch { /* 缓存损坏 → 走同步路径重试 */ }
-  }
+// Catalog 树只读预览的缓存根优先路径：已缓存（packs 目录存在）直接返回缓存目录；
+// 否则经 ensureCatalog（git fetch）取最新——语义等同「展开即同步一次」。任何错误返回 null。
+async function catalogRootFor(spec: string, environment: ProcessEnvLike): Promise<string | null> {
+  const cached = catalogCacheDirectory(spec, environment);
+  if (existsSync(path.join(cached, "packs"))) return cached;
   try {
     const info = await ensureCatalog(spec, { environment });
-    return await loadPacks(info.catalogRoot);
+    return info.catalogRoot;
+  } catch {
+    return null;
+  }
+}
+
+export async function packsFor(spec: string, environment = process.env): Promise<Map<string, Pack> | null> {
+  const root = await catalogRootFor(spec, environment);
+  if (root === null) return null;
+  try { return await loadPacks(root); }
+  catch { return null; }
+}
+
+// Pack 的源码层次（Cache-first，无网络）：loadSources + buildCatalog + resolvePack，
+// 输出按 pack.sources 顺序的 group（source 元数据 + 该来源下的 Skill 名）。任一环节
+// 失败（离线无缓存、Pack 引用损坏）返回 null，视图回退为扁平 Skill 列表。
+export interface PackStructure {
+  groups: Array<{ source: Source; skills: Array<{ name: string; directory: string }> }>;
+  names: string[];
+}
+export async function packStructure(spec: string, packId: string, environment = process.env): Promise<PackStructure | null> {
+  const root = await catalogRootFor(spec, environment);
+  if (root === null) return null;
+  try {
+    const sourceConfig = await loadSources(root);
+    const catalog = await buildCatalog(sourceConfig, path.join(root, "skills"));
+    const packs = await loadPacks(root);
+    const pack = packs.get(packId);
+    if (pack === undefined) return null;
+    const resolved = resolvePack(catalog, sourceConfig, pack);
+    return {
+      groups: resolved.groups.map((group) => ({
+        source: group.source,
+        skills: group.skills.map((skill) => ({ name: skill.name, directory: skill.directory })),
+      })),
+      names: resolved.names,
+    };
   } catch {
     return null;
   }

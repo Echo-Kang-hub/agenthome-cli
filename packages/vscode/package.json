@@ -3,77 +3,273 @@
   "displayName": "Avenic Agent Manager",
   "description": "管理 Avenic Agent 运行时与 Skills 的图形界面",
   "publisher": "EchoKang",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/Echo-Kang-hub/avenic.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Echo-Kang-hub/avenic.git"
+  },
   "main": "./dist/extension.js",
   "type": "module",
-  "engines": { "vscode": "^1.90.0" },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
   "contributes": {
     "viewsContainers": {
-      "activitybar": [{ "id": "avenic", "title": "Avenic", "icon": "media/icon.svg" }]
+      "activitybar": [
+        {
+          "id": "avenic",
+          "title": "Avenic",
+          "icon": "media/icon.svg"
+        }
+      ]
     },
     "views": {
       "avenic": [
-        { "id": "avenic.agents", "name": "Agents", "contextualTitle": "Avenic · Agents" },
-        { "id": "avenic.catalog", "name": "Catalog", "contextualTitle": "Avenic · Catalog" },
-        { "id": "avenic.skills", "name": "Skills", "contextualTitle": "Avenic · Skills" },
-        { "id": "avenic.overview", "type": "webview", "name": "Overview", "contextualTitle": "Avenic · Overview" }
+        {
+          "id": "avenic.agents",
+          "name": "Agents",
+          "contextualTitle": "Avenic · Agents"
+        },
+        {
+          "id": "avenic.catalog",
+          "name": "Catalog",
+          "contextualTitle": "Avenic · Catalog"
+        },
+        {
+          "id": "avenic.skills",
+          "name": "Skills",
+          "contextualTitle": "Avenic · Skills"
+        },
+        {
+          "id": "avenic.overview",
+          "type": "webview",
+          "name": "Overview",
+          "contextualTitle": "Avenic · Overview"
+        }
       ]
     },
     "commands": [
-      { "command": "avenic.agents.init", "title": "Avenic: 初始化 Agent", "category": "Avenic", "icon": "$(add)" },
-      { "command": "avenic.agents.deinit", "title": "Avenic: 移除 Agent", "category": "Avenic", "icon": "$(trash)" },
-      { "command": "avenic.agents.switchAuth", "title": "Avenic: 切换认证模式", "category": "Avenic" },
-      { "command": "avenic.agents.switchSessions", "title": "Avenic: 切换会话存储", "category": "Avenic" },
-      { "command": "avenic.agents.sessionsImport", "title": "Avenic: 导入会话", "category": "Avenic" },
-      { "command": "avenic.agents.sessionsWriteback", "title": "Avenic: 写回会话", "category": "Avenic" },
-      { "command": "avenic.catalog.add", "title": "Avenic: 添加 Catalog", "category": "Avenic" },
-      { "command": "avenic.catalog.select", "title": "Avenic: 选择 Catalog", "category": "Avenic" },
-      { "command": "avenic.catalog.default", "title": "Avenic: 默认 Catalog", "category": "Avenic" },
-      { "command": "avenic.catalog.sync", "title": "Avenic: 同步 Catalog", "category": "Avenic" },
-      { "command": "avenic.skills.installPacks", "title": "Avenic: 安装 Packs", "category": "Avenic" },
-      { "command": "avenic.skills.uninstallPacks", "title": "Avenic: 卸载 Packs", "category": "Avenic" },
-      { "command": "avenic.skills.addDirect", "title": "Avenic: 添加直装 Skill", "category": "Avenic" },
-      { "command": "avenic.skills.removeDirect", "title": "Avenic: 移除直装 Skill", "category": "Avenic" },
-      { "command": "avenic.skills.directList", "title": "Avenic: 直装 Skills 列表", "category": "Avenic" },
-      { "command": "avenic.skills.adopt", "title": "Avenic: 托管未托管 Skills", "category": "Avenic", "icon": "$(sync)" },
-      { "command": "avenic.catalog.installPack", "title": "Avenic: 安装 Pack", "category": "Avenic", "icon": "$(cloud-download)" }
+      {
+        "command": "avenic.agents.init",
+        "title": "Avenic: 初始化 Agent",
+        "category": "Avenic",
+        "icon": "$(add)"
+      },
+      {
+        "command": "avenic.agents.deinit",
+        "title": "Avenic: 移除 Agent",
+        "category": "Avenic",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "avenic.agents.switchAuth",
+        "title": "Avenic: 切换认证模式",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.agents.switchSessions",
+        "title": "Avenic: 切换会话存储",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.agents.sessionsImport",
+        "title": "Avenic: 导入会话",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.agents.sessionsWriteback",
+        "title": "Avenic: 写回会话",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.catalog.add",
+        "title": "Avenic: 添加 Catalog",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.catalog.select",
+        "title": "Avenic: 选择 Catalog",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.catalog.default",
+        "title": "Avenic: 默认 Catalog",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.catalog.sync",
+        "title": "Avenic: 同步 Catalog",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.skills.installPacks",
+        "title": "Avenic: 安装 Packs",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.skills.uninstallPacks",
+        "title": "Avenic: 卸载 Packs",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.skills.addDirect",
+        "title": "Avenic: 添加直装 Skill",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.skills.removeDirect",
+        "title": "Avenic: 移除直装 Skill",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.skills.directList",
+        "title": "Avenic: 直装 Skills 列表",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.skills.adopt",
+        "title": "Avenic: 托管未托管 Skills",
+        "category": "Avenic",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "avenic.skills.adoptPack",
+        "title": "Avenic: 识别为 Pack 接管",
+        "category": "Avenic",
+        "icon": "$(package)"
+      },
+      {
+        "command": "avenic.catalog.installPack",
+        "title": "Avenic: 安装 Pack",
+        "category": "Avenic",
+        "icon": "$(cloud-download)"
+      }
     ],
     "menus": {
       "view/item/context": [
-        { "command": "avenic.agents.init", "when": "view == avenic.agents && viewItem == agent-inactive", "group": "inline@1" },
-        { "command": "avenic.agents.init", "when": "view == avenic.agents && viewItem == agent-inactive" },
-        { "command": "avenic.agents.deinit", "when": "view == avenic.agents && viewItem == agent", "group": "inline@2" },
-        { "command": "avenic.agents.deinit", "when": "view == avenic.agents && viewItem == agent" },
-        { "command": "avenic.agents.switchAuth", "when": "view == avenic.agents && viewItem == agent" },
-        { "command": "avenic.agents.switchSessions", "when": "view == avenic.agents && viewItem == agent" },
-        { "command": "avenic.agents.sessionsImport", "when": "view == avenic.agents && viewItem == agent" },
-        { "command": "avenic.agents.sessionsWriteback", "when": "view == avenic.agents && viewItem == agent" },
-        { "command": "avenic.skills.installPacks", "when": "view == avenic.skills" },
-        { "command": "avenic.skills.uninstallPacks", "when": "view == avenic.skills" },
-        { "command": "avenic.skills.addDirect", "when": "view == avenic.skills" },
-        { "command": "avenic.skills.removeDirect", "when": "view == avenic.skills" },
-        { "command": "avenic.skills.directList", "when": "view == avenic.skills" },
-        { "command": "avenic.skills.adopt", "when": "view == avenic.skills && viewItem == detected", "group": "inline@1" },
-        { "command": "avenic.skills.adopt", "when": "view == avenic.skills && viewItem == detected" },
-        { "command": "avenic.catalog.installPack", "when": "view == avenic.catalog && viewItem == catalog-pack", "group": "inline@1" },
-        { "command": "avenic.catalog.installPack", "when": "view == avenic.catalog && viewItem == catalog-pack" }
+        {
+          "command": "avenic.agents.init",
+          "when": "view == avenic.agents && viewItem == agent-inactive",
+          "group": "inline@1"
+        },
+        {
+          "command": "avenic.agents.init",
+          "when": "view == avenic.agents && viewItem == agent-inactive"
+        },
+        {
+          "command": "avenic.agents.deinit",
+          "when": "view == avenic.agents && viewItem == agent",
+          "group": "inline@2"
+        },
+        {
+          "command": "avenic.agents.deinit",
+          "when": "view == avenic.agents && viewItem == agent"
+        },
+        {
+          "command": "avenic.agents.switchAuth",
+          "when": "view == avenic.agents && viewItem == agent"
+        },
+        {
+          "command": "avenic.agents.switchSessions",
+          "when": "view == avenic.agents && viewItem == agent"
+        },
+        {
+          "command": "avenic.agents.sessionsImport",
+          "when": "view == avenic.agents && viewItem == agent"
+        },
+        {
+          "command": "avenic.agents.sessionsWriteback",
+          "when": "view == avenic.agents && viewItem == agent"
+        },
+        {
+          "command": "avenic.skills.installPacks",
+          "when": "view == avenic.skills"
+        },
+        {
+          "command": "avenic.skills.uninstallPacks",
+          "when": "view == avenic.skills"
+        },
+        {
+          "command": "avenic.skills.addDirect",
+          "when": "view == avenic.skills"
+        },
+        {
+          "command": "avenic.skills.removeDirect",
+          "when": "view == avenic.skills"
+        },
+        {
+          "command": "avenic.skills.directList",
+          "when": "view == avenic.skills"
+        },
+        {
+          "command": "avenic.skills.adopt",
+          "when": "view == avenic.skills && viewItem == detected",
+          "group": "inline@1"
+        },
+        {
+          "command": "avenic.skills.adopt",
+          "when": "view == avenic.skills && viewItem == detected"
+        },
+        {
+          "command": "avenic.skills.adoptPack",
+          "when": "view == avenic.skills && viewItem == adopted",
+          "group": "inline@1"
+        },
+        {
+          "command": "avenic.skills.adoptPack",
+          "when": "view == avenic.skills && viewItem == adopted"
+        },
+        {
+          "command": "avenic.catalog.installPack",
+          "when": "view == avenic.catalog && viewItem == catalog-pack",
+          "group": "inline@1"
+        },
+        {
+          "command": "avenic.catalog.installPack",
+          "when": "view == avenic.catalog && viewItem == catalog-pack"
+        }
       ],
       "view/title": [
-        { "command": "avenic.catalog.add", "when": "view == avenic.catalog" },
-        { "command": "avenic.catalog.select", "when": "view == avenic.catalog" },
-        { "command": "avenic.catalog.sync", "when": "view == avenic.catalog" },
-        { "command": "avenic.agents.init", "when": "view == avenic.agents" },
-        { "command": "avenic.skills.installPacks", "when": "view == avenic.skills" },
-        { "command": "avenic.skills.addDirect", "when": "view == avenic.skills" }
+        {
+          "command": "avenic.catalog.add",
+          "when": "view == avenic.catalog"
+        },
+        {
+          "command": "avenic.catalog.select",
+          "when": "view == avenic.catalog"
+        },
+        {
+          "command": "avenic.catalog.sync",
+          "when": "view == avenic.catalog"
+        },
+        {
+          "command": "avenic.agents.init",
+          "when": "view == avenic.agents"
+        },
+        {
+          "command": "avenic.skills.installPacks",
+          "when": "view == avenic.skills"
+        },
+        {
+          "command": "avenic.skills.addDirect",
+          "when": "view == avenic.skills"
+        }
       ],
       "commandPalette": [
-        { "command": "avenic.catalog.add" },
-        { "command": "avenic.catalog.select" },
-        { "command": "avenic.catalog.default" },
-        { "command": "avenic.catalog.sync" }
+        {
+          "command": "avenic.catalog.add"
+        },
+        {
+          "command": "avenic.catalog.select"
+        },
+        {
+          "command": "avenic.catalog.default"
+        },
+        {
+          "command": "avenic.catalog.sync"
+        }
       ]
     }
   },
@@ -84,10 +280,10 @@
     "package": "npm run build && vsce package --out dist/avenic-agent-manager.vsix"
   },
   "devDependencies": {
-    "@avenic/core": "^1.0.0",
-    "@vscode/vsce": "^3.0.0",
+    "@avenic/core": "^1.0.3",
     "@types/node": "^18.19.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.21.0",
     "typescript": "^5.5.0"
   }

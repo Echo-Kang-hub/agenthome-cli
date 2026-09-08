@@ -126,9 +126,11 @@ export {
   replaceStagedFiles,
 } from "./skills/vendor.mjs";
 export {
+  adoptPackedSkills,
   adoptSkills,
   createInstallContext,
   detectedSkillNames,
+  planAdoptSkills,
   installCopies,
   installPacks,
   installedPackIds,

@@ -8,7 +8,7 @@ import { isInside, removeEmptyDirectory } from "../util/fs.mjs";
 import { readJson, writeJson } from "../util/json.mjs";
 import { ensureCatalog, loadDefaultCatalogSpec, parseCatalogSpec } from "./catalog.mjs";
 import { assertSafeId, assertSafeSkillName } from "./ids.mjs";
-import { loadPacks, resolvePacks } from "./packs.mjs";
+import { loadPacks, resolvePack, resolvePacks } from "./packs.mjs";
 import { buildCatalog, loadSources } from "./sources.mjs";
 import { normalizePackIds, parsePackArguments } from "./packs.mjs";
 import {
@@ -147,11 +147,15 @@ export async function writeInstallMetadata(context, resolvedPacks, catalogInfo =
   }
 }
 
-export async function installCopies(context, resolvedPacks, io = console) {
+export async function installCopies(context, resolvedPacks, io = console, options = {}) {
   const selectedSkills = resolvedPacks.groups.flatMap((group) => group.skills);
   const selectedNames = new Set(selectedSkills.map((skill) => skill.name));
   const previousState = await previousManagedState(context);
-  const staleNames = [...previousState.keys()].filter((name) => !selectedNames.has(name));
+  // removeStale === false：接管类操作（adoptPackedSkills）不得按上一记录清理——那会误删
+  // 其他来源（旧 Pack/直装）已托管的 Skill；仅覆盖式安装路径才允许陈旧清理。
+  const staleNames = options.removeStale === false
+    ? []
+    : [...previousState.keys()].filter((name) => !selectedNames.has(name));
   for (const targetConfig of context.targets) {
     const destination = targetConfig.destination;
     await mkdir(destination, { recursive: true });
@@ -285,6 +289,107 @@ export async function adoptSkills(context, skillNames) {
   const adopted = [...new Set([...(lock.adopted ?? []), ...names])];
   await writeJson(lockPath, { ...lock, adopted });
   return { adopted: names, placed };
+}
+
+// Read-only plan for pack-aware adoption: for every Pack in the default
+// catalog, how well does its skill set cover the on-disk names? coverage =
+// matched / onDiskCount. The best candidate is returned for the caller to
+// gate (≥ 0.8) and interact with; the mutation always happens afterwards via
+// adoptPackedSkills (full) or adoptSkills (plain). Catalog errors degrade to
+// an empty plan — plain adoption remains available.
+export async function planAdoptSkills(context, skillNames) {
+  const names = [...new Set(skillNames)];
+  names.forEach(assertSafeSkillName);
+  if (names.length === 0) return { candidates: [], best: null };
+  try {
+    const info = await resolveInstallSource({
+      global: context.global,
+      cwd: context.root,
+      environment: context.environment,
+      io: { log: () => {} },
+    });
+    const sourceConfig = await loadSources(info.catalogRoot);
+    const catalog = await buildCatalog(sourceConfig, path.join(info.catalogRoot, "skills"));
+    const packs = await loadPacks(info.catalogRoot);
+    const candidates = [...packs.values()].map((pack) => {
+      const packNames = pack.sources.flatMap((source) => source.skills);
+      const matched = names.filter((name) => packNames.includes(name));
+      return {
+        packId: pack.id,
+        packName: pack.name,
+        coverage: names.length === 0 ? 0 : matched.length / names.length,
+        matched,
+        missing: [...new Set(packNames)].filter((name) => !names.includes(name)).length,
+      };
+    }).filter((candidate) => candidate.coverage > 0);
+    candidates.sort((a, b) => b.coverage - a.coverage || a.packId.localeCompare(b.packId));
+    return { candidates, best: candidates[0] ?? null };
+  } catch {
+    return { candidates: [], best: null };
+  }
+}
+
+// Pack-aware adoption: verify the caller's chosen Pack covers the on-disk
+// names, then install every Pack skill into each target (existing dirs are
+// the source of truth — never overwritten; missing skills are filled from
+// the catalog cache) and write the full config/lock metadata (packs +
+// sources + catalog revision). Stale cleanup is disabled: adoption must not
+// remove skills recorded by other sources.
+export async function adoptPackedSkills(context, skillNames, packId, options = {}) {
+  const io = options.io ?? console;
+  const names = [...new Set(skillNames)];
+  names.forEach(assertSafeSkillName);
+  if (names.length === 0) return { packId, names: [] };
+  const previousConfig = existsSync(context.configFile) ? await readJson(context.configFile) : {};
+  const previousLock = existsSync(context.lockFile) ? await readJson(context.lockFile) : {};
+  const info = await resolveInstallSource({
+    global: context.global,
+    cwd: context.root,
+    environment: context.environment,
+    io,
+  });
+  const sourceConfig = await loadSources(info.catalogRoot);
+  const catalog = await buildCatalog(sourceConfig, path.join(info.catalogRoot, "skills"));
+  const packs = await loadPacks(info.catalogRoot);
+  const pack = packs.get(packId);
+  if (!pack) {
+    fail(`Unknown Pack: ${packId}`);
+  }
+  // 注意：不用 resolvePacks——它会经 normalizePackIds 无条件注入 common，导致
+  // 非 common 任务被误并入；接管语义要求精确针对所选 Pack（与 on-disk 旧装一致）。
+  const resolvedPacks = { ...resolvePack(catalog, sourceConfig, pack), packs: [pack] };
+  const unknown = names.filter((name) => !resolvedPacks.names.includes(name));
+  if (unknown.length > 0) {
+    fail(`Pack ${packId} does not include on-disk skill: ${unknown.join(", ")}`);
+  }
+  await installCopies(context, resolvedPacks, io, { removeStale: false });
+  await writeInstallMetadata(context, resolvedPacks, info);
+  // 合并先前的托管记录（config.packs / lock.sources）：先装的 Pack 记录不被覆盖——
+  // 同 source id 的 skills 并集（alpha 在 common、beta/gamma 在 development 时并存）。
+  await mergePreviousInstallRecords(context, previousConfig, previousLock);
+  return { packId, names: resolvedPacks.names, matched: names };
+}
+
+async function mergePreviousInstallRecords(context, previousConfig, previousLock) {
+  const config = existsSync(context.configFile) ? await readJson(context.configFile) : {};
+  const lock = existsSync(context.lockFile) ? await readJson(context.lockFile) : {};
+  const packs = [...new Set([...(previousConfig.packs ?? []), ...(config.packs ?? [])])];
+  const sourceById = new Map();
+  for (const source of [...(previousLock.sources ?? []), ...(lock.sources ?? [])]) {
+    const existing = sourceById.get(source.id);
+    sourceById.set(
+      source.id,
+      existing
+        ? { ...source, skills: [...new Set([...(existing.skills ?? []), ...(source.skills ?? [])])] }
+        : { ...source, skills: [...new Set(source.skills ?? [])] },
+    );
+  }
+  const lockPackById = new Map();
+  for (const pack of [...(previousLock.packs ?? []), ...(lock.packs ?? [])]) {
+    lockPackById.set(pack.id, pack);
+  }
+  await writeJson(context.configFile, { ...config, packs });
+  await writeJson(context.lockFile, { ...lock, packs: [...lockPackById.values()], sources: [...sourceById.values()] });
 }
 
 // Read-only scan of the target directories this context writes to: the

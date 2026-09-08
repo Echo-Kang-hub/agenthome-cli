@@ -71,7 +71,12 @@ function renderError(message) {
 
 function topbar() {
   const bar = el("header", undefined, "topbar");
-  bar.append(el("h1", "Avenic"));
+  const brand = el("div", undefined, "brand");
+  brand.append(el("h1", "AVENIC"));
+  const cursor = el("span", undefined, "cursor");
+  cursor.setAttribute("aria-hidden", "true");
+  brand.append(cursor);
+  bar.append(brand);
   const refresh = el("button", undefined, "icon-button");
   refresh.setAttribute("title", "刷新");
   refresh.setAttribute("aria-label", "刷新");
@@ -79,6 +84,13 @@ function topbar() {
   refresh.addEventListener("click", () => vscode.postMessage({ type: "refresh" }));
   bar.append(refresh);
   return bar;
+}
+
+/** 终端提示符行：$ avenic status（文本安全，仅 textContent 组装）。 */
+function promptLine() {
+  const line = el("p", undefined, "prompt-line");
+  line.append(el("span", "$ ", "dollar"), el("span", "avenic status", "cmd"));
+  return line;
 }
 
 /** 顶部信息卡片（项目 / Catalog），空态友好：null 值渲染占位文本 + 提示行。 */
@@ -129,7 +141,8 @@ function skillsBlock(rows) {
   } else {
     for (const s of rows) {
       const row = el("div", undefined, "skill-row");
-      row.append(icon(s.ok ? "check" : "error"));
+      // 终端标记 [✓]/[✗]：颜色走 terminal-ansi 变量，仅 textContent 渲染
+      row.append(el("span", s.ok ? "[OK]" : "[!!]", "mark " + (s.ok ? "ok" : "bad")));
       row.append(el("span", s.label, "skill-label"));
       row.append(el("span", s.details, "skill-details"));
       list.append(row);
@@ -159,7 +172,7 @@ function actionsBlock(projectOpen) {
 }
 
 function renderData(data) {
-  const pages = [topbar()];
+  const pages = [topbar(), promptLine()];
 
   // 顶部状态行：项目 + Catalog（未打开项目 → “未打开项目”+ 提示；未选 Catalog → 同理）
   const grid = el("section", undefined, "status-grid");

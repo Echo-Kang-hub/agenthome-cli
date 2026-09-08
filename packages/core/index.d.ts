@@ -182,7 +182,7 @@ export function repositoryIdentity(repository: string): string;
 export function remoteHead(source: Source): string;
 export function cloneHead(source: { repository: string }, directory: string): Promise<string>;
 export function cloneRevision(source: Source, directory: string): Promise<string>;
-export function currentRepositoryState(catalogRoot: string): Promise<unknown>;
+export function currentRepositoryState(catalogRoot: string): { repository: string | null; revision: string | null; dirty: boolean | null };
 
 export interface KnownCatalogEntry {
   name: string;
@@ -314,6 +314,23 @@ export interface InstallStatus {
 export function skillsInstallationStatus(context: InstallContext): Promise<InstallStatus | null>;
 export function detectedSkillNames(context: InstallContext): Promise<string[]>;
 export function adoptSkills(context: InstallContext, skillNames: string[]): Promise<{ adopted: string[]; placed: number }>;
+
+export interface AdoptPackCandidate {
+  packId: string;
+  packName: string;
+  coverage: number;
+  matched: string[];
+  missing: number;
+}
+export function planAdoptSkills(
+  context: InstallContext,
+  skillNames: string[],
+): Promise<{ candidates: AdoptPackCandidate[]; best: AdoptPackCandidate | null }>;
+export function adoptPackedSkills(
+  context: InstallContext,
+  skillNames: string[],
+  packId: string,
+): Promise<{ packId: string; names: string[]; matched: string[] }>;
 
 export interface DirectSourceState {
   directSources: Array<Source & { skills: string[] }>;

@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { select } from "../src/services/catalog.ts";
-import { adopt, addDirect, detected, directSkills, installedPackIds, installPacks, removeDirect, status, uninstallPacks } from "../src/services/skills.ts";
+import { adopt, addDirect, adoptedOnlyNames, adoptPacked, detected, directSkills, installedPackIds, installPacks, planAdopt, removeDirect, status, uninstallPacks } from "../src/services/skills.ts";
 import { makeCatalogFixture, testEnv } from "./helpers.ts";
 
 test("pack install → status → uninstall round-trip in project scope", async () => {
@@ -80,17 +80,17 @@ test("global scope is env-state-isolated and read-only safe", async () => {
   }
 });
 
-test("manifest registers the six skills command ids with skills-tree context menus", async () => {
+test("manifest registers the seven skills command ids with skills-tree context menus", async () => {
   const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const manifest = JSON.parse(await readFile(path.join(pkgDir, "package.json"), "utf8"));
   const ids = manifest.contributes?.commands ?? [];
-  const ids6 = ["avenic.skills.installPacks", "avenic.skills.uninstallPacks", "avenic.skills.addDirect", "avenic.skills.removeDirect", "avenic.skills.directList", "avenic.skills.adopt"];
-  for (const id of ids6) {
+  const ids7 = ["avenic.skills.installPacks", "avenic.skills.uninstallPacks", "avenic.skills.addDirect", "avenic.skills.removeDirect", "avenic.skills.directList", "avenic.skills.adopt", "avenic.skills.adoptPack"];
+  for (const id of ids7) {
     assert.ok(ids.some((c: { command: string }) => c.command === id), id);
   }
   // 决议 9：视图级绑定（skills 树为分组行结构，五命令挂每行），不做 viewItem 细分
   const contextMenus: Array<{ command: string; when: string; group?: string }> = manifest.contributes?.menus?.["view/item/context"] ?? [];
-  for (const id of ids6.slice(0, 5)) {
+  for (const id of ids7.slice(0, 5)) {
     assert.ok(contextMenus.some((m) => m.command === id && m.when === "view == avenic.skills"), id);
   }
   // adopt 专属行级绑定：contextValue == detected（含分组行与叶子行，provider attachScope 直传 scope）；
@@ -98,6 +98,10 @@ test("manifest registers the six skills command ids with skills-tree context men
   const adoptBinding = "view == avenic.skills && viewItem == detected";
   assert.ok(contextMenus.some((m) => m.command === "avenic.skills.adopt" && m.when === adoptBinding && m.group === "inline@1"), "detected 行悬停键位");
   assert.ok(contextMenus.some((m) => m.command === "avenic.skills.adopt" && m.when === adoptBinding && m.group === undefined), "detected 行右键菜单");
+  // adoptPack：已托管但无 Pack 记录的 adopted 行（provider attachScope 直传 scope）
+  const adoptedBinding = "view == avenic.skills && viewItem == adopted";
+  assert.ok(contextMenus.some((m) => m.command === "avenic.skills.adoptPack" && m.when === adoptedBinding && m.group === "inline@1"), "adopted 行悬停键位");
+  assert.ok(contextMenus.some((m) => m.command === "avenic.skills.adoptPack" && m.when === adoptedBinding && m.group === undefined), "adopted 行右键菜单");
   // Skills 标题栏键位：安装 Packs / 添加直装（作用域经交互选择）
   const titleMenus: Array<{ command: string; when: string }> = manifest.contributes?.menus?.["view/title"] ?? [];
   for (const id of ["avenic.skills.installPacks", "avenic.skills.addDirect"]) {
@@ -125,6 +129,72 @@ test("adopt round-trip: detected → adopt → managed status, missing target fi
     // 检测是磁盘扫描（含已托管），未托管 = detected - managed；托管后闭环 → 无残留未托管项
     const untracked = (await detected("project", cwd, env)).filter((n: string) => !state.names.includes(n));
     assert.deepEqual(untracked, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// 旧版包识别：磁盘上的 Skill 集合（非精确匹配，允许差异）→ 覆盖度计划按匹配比例排序
+test("planAdopt ranks the old-install pack first by coverage (not exact-set match)", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-plan-"));
+  try {
+    const catalogDir = path.join(root, "catalog");
+    const cwd = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(cwd, { recursive: true });
+    await makeCatalogFixture(catalogDir);
+    await select(catalogDir, env);
+    // 磁盘仅 .agents/skills/beta：extra 覆盖 1.0，common 覆盖 0 → best = extra
+    await mkdir(path.join(cwd, ".agents", "skills", "beta"), { recursive: true });
+    await writeFile(path.join(cwd, ".agents", "skills", "beta", "SKILL.md"), "# beta");
+    const plan = await planAdopt("project", ["beta"], cwd, env);
+    assert.equal(plan.best?.packId, "extra");
+    assert.equal(plan.best?.coverage, 1);
+    assert.equal(plan.best?.missing, 0);
+    assert.ok(plan.candidates.every((c) => c.packId === "extra"), "zero-coverage packs 不列入候选");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// adoptPacked：识别为 Pack 后补齐缺失 target、写 Pack 元数据、不再出现在未托管检测里
+test("adoptPacked round-trip fills every target and stops showing untracked", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-adoptpack-"));
+  try {
+    const catalogDir = path.join(root, "catalog");
+    const cwd = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(cwd, { recursive: true });
+    await makeCatalogFixture(catalogDir);
+    await select(catalogDir, env);
+    await mkdir(path.join(cwd, ".agents", "skills", "beta"), { recursive: true });
+    await writeFile(path.join(cwd, ".agents", "skills", "beta", "SKILL.md"), "# beta");
+    const result = await adoptPacked("project", ["beta"], "extra", cwd, env);
+    assert.equal(result.packId, "extra");
+    assert.deepEqual(result.names, ["beta"]);
+    expectSkillDirs(cwd, ["beta"], true, "adopt-packed");
+    const state = await status("project", cwd, env);
+    assert.ok(state !== null);
+    assert.deepEqual(state.names, ["beta"]);
+    assert.deepEqual(state.packs.map((p) => (typeof p === "string" ? p : p.id)), ["extra"], "lock.packs 记录被识别的 Pack");
+    const untracked = (await detected("project", cwd, env)).filter((n: string) => !state.names.includes(n));
+    assert.deepEqual(untracked, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// adoptedOnlyNames：普通 adopt 后（lock.adopted，无 source 分组）→ 报告为「可识别为 Pack」候选
+test("adoptedOnlyNames lists packless managed skills after plain adopt", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-adopted-"));
+  try {
+    const cwd = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(path.join(cwd, ".agents", "skills", "manual"), { recursive: true });
+    await writeFile(path.join(cwd, ".agents", "skills", "manual", "SKILL.md"), "# manual");
+    assert.deepEqual(await adoptedOnlyNames("project", cwd, env), []);
+    await adopt("project", ["manual"], cwd, env);
+    assert.deepEqual(await adoptedOnlyNames("project", cwd, env), ["manual"], "adopt 记录的 Skill 无 source 分组 → 可识别为 Pack");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

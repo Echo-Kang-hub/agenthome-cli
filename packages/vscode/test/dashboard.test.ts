@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { buildDashboardData } from "../src/dashboard/state.ts";
 import { isWebviewMessage } from "../src/dashboard/protocol.ts";
-import { select } from "../src/services/catalog.ts";
+import { select, sync } from "../src/services/catalog.ts";
 import { makeCatalogFixture, testEnv } from "./helpers.ts";
 
 test("buildDashboardData includes all sections on fresh project", async () => {
@@ -43,7 +43,7 @@ test("buildDashboardData renders the not-opened state for null root", async () =
   }
 });
 
-test("buildDashboardData reads the pinned catalog revision (not the placeholder '—')", async () => {
+test("buildDashboardData reads the cached catalog revision (not the placeholder '—')", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
   try {
     const catalogDir = path.join(root, "catalog");
@@ -52,10 +52,28 @@ test("buildDashboardData reads the pinned catalog revision (not the placeholder 
     await mkdir(project, { recursive: true });
     await makeCatalogFixture(catalogDir);
     await select(catalogDir, env); // 注册并设为默认（本地 git fixture，无网络）
+    await sync(catalogDir, env); // 同步一次 → 本地缓存就绪（cachedRevision 只读缓存，绝不 fetch）
     const data = await buildDashboardData(project, env);
     assert.ok(data.catalog !== null);
     assert.equal(data.catalog.spec, catalogDir);
     assert.match(data.catalog.revision, /^[0-9a-f]{40}$/, "revision 读取缓存 fixture 的真实 commit，而非 '—'");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("buildDashboardData degrades to '—' when the catalog has no local cache", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
+  try {
+    const catalogDir = path.join(root, "catalog");
+    const project = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(project, { recursive: true });
+    await makeCatalogFixture(catalogDir);
+    await select(catalogDir, env); // 已登记默认，但从未同步 → 无缓存目录
+    const data = await buildDashboardData(project, env);
+    assert.ok(data.catalog !== null);
+    assert.equal(data.catalog.revision, "—", "无缓存时占位符，而不是触发网络/显示空白");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

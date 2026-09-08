@@ -33,34 +33,28 @@ export class SkillsViewProvider implements vscode.TreeDataProvider<vscode.TreeIt
   }
 
   private fromViewModels(groups: SkillsViewGroup[], scope: "project" | "global"): vscode.TreeItem[] {
-    return groups.map((group) => {
-      const item = new vscode.TreeItem(
-        group.item.label,
-        group.children !== undefined ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
-      );
-      item.description = group.item.description;
-      item.contextValue = group.item.kind; // T9 命令菜单 when 绑定按 group/pack/skill/direct 分类
-      item.iconPath = new vscode.ThemeIcon(group.item.iconHint);
-      this.attachScope(item, scope); // 检测行携带所属作用域：菜单键直传 scoop，免再问
-      if (group.children !== undefined) {
-        this.scopeChildren.set(item, group.children.map((child) => this.leaf(child, scope)));
-      }
-      return item;
-    });
+    return groups.map((group) => this.buildItem({ ...group.item, children: group.children }, scope));
   }
 
-  private leaf(model: SkillsViewItem, scope: "project" | "global"): vscode.TreeItem {
-    const item = new vscode.TreeItem(model.label, vscode.TreeItemCollapsibleState.None);
+  // 递归树构建：Pack → source → Skill；检测/托管行是叶子（携带命令键位与 scope）
+  private buildItem(model: SkillsViewItem, scope: "project" | "global"): vscode.TreeItem {
+    const item = new vscode.TreeItem(
+      model.label,
+      model.children !== undefined ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
+    );
     item.description = model.description;
-    item.contextValue = model.kind;
+    item.contextValue = model.kind; // T9 命令菜单 when 绑定按 group/pack/source/skill/adopted/detected 分类
     item.iconPath = new vscode.ThemeIcon(model.iconHint);
-    this.attachScope(item, scope);
+    this.attachScope(item, scope); // 检测/托管行携带所属作用域：菜单键直传 scope，免再问
+    if (model.children !== undefined) {
+      this.scopeChildren.set(item, model.children.map((child) => this.buildItem(child, scope)));
+    }
     return item;
   }
 
   // TreeItem.scope 是 VS Code 保留 API 属性（TreeItemScope），选 avanicScope 自定义名承载
   private attachScope(item: vscode.TreeItem, scope: "project" | "global"): void {
-    if (item.contextValue === "detected") {
+    if (item.contextValue === "detected" || item.contextValue === "adopted") {
       (item as vscode.TreeItem & { avenicScope?: string }).avenicScope = scope;
     }
   }

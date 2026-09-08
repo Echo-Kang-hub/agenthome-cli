@@ -96,9 +96,10 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     await vscode.window.showInformationMessage(lines.join("\n"));
   });
 
-  // 托管磁盘上未托管的 Skills（旧版/外部工具安装、手工拷贝）：core 补齐缺失 target 并写入
-  // lock.adopted。树的"检测到 N 个 Skill（未托管）"行携带具体 scope 参数；命令面板调用回退
-  // 为交互选择。零候选 → 警告而非空操作。
+  // 托管磁盘上未托管的 Skills（旧版/外部工具安装、手工拷贝）：先做 Pack 识别计划（只读覆盖度
+  // ≥0.8 视为旧包安装），给用户「识别为 Pack 并补齐」与「仅托管现有 Skill」两条路径；
+  // core 补齐缺失 target 并写入 lock.adopted（或完整 Pack 元数据）。树的"检测到 N 个 Skill
+  // （未托管）"行携带具体 scope 参数；命令面板调用回退为交互选择。零候选 → 警告而非空操作。
   register("avenic.skills.adopt", async (arg?: unknown) => {
     if (busy()) return;
     // 右键行 → arg 为带 avenicScope 的 TreeItem（provider 挂载）；命令面板调用 → 交互选择
@@ -108,7 +109,55 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     if (cwd === null) return;
     const names = await skills.detected(scope, cwd);
     if (names.length === 0) { warnNoOptions(); return; }
-    const result = await runMutation(deps.queue, () => withProgress("托管磁盘 Skills", async (report) => { report(`托管 ${names.length} 个 Skill…`); return skills.adopt(scope, names, cwd); }), () => deps.refresh());
-    await vscode.window.showInformationMessage(`已托管 ${result.adopted.length} 个 Skills（补齐 ${result.placed} 处目标）`);
+    const plan = await skills.planAdopt(scope, names, cwd);
+    const candidates = (plan.candidates ?? []).filter((c) => c.coverage >= 0.8);
+    let packId: string | null = null;
+    if (candidates.length > 0) {
+      const items = candidates.map((c) => ({
+        label: `识别为 Pack「${c.packName}」并补齐 ${c.missing} 个缺失 Skill`,
+        description: `覆盖 ${c.matched.length}/${names.length}（${Math.round(c.coverage * 100)}%）`,
+        id: c.packId,
+      }));
+      items.push({ label: "仅托管现有 Skill（不关联 Pack）", description: "保持磁盘内容不变", id: "__plain__" });
+      const choice = await vscode.window.showQuickPick(items, {
+        canPickMany: false,
+        placeHolder: `检测到 ${names.length} 个未托管 Skill`,
+      });
+      if (choice === undefined) return;
+      packId = choice.id === "__plain__" ? null : choice.id!;
+    }
+    if (packId === null) {
+      const result = await runMutation(deps.queue, () => withProgress("托管磁盘 Skills", async (report) => { report(`托管 ${names.length} 个 Skill…`); return skills.adopt(scope, names, cwd); }), () => deps.refresh());
+      await vscode.window.showInformationMessage(`已托管 ${result.adopted.length} 个 Skills（补齐 ${result.placed} 处目标）`);
+    } else {
+      const result = await runMutation(deps.queue, () => withProgress("识别为 Pack 接管", async (report) => { report(`安装 Pack「${packId}」（补齐缺失 Skill）…`); return skills.adoptPacked(scope, names, packId, cwd); }), () => deps.refresh());
+      await vscode.window.showInformationMessage(`已识别为 Pack「${packId}」并安装 ${result.names.length} 个 Skills`);
+    }
+  });
+
+  // 已托管但无 Pack 记录的 Skill（旧版包残留 → lock.adopted 场景）：整批识别为 Pack 接管
+  // （补全缺失 Skill + 写完整 Pack/sources 元数据，先前记录保留）。树的"adopted"行携带
+  // 具体 scope；命令面板调用回退为交互选择。
+  register("avenic.skills.adoptPack", async (arg?: unknown) => {
+    if (busy()) return;
+    const scope = (arg as { avenicScope?: Scope } | undefined)?.avenicScope ?? (await pickScope());
+    if (scope === null) return;
+    const cwd = await scopeCwd(scope, deps.resolveRoot);
+    if (cwd === null) return;
+    const names = await skills.adoptedOnlyNames(scope, cwd);
+    if (names.length === 0) { await vscode.window.showInformationMessage("没有已托管但未关联 Pack 的 Skill"); return; }
+    const plan = await skills.planAdopt(scope, names, cwd);
+    const candidates = (plan.candidates ?? []).filter((c) => c.coverage >= 0.8);
+    if (candidates.length === 0) { await vscode.window.showInformationMessage(`默认 Catalog 中未找到覆盖 ${names.length} 个 Skill 的 Pack（≥80% 匹配）`); return; }
+    const items = candidates.map((c) => ({
+      label: `识别为 Pack「${c.packName}」并补齐 ${c.missing} 个缺失 Skill`,
+      description: `覆盖 ${c.matched.length}/${names.length}（${Math.round(c.coverage * 100)}%）`,
+      id: c.packId,
+    }));
+    const choice = await vscode.window.showQuickPick(items, { canPickMany: false, placeHolder: `识别 ${names.length} 个已托管 Skill 为 Pack` });
+    if (choice === undefined) return;
+    const packId = choice.id!;
+    const result = await runMutation(deps.queue, () => withProgress(`识别为 Pack「${packId}」`, async (report) => { report(`安装 Pack「${packId}」（补齐缺失 Skill）…`); return skills.adoptPacked(scope, names, packId, cwd); }), () => deps.refresh());
+    await vscode.window.showInformationMessage(`已识别为 Pack「${packId}」：${result.names.length} 个 Skill`);
   });
 }

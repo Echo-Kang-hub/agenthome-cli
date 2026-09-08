@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { add, defaultSpec, listKnown, packsFor, select, sync } from "../src/services/catalog.ts";
+import { add, defaultSpec, listKnown, packStructure, packsFor, select, sync } from "../src/services/catalog.ts";
 import { makeCatalogFixture, testEnv } from "./helpers.ts";
 
 test("catalog add → select → sync round-trip with local fixture", async () => {
@@ -39,6 +39,26 @@ test("packsFor previews the packs of a catalog spec (read-only view data)", asyn
     assert.deepEqual([...packs.keys()].sort(), ["common", "extra"]);
     assert.deepEqual(packs.get("common")?.sources.flatMap((s) => s.skills), ["alpha"]);
     assert.deepEqual(packs.get("extra")?.sources.flatMap((s) => s.skills), ["beta"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("packStructure resolves the source-grouped skill layers of a pack (cache-first)", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-catalog-"));
+  try {
+    const catalogDir = path.join(root, "catalog");
+    const env = testEnv(path.join(root, "state"));
+    await makeCatalogFixture(catalogDir);
+    await select(catalogDir, env);
+    await sync(catalogDir, env); // 先同步保证缓存（packStructure 只读，绝不做 fetch）
+    const structure = await packStructure(catalogDir, "extra", env);
+    assert.ok(structure !== null);
+    assert.deepEqual(structure.names, ["beta"]);
+    assert.equal(structure.groups.length, 1);
+    assert.equal(structure.groups[0].source.id, "demo");
+    assert.equal(structure.groups[0].source.name, "Demo");
+    assert.deepEqual(structure.groups[0].skills.map((s) => s.name), ["beta"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
