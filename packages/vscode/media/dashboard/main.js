@@ -34,7 +34,7 @@ function el(tag, text, className) {
   return node;
 }
 
-/** Codicon 图标（规则 R1）：VS Code 注入的 --vscode-icon-* data-URI 变量，名称→变量映射在 style.css。 */
+/** Codicon 图标（规则 R1）：本地随包 codicon 字体（style.css @font-face），data-icon 名称 → 字形映射在 style.css。 */
 function icon(name, extraClass) {
   const node = el("span", undefined, extraClass ? "icon " + extraClass : "icon");
   node.setAttribute("data-icon", name);

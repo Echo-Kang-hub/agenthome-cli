@@ -1,8 +1,9 @@
 /* ===== Avenic Dashboard —— 终端 / 极客风格 =====
    主题：颜色全部取自 VS Code 注入的 --vscode-* 变量（含 terminal.ansi* 终端色板），
    深/浅主题自适应不做手动判断（规则 R4）。字体用编辑器等宽字体（终端感）。
-   图标（codicon）：直接引用 VS Code 注入的 --vscode-icon-* 变量（data-URI SVG），
-   不使用 font-face / 字体文件、不请求任何远程资源（规则 R1）。安全：只经 textContent 渲染。
+   图标（codicon）：本地随包字体 media/dashboard/codicon.ttf（@vscode/codicons，Microsoft，
+   MIT — 详见同目录 LICENSES.md），经 @font-face + ::before content 字形映射渲染；
+   数据图标名只经 CSS 映射，不走远程资源（规则 R1）。安全：文本仍只经 textContent 渲染。
    排版铁律：单列 + max-width，任何一行绝不横向溢出（ellipsis / break-all / overflow-x hidden）。 */
 
 body {
@@ -25,31 +26,42 @@ h2 { font-size: 0.72rem; font-weight: 600; margin: 0; letter-spacing: 0.02em; co
 h3 { font-size: 0.78rem; font-weight: 600; margin: 0; }
 p { margin: 0; }
 
-/* ---------- codicon 图标（--vscode-icon-* data-URI 变量） ---------- */
+/* ---------- codicon 图标（本地 codicon 字体；data-icon → ::before 字形映射） ----------
+   之前误信 VS Code 会注入 --vscode-icon-* data-URI 变量——其实并不注入，导致图标
+   background-image 恒为 none，按钮里只剩隐形占位（把文字挤偏、看起来像分开贴图）。
+   改为随包字体 + 字形映射（字形随文字同基线渲染，始终居中于图标盒内）。 */
+@font-face {
+  font-family: "codicon";
+  font-display: block;
+  src: url("./codicon.ttf") format("truetype");
+}
 .icon {
   display: inline-block;
   width: 14px;
   height: 14px;
   flex: none;
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 14px;
+  font-family: "codicon";
+  font-size: 14px;
+  line-height: 14px;
+  text-align: center;
   vertical-align: -2px;
   opacity: 0.85;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
 }
-.icon[data-icon="refresh"]        { background-image: var(--vscode-icon-refresh); }
-.icon[data-icon="sync"]           { background-image: var(--vscode-icon-sync); }
-.icon[data-icon="plus"]           { background-image: var(--vscode-icon-plus); }
-.icon[data-icon="package"]        { background-image: var(--vscode-icon-package); }
-.icon[data-icon="robot"]          { background-image: var(--vscode-icon-robot); }
-.icon[data-icon="import"]         { background-image: var(--vscode-icon-import); }
-.icon[data-icon="folder-opened"]  { background-image: var(--vscode-icon-folder-opened); }
-.icon[data-icon="repo"]           { background-image: var(--vscode-icon-repo); }
-.icon[data-icon="check"]          { background-image: var(--vscode-icon-check); }
-.icon[data-icon="error"]          { background-image: var(--vscode-icon-error); }
-.icon[data-icon="info"]           { background-image: var(--vscode-icon-info); }
-.icon[data-icon="pass-filled"]    { background-image: var(--vscode-icon-pass-filled); }
-.icon[data-icon="circle-outline"] { background-image: var(--vscode-icon-circle-outline); }
+.icon[data-icon="refresh"]::before        { content: "\eb37"; }
+.icon[data-icon="sync"]::before           { content: "\ea77"; }
+.icon[data-icon="plus"]::before           { content: "\ea60"; }
+.icon[data-icon="package"]::before        { content: "\eb29"; }
+.icon[data-icon="robot"]::before          { content: "\ec20"; }
+.icon[data-icon="import"]::before         { content: "\ec74"; } /* codicon download：导入（入箱）语义 */
+.icon[data-icon="folder-opened"]::before  { content: "\eaf7"; }
+.icon[data-icon="repo"]::before           { content: "\ea62"; }
+.icon[data-icon="check"]::before          { content: "\eab2"; }
+.icon[data-icon="error"]::before          { content: "\ea87"; }
+.icon[data-icon="info"]::before           { content: "\ea74"; }
+.icon[data-icon="pass-filled"]::before    { content: "\ebb3"; }
+.icon[data-icon="circle-outline"]::before { content: "\eabc"; }
 
 .spin { animation: spin 1.2s steps(8) infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -112,7 +124,7 @@ p { margin: 0; }
   max-width: 100%;
 }
 .card-head { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.15rem; min-width: 0; }
-.card-head .icon { width: 13px; height: 13px; background-size: 13px; }
+.card-head .icon { width: 13px; height: 13px; font-size: 13px; line-height: 13px; }
 .card-head h3 { color: var(--vscode-descriptionForeground); }
 
 .value {
@@ -141,7 +153,7 @@ p { margin: 0; }
   content: "# ";
   color: var(--vscode-descriptionForeground);
 }
-.block-title .icon { width: 13px; height: 13px; background-size: 13px; }
+.block-title .icon { width: 13px; height: 13px; font-size: 13px; line-height: 13px; }
 .count {
   margin-left: 0.15rem;
   padding: 0 0.4rem;
@@ -163,7 +175,7 @@ p { margin: 0; }
   padding: 0.28rem 0.55rem;
   min-width: 0;
 }
-.agent-card .icon { width: 12px; height: 12px; background-size: 12px; }
+.agent-card .icon { width: 12px; height: 12px; font-size: 12px; line-height: 12px; }
 .agent-head { display: flex; align-items: center; gap: 0.4rem; flex: 0 1 auto; min-width: 0; }
 .agent-name { font-weight: 600; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-status { font-size: 0.8rem; color: var(--vscode-terminal-ansiCyan, var(--vscode-foreground)); flex: none; }
@@ -219,7 +231,7 @@ p { margin: 0; }
 }
 .button:hover:not(:disabled) { border-color: var(--vscode-terminal-ansiGreen, var(--vscode-focusBorder)); color: var(--vscode-terminal-ansiGreen, var(--vscode-foreground)); }
 .button:disabled { opacity: 0.45; cursor: default; }
-.button .icon { width: 12px; height: 12px; background-size: 12px; }
+.button .icon { width: 12px; height: 12px; font-size: 12px; line-height: 12px; }
 /* 键盘可达性底线：焦点环可见，不破坏极客观感 */
 .button:focus-visible, .icon-button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
 
@@ -232,7 +244,7 @@ p { margin: 0; }
   padding: 1.4rem 0.25rem;
   color: var(--vscode-descriptionForeground);
 }
-.state .icon { width: 18px; height: 18px; background-size: 18px; }
+.state .icon { width: 18px; height: 18px; font-size: 18px; line-height: 18px; }
 .state .hint { font-size: 0.8rem; }
 .loading-dots::after { content: "…"; animation: blink 1.2s steps(1) infinite; }
 .state-error { color: var(--vscode-errorForeground); }
