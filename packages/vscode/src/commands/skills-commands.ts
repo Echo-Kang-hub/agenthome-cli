@@ -160,4 +160,42 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     const result = await runMutation(deps.queue, () => withProgress(`识别为 Pack「${packId}」`, async (report) => { report(`安装 Pack「${packId}」（补齐缺失 Skill）…`); return skills.adoptPacked(scope, names, packId, cwd); }), () => deps.refresh());
     await vscode.window.showInformationMessage(`已识别为 Pack「${packId}」：${result.names.length} 个 Skill`);
   });
+
+  // Pack 行键位（Installed Packs 树的 pack 行，viewItem == pack，行带 packId + scope）：
+  // 卸载整包 / 重装整包。命令面板调用回退为交互选择已安装 Pack。
+  // 共同决策：卸载走 core uninstallPacks（common 永驻跳过；会被其他 Pack 选用的 Skill 不删）；
+  // 重装走 core installPacks（与「安装包」同语义：重跑 resolve + copy + 合并锁记录）。
+  const pickInstalledPack = async (scope: Scope, cwd: string | undefined, excludeCommon: boolean): Promise<string | null> => {
+    const installed = ((await skills.installedPackIds(scope, cwd)) ?? []).filter((id) => !(excludeCommon && id === "common"));
+    if (installed.length === 0) { warnNoOptions(); return null; }
+    const choice = await vscode.window.showQuickPick(installed.map((id) => ({ label: id })), { canPickMany: false, placeHolder: "选择已安装 Pack" });
+    return choice?.label ?? null;
+  };
+
+  register("avenic.skills.uninstallPack", async (arg?: unknown) => {
+    if (busy()) return;
+    const scope = (arg as { avenicScope?: Scope } | undefined)?.avenicScope ?? (await pickScope());
+    if (scope === null) return;
+    const cwd = await scopeCwd(scope, deps.resolveRoot);
+    if (cwd === null) return;
+    const packId = (arg as { avenicPackId?: string } | undefined)?.avenicPackId ?? (await pickInstalledPack(scope, cwd, true));
+    if (packId === null) return;
+    const confirmed = await vscode.window.showWarningMessage(`卸载 Pack「${packId}」？其独占的 Skill 将一并移除（被其他 Pack 选用的保留）`, { modal: true }, "卸载");
+    if (confirmed !== "卸载") return;
+    const result = await runMutation(deps.queue, () => withProgress("卸载 Pack", async (report) => { report(`卸载 Pack「${packId}」…`); return skills.uninstallPacks(scope, [packId], cwd); }), () => deps.refresh());
+    const removal = result.removed.length > 0 ? `，移除 ${result.removed.length} 个 Skill` : "";
+    await vscode.window.showInformationMessage(`已卸载 Pack「${packId}」${removal}`);
+  });
+
+  register("avenic.skills.reinstallPack", async (arg?: unknown) => {
+    if (busy()) return;
+    const scope = (arg as { avenicScope?: Scope } | undefined)?.avenicScope ?? (await pickScope());
+    if (scope === null) return;
+    const cwd = await scopeCwd(scope, deps.resolveRoot);
+    if (cwd === null) return;
+    const packId = (arg as { avenicPackId?: string } | undefined)?.avenicPackId ?? (await pickInstalledPack(scope, cwd, false));
+    if (packId === null) return;
+    const result = await runMutation(deps.queue, () => withProgress("重装 Pack", async (report) => { report(`重装 Pack「${packId}」…`); return skills.installPacks(scope, [packId], cwd); }), () => deps.refresh());
+    await vscode.window.showInformationMessage(`已重装 Pack「${packId}」：${result.resolvedPacks?.names.length ?? 0} 个 Skill`);
+  });
 }

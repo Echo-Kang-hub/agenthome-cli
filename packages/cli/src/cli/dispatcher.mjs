@@ -74,6 +74,7 @@ Skills:
   avenic skills install [pack...]     Install or sync Packs (default: common)
   avenic skills [pack...]             Shorthand for skills install
   avenic skills add <owner/repo> [skill...] [-g]    Install directly from a GitHub repo
+  avenic skills adopt <skill...> [-g] Adopt existing on-disk Skills into management
   avenic skills remove <skill...>     Remove external, unmanaged Skills
   avenic skills uninstall <pack...>   Remove Packs and unneeded managed Skills
   avenic skills uninstall             Remove all managed Skills

@@ -62,6 +62,8 @@ export interface SkillsViewItem {
   label: string;
   description: string;
   iconHint: string;
+  // pack 行的包 id（行级「卸载/重装 Pack」键位经此定位包）；仅 pack 行携带
+  id?: string;
   // 子行（递归）：pack 行 → source 行 → Skill 行；detected/adopted 行无子级（叶子带命令键位）
   children?: SkillsViewItem[];
 }
@@ -106,6 +108,7 @@ function packLayerRows(layers: InstalledPackLayerView[], installed: Set<string>)
       label: layer.packName,
       description: `${total} 个 Skill`,
       iconHint: "package" as const,
+      id: layer.packId,
       children: groups,
     };
   });

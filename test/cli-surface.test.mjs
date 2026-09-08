@@ -530,6 +530,39 @@ test("catalog list and select switch between registered catalogs", async () => {
   });
 });
 
+test("skills adopt takes on-disk Skills into management without a catalog", async () => {
+  await withTempDirectory("avenic-skills-adopt-", async (projectRoot) => {
+    await withTempDirectory("avenic-state-", async (stateRoot) => {
+      const environment = { AVENIC_STATE_DIR: stateRoot };
+      await mkdir(path.join(projectRoot, ".agents", "skills", "handmade"), { recursive: true });
+      await writeFile(path.join(projectRoot, ".agents", "skills", "handmade", "SKILL.md"), "---\nname: handmade\n---\n");
+
+      const adopted = runAgent(projectRoot, ["skills", "adopt", "handmade"], environment);
+      assert.equal(adopted.status, 0, adopted.stderr);
+      assert.match(adopted.stdout, /Adopted Skills: handmade/);
+      assert.match(adopted.stdout, /Placed targets: 1/); // 宿主目录 .agents 已存在，仅补齐 .claude 目标
+      // 缺失的目标被补齐；lock 记录 adopted
+      assert.equal(existsSync(path.join(projectRoot, ".claude", "skills", "handmade", "SKILL.md")), true);
+      const lock = JSON.parse(await readFile(path.join(projectRoot, ".avenic.lock.json"), "utf8"));
+      assert.equal(lock.adopted.includes("handmade"), true);
+
+      // 幂等：与 install 不同，adopt 重复执行不报错（记录去重）
+      const repeated = runAgent(projectRoot, ["skills", "adopt", "handmade"], environment);
+      assert.equal(repeated.status, 0, repeated.stderr);
+      assert.match(repeated.stdout, /Adopted Skills: handmade/);
+      assert.doesNotMatch(repeated.stdout, /Placed targets:/);
+
+      // 无参数 → 用法；未知 Skill（磁盘不存在）→ 明确失败
+      const usage = runAgent(projectRoot, ["skills", "adopt"], environment);
+      assert.equal(usage.status, 1);
+      assert.match(usage.stderr, /Usage: adopt <skill\.\.\.> \[-g\]/);
+      const missing = runAgent(projectRoot, ["skills", "adopt", "nosuchskill"], environment);
+      assert.equal(missing.status, 1);
+      assert.match(missing.stderr, /No on-disk skill found for: nosuchskill/);
+    });
+  });
+});
+
 test("skills install and remove are explicit verb pairs", async () => {
   await withTempDirectory("avenic-skills-verbs-", async (projectRoot) => {
     await withTempDirectory("avenic-catalog-", async (catalogRoot) => {

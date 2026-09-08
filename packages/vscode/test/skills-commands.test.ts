@@ -35,6 +35,10 @@ test("pack install → status → uninstall round-trip in project scope", async 
     assert.equal(remaining?.includes("common"), true, "core 语义：common 永驻，卸载只移除其余 pack — lock 保留，status 不会回到 null");
     expectSkillDirs(cwd, ["alpha"], true, "remaining");
     expectSkillDirs(cwd, ["beta"], false, "removed");
+    // Pack 行「重装」语义：installPacks(packId) 恢复独占 Skill（alpha 保留、beta 回来）
+    await installPacks("project", ["extra"], cwd, env);
+    expectSkillDirs(cwd, ["alpha", "beta"], true, "reinstalled");
+    assert.equal(await installedPackIds("project", cwd, env).then((ids) => ids?.includes("extra")), true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -80,17 +84,17 @@ test("global scope is env-state-isolated and read-only safe", async () => {
   }
 });
 
-test("manifest registers the seven skills command ids with skills-tree context menus", async () => {
+test("manifest registers the nine skills command ids with skills-tree context menus", async () => {
   const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const manifest = JSON.parse(await readFile(path.join(pkgDir, "package.json"), "utf8"));
   const ids = manifest.contributes?.commands ?? [];
-  const ids7 = ["avenic.skills.installPacks", "avenic.skills.uninstallPacks", "avenic.skills.addDirect", "avenic.skills.removeDirect", "avenic.skills.directList", "avenic.skills.adopt", "avenic.skills.adoptPack"];
-  for (const id of ids7) {
+  const ids9 = ["avenic.skills.installPacks", "avenic.skills.uninstallPacks", "avenic.skills.addDirect", "avenic.skills.removeDirect", "avenic.skills.directList", "avenic.skills.adopt", "avenic.skills.adoptPack", "avenic.skills.uninstallPack", "avenic.skills.reinstallPack"];
+  for (const id of ids9) {
     assert.ok(ids.some((c: { command: string }) => c.command === id), id);
   }
   // 决议 9：视图级绑定（skills 树为分组行结构，五命令挂每行），不做 viewItem 细分
   const contextMenus: Array<{ command: string; when: string; group?: string }> = manifest.contributes?.menus?.["view/item/context"] ?? [];
-  for (const id of ids7.slice(0, 5)) {
+  for (const id of ids9.slice(0, 5)) {
     assert.ok(contextMenus.some((m) => m.command === id && m.when === "view == avenic.skills"), id);
   }
   // adopt 专属行级绑定：contextValue == detected（含分组行与叶子行，provider attachScope 直传 scope）；
@@ -102,6 +106,13 @@ test("manifest registers the seven skills command ids with skills-tree context m
   const adoptedBinding = "view == avenic.skills && viewItem == adopted";
   assert.ok(contextMenus.some((m) => m.command === "avenic.skills.adoptPack" && m.when === adoptedBinding && m.group === "inline@1"), "adopted 行悬停键位");
   assert.ok(contextMenus.some((m) => m.command === "avenic.skills.adoptPack" && m.when === adoptedBinding && m.group === undefined), "adopted 行右键菜单");
+  // Pack 行（Installed Packs 层次）专属绑定：重装 inline@2 + 卸载 inline@3 + 右键菜单两处
+  const packBinding = "view == avenic.skills && viewItem == pack";
+  assert.ok(contextMenus.some((m) => m.command === "avenic.skills.reinstallPack" && m.when === packBinding && m.group === "inline@2"), "pack 行重装悬停键位");
+  assert.ok(contextMenus.some((m) => m.command === "avenic.skills.uninstallPack" && m.when === packBinding && m.group === "inline@3"), "pack 行卸载悬停键位");
+  for (const id of ["avenic.skills.uninstallPack", "avenic.skills.reinstallPack"]) {
+    assert.ok(contextMenus.some((m) => m.command === id && m.when === packBinding && m.group === undefined), `${id} pack 行右键菜单`);
+  }
   // Skills 标题栏键位：安装 Packs / 添加直装（作用域经交互选择）
   const titleMenus: Array<{ command: string; when: string }> = manifest.contributes?.menus?.["view/title"] ?? [];
   for (const id of ["avenic.skills.installPacks", "avenic.skills.addDirect"]) {

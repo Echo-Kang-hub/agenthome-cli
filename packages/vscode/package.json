@@ -3,7 +3,7 @@
   "displayName": "Avenic Agent Manager",
   "description": "管理 Avenic Agent 运行时与 Skills 的图形界面",
   "publisher": "EchoKang",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "license": "MIT",
   "repository": {
@@ -141,6 +141,18 @@
         "icon": "$(package)"
       },
       {
+        "command": "avenic.skills.uninstallPack",
+        "title": "Avenic: 卸载 Pack",
+        "category": "Avenic",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "avenic.skills.reinstallPack",
+        "title": "Avenic: 重装 Pack",
+        "category": "Avenic",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "avenic.catalog.installPack",
         "title": "Avenic: 安装 Pack",
         "category": "Avenic",
@@ -220,6 +232,24 @@
         {
           "command": "avenic.skills.adoptPack",
           "when": "view == avenic.skills && viewItem == adopted"
+        },
+        {
+          "command": "avenic.skills.reinstallPack",
+          "when": "view == avenic.skills && viewItem == pack",
+          "group": "inline@2"
+        },
+        {
+          "command": "avenic.skills.uninstallPack",
+          "when": "view == avenic.skills && viewItem == pack",
+          "group": "inline@3"
+        },
+        {
+          "command": "avenic.skills.reinstallPack",
+          "when": "view == avenic.skills && viewItem == pack"
+        },
+        {
+          "command": "avenic.skills.uninstallPack",
+          "when": "view == avenic.skills && viewItem == pack"
         },
         {
           "command": "avenic.catalog.installPack",

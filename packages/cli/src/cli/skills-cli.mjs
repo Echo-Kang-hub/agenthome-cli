@@ -8,6 +8,7 @@ import {
   AGENTS,
   addDirectSkills,
   addSkillsToPacks,
+  adoptSkills,
   assertSafeId,
   assertSafeSkillName,
   buildCatalog,
@@ -179,6 +180,25 @@ async function commandUninstall(packArguments, options = {}) {
     return;
   }
   io.log(`\nUninstall complete: ${result.removed.join(", ")}`);
+}
+
+async function commandAdopt(skillArguments, options = {}) {
+  const io = options.io ?? console;
+  if (skillArguments.length === 0) {
+    fail("Usage: adopt <skill...> [-g]");
+  }
+  const unknownOption = skillArguments.find((argument) => argument.startsWith("-"));
+  if (unknownOption) {
+    fail(`Unknown option: ${unknownOption}`);
+  }
+  const context = createInstallContext(options.global ?? false, options);
+  const result = await adoptSkills(context, skillArguments);
+  io.log(`Adopted Skills: ${result.adopted.join(", ")}`);
+  if (result.placed > 0) {
+    io.log(`Placed targets: ${result.placed}`);
+  }
+  io.log(`Config: ${context.configFile}`);
+  io.log(`Lock:   ${context.lockFile}`);
 }
 
 async function commandUninstallSkill(skillArguments, options = {}) {
@@ -959,6 +979,11 @@ export async function dispatchSkills(argumentsList, options = {}) {
   // precedes the catalog maintenance set below for the same reason "add" does.
   if (command === "remove") {
     await commandUninstallSkill(remainingArguments, commandOptions);
+    return;
+  }
+  // adopt 与 add/remove 并列：只碰磁盘 + lock，无需 Catalog（离线可用 —— unpacked skill 直接纳入管理）
+  if (command === "adopt") {
+    await commandAdopt(remainingArguments, commandOptions);
     return;
   }
   if (command === "install") {

@@ -48,7 +48,10 @@ export class SkillsViewProvider implements vscode.TreeDataProvider<vscode.TreeIt
     item.description = model.description;
     item.contextValue = model.kind; // T9 命令菜单 when 绑定按 group/pack/source/skill/adopted/detected 分类
     item.iconPath = new vscode.ThemeIcon(model.iconHint);
-    this.attachScope(item, scope); // 检测/托管行携带所属作用域：菜单键直传 scope，免再问
+    this.attachScope(item, scope); // 检测/托管/Pack 行携带所属作用域：菜单键直传 scope，免再问
+    if (model.kind === "pack") {
+      (item as vscode.TreeItem & { avenicPackId?: string }).avenicPackId = model.id;
+    }
     if (model.children !== undefined) {
       this.scopeChildren.set(item, model.children.map((child) => this.buildItem(child, scope)));
     }
@@ -57,7 +60,7 @@ export class SkillsViewProvider implements vscode.TreeDataProvider<vscode.TreeIt
 
   // TreeItem.scope 是 VS Code 保留 API 属性（TreeItemScope），选 avanicScope 自定义名承载
   private attachScope(item: vscode.TreeItem, scope: "project" | "global"): void {
-    if (item.contextValue === "detected" || item.contextValue === "adopted") {
+    if (item.contextValue === "detected" || item.contextValue === "adopted" || item.contextValue === "pack") {
       (item as vscode.TreeItem & { avenicScope?: string }).avenicScope = scope;
     }
   }
