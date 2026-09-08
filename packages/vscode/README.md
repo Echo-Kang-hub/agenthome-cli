@@ -4,15 +4,17 @@ Avenic 的图形界面：在 VS Code 中管理 Avenic Agent 运行时与 Skills�
 
 ## 安装
 
+从 Marketplace 安装：搜索 `Avenic Agent Manager`（扩展 ID `EchoKang.avenic-agent-manager`）。
+
 本地打包为 VSIX 后安装：
 
 ```bash
 npm --prefix packages/vscode run package
-code --install-extension packages/vscode/dist/avenic.vsix
+code --install-extension packages/vscode/dist/avenic-agent-manager.vsix
 ```
 
 也可以在 VS Code 中手动安装：「扩展」面板 → 右上角 `...` → 「从 VSIX 安装…」→ 选择
-`packages/vscode/dist/avenic.vsix`。首次安装未签名 VSIX 出现信任提示时选择「信任」即可。
+`packages/vscode/dist/avenic-agent-manager.vsix`。首次安装未签名 VSIX 出现信任提示时选择「信任」即可。
 
 ## 功能
 

@@ -16,6 +16,6 @@ test("vsce package produces a VSIX via npm script", async () => {
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   // Windows: Node >=20.12 拒绝对 .cmd 直接 spawnSync（CVE-2024-27980 缓解），需经 shell 执行
   execFileSync(npm, ["--prefix", pkgDir, "run", "package"], { stdio: "inherit", shell: process.platform === "win32" });
-  const info = await stat(path.join(pkgDir, "dist", "avenic.vsix"));
+  const info = await stat(path.join(pkgDir, "dist", "avenic-agent-manager.vsix"));
   assert.ok(info.size > 0, "VSIX 应已产出");
 });

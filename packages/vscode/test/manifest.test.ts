@@ -8,8 +8,8 @@ const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 test("vscode extension manifest identity", async () => {
   const manifest = JSON.parse(await readFile(path.join(pkgDir, "package.json"), "utf8"));
-  assert.equal(manifest.name, "avenic");
-  assert.equal(manifest.displayName, "Avenic");
+  assert.equal(manifest.name, "avenic-agent-manager");
+  assert.equal(manifest.displayName, "Avenic Agent Manager");
   assert.equal(manifest.main, "./dist/extension.js");
   assert.equal(manifest.type, "module");
   assert.deepEqual(manifest.engines, { vscode: "^1.90.0" });

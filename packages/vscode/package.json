@@ -1,8 +1,8 @@
 {
-  "name": "avenic",
-  "displayName": "Avenic",
+  "name": "avenic-agent-manager",
+  "displayName": "Avenic Agent Manager",
   "description": "管理 Avenic Agent 运行时与 Skills 的图形界面",
-  "publisher": "avenic",
+  "publisher": "EchoKang",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
@@ -70,7 +70,7 @@
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck && node build-tests.mjs",
-    "package": "npm run build && vsce package --out dist/avenic.vsix"
+    "package": "npm run build && vsce package --out dist/avenic-agent-manager.vsix"
   },
   "devDependencies": {
     "@avenic/core": "^1.0.0",
