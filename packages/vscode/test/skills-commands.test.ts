@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { select } from "../src/services/catalog.ts";
-import { addDirect, directSkills, installedPackIds, installPacks, removeDirect, status, uninstallPacks } from "../src/services/skills.ts";
+import { adopt, addDirect, detected, directSkills, installedPackIds, installPacks, removeDirect, status, uninstallPacks } from "../src/services/skills.ts";
 import { makeCatalogFixture, testEnv } from "./helpers.ts";
 
 test("pack install → status → uninstall round-trip in project scope", async () => {
@@ -80,18 +80,45 @@ test("global scope is env-state-isolated and read-only safe", async () => {
   }
 });
 
-test("manifest registers the five skills command ids with skills-tree context menus", async () => {
+test("manifest registers the six skills command ids with skills-tree context menus", async () => {
   const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const manifest = JSON.parse(await readFile(path.join(pkgDir, "package.json"), "utf8"));
   const ids = manifest.contributes?.commands ?? [];
-  const ids5 = ["avenic.skills.installPacks", "avenic.skills.uninstallPacks", "avenic.skills.addDirect", "avenic.skills.removeDirect", "avenic.skills.directList"];
-  for (const id of ids5) {
+  const ids6 = ["avenic.skills.installPacks", "avenic.skills.uninstallPacks", "avenic.skills.addDirect", "avenic.skills.removeDirect", "avenic.skills.directList", "avenic.skills.adopt"];
+  for (const id of ids6) {
     assert.ok(ids.some((c: { command: string }) => c.command === id), id);
   }
   // 决议 9：视图级绑定（skills 树为分组行结构，五命令挂每行），不做 viewItem 细分
   const contextMenus: Array<{ command: string; when: string }> = manifest.contributes?.menus?.["view/item/context"] ?? [];
-  for (const id of ids5) {
+  for (const id of ids6.slice(0, 5)) {
     assert.ok(contextMenus.some((m) => m.command === id && m.when === "view == avenic.skills"), id);
+  }
+  // adopt 专属行级绑定：contextValue == detected（含分组行与叶子行，provider attachScope 直传 scope）
+  assert.ok(contextMenus.some((m) => m.command === "avenic.skills.adopt" && m.when === "view == avenic.skills && viewItem == detected"));
+});
+
+test("adopt round-trip: detected → adopt → managed status, missing target filled", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-adopt-"));
+  try {
+    const cwd = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(path.join(cwd, ".agents", "skills", "beta"), { recursive: true });
+    await writeFile(path.join(cwd, ".agents", "skills", "beta", "SKILL.md"), "# beta");
+    // 托管前：磁盘存在但 status null → 未托管检测报出（services 层与 core 层同源）
+    assert.deepEqual(await detected("project", cwd, env), ["beta"]);
+    assert.equal(await status("project", cwd, env), null);
+    const result = await adopt("project", ["beta"], cwd, env);
+    assert.deepEqual(result.adopted, ["beta"]);
+    assert.equal(result.placed, 1, ".claude/skills 缺失 → 生成 1 份拷贝");
+    const state = await status("project", cwd, env);
+    assert.ok(state !== null);
+    assert.deepEqual(state.names, ["beta"]);
+    assert.ok(state.targets.every((t: { complete: boolean }) => t.complete));
+    // 检测是磁盘扫描（含已托管），未托管 = detected - managed；托管后闭环 → 无残留未托管项
+    const untracked = (await detected("project", cwd, env)).filter((n: string) => !state.names.includes(n));
+    assert.deepEqual(untracked, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

@@ -37,7 +37,8 @@
       { "command": "avenic.skills.uninstallPacks", "title": "Avenic: 卸载 Packs", "category": "Avenic" },
       { "command": "avenic.skills.addDirect", "title": "Avenic: 添加直装 Skill", "category": "Avenic" },
       { "command": "avenic.skills.removeDirect", "title": "Avenic: 移除直装 Skill", "category": "Avenic" },
-      { "command": "avenic.skills.directList", "title": "Avenic: 直装 Skills 列表", "category": "Avenic" }
+      { "command": "avenic.skills.directList", "title": "Avenic: 直装 Skills 列表", "category": "Avenic" },
+      { "command": "avenic.skills.adopt", "title": "Avenic: 托管未托管 Skills", "category": "Avenic" }
     ],
     "menus": {
       "view/item/context": [
@@ -51,7 +52,8 @@
         { "command": "avenic.skills.uninstallPacks", "when": "view == avenic.skills" },
         { "command": "avenic.skills.addDirect", "when": "view == avenic.skills" },
         { "command": "avenic.skills.removeDirect", "when": "view == avenic.skills" },
-        { "command": "avenic.skills.directList", "when": "view == avenic.skills" }
+        { "command": "avenic.skills.directList", "when": "view == avenic.skills" },
+        { "command": "avenic.skills.adopt", "when": "view == avenic.skills && viewItem == detected" }
       ],
       "view/title": [
         { "command": "avenic.catalog.add", "when": "view == avenic.catalog" },

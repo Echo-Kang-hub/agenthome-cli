@@ -129,6 +129,7 @@ export async function writeInstallMetadata(context, resolvedPacks, catalogInfo =
       revision: catalogInfo.revision ?? null,
     },
     ...(previousLock.directSources ? { directSources: previousLock.directSources } : {}),
+    ...(previousLock.adopted ? { adopted: previousLock.adopted } : {}),
     agents: context.targets.flatMap((target) => target.agents).filter((agent) => agent !== "universal"),
     sources: resolvedPacks.groups.map((group) => ({
       id: group.source.id,
@@ -241,6 +242,51 @@ export async function removeInstallationFiles(context) {
   }
 }
 
+// Adopt on-disk skills that no install record tracks: validate the names,
+// place a copy into every target destination that lacks the skill (an
+// existing directory is the source of truth — never overwritten), and
+// record them in the lock's `adopted` list so the managed status recognizes
+// them. No catalog/network involved; the skill stays byte-identical.
+export async function adoptSkills(context, skillNames) {
+  const names = [...new Set(skillNames)];
+  names.forEach(assertSafeSkillName);
+  if (names.length === 0) return { adopted: [], placed: 0 };
+  // 每个名字必须已在至少一个 target 中存在（否则为鬼路径：绝不凭空创建目录）
+  const host = new Map(); // name → source skill directory
+  for (const target of context.targets) {
+    for (const name of names) {
+      const skillDirectory = path.join(target.destination, name);
+      if (!host.has(name) && existsSync(path.join(skillDirectory, "SKILL.md"))) {
+        host.set(name, skillDirectory);
+      }
+    }
+  }
+  const missing = names.filter((name) => !host.has(name));
+  if (missing.length > 0) {
+    fail(`No on-disk skill found for: ${missing.join(", ")}`);
+  }
+  let placed = 0;
+  for (const target of context.targets) {
+    const destination = target.destination;
+    for (const name of names) {
+      const targetPath = path.join(destination, name);
+      if (!isInside(destination, targetPath)) {
+        fail(`Adopt path escaped its target: ${targetPath}`);
+      }
+      if (existsSync(targetPath)) continue; // 该 target 已有内容：视为就绪，不覆盖
+      await mkdir(destination, { recursive: true });
+      await cp(host.get(name), targetPath, { recursive: true });
+      placed += 1;
+    }
+  }
+  // 记录进 lock.adopted（schemaVersion 不变；未知字段对旧读者无害，安装/卸载会透传）
+  const lockPath = context.lockFile;
+  const lock = existsSync(lockPath) ? await readJson(lockPath) : {};
+  const adopted = [...new Set([...(lock.adopted ?? []), ...names])];
+  await writeJson(lockPath, { ...lock, adopted });
+  return { adopted: names, placed };
+}
+
 // Read-only scan of the target directories this context writes to: the
 // skills present on disk (directory containing SKILL.md), deduplicated and
 // sorted, regardless of metadata. Detects content the install records do
@@ -276,7 +322,7 @@ export async function skillsInstallationStatus(context) {
     skills: (source.skills ?? []).map((name) => ({ name })),
   }));
   const manifestPacks = manifest.packs ?? (manifest.pack ? [manifest.pack] : []);
-  const names = groups.flatMap((group) => group.skills.map((skill) => skill.name));
+  const names = [...new Set([...groups.flatMap((group) => group.skills.map((skill) => skill.name)), ...(manifest.adopted ?? [])])];
   const targets = context.targets.map((targetConfig) => {
     const directory = targetConfig.destination;
     const present = names.filter((name) => existsSync(path.join(directory, name, "SKILL.md"))).length;

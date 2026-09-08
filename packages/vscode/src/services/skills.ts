@@ -1,5 +1,6 @@
 import {
   addDirectSkills,
+  adoptSkills as coreAdoptSkills,
   createInstallContext,
   detectedSkillNames as coreDetectedSkillNames,
   installPacks as coreInstallPacks,
@@ -33,6 +34,10 @@ export function installedPackIds(scope: Scope, cwd?: string, environment: Env = 
 
 export function detected(scope: Scope, cwd?: string, environment: Env = process.env): Promise<string[]> {
   return coreDetectedSkillNames(context(scope, cwd, environment));
+}
+
+export function adopt(scope: Scope, names: string[], cwd?: string, environment: Env = process.env) {
+  return coreAdoptSkills(context(scope, cwd, environment), names);
 }
 
 export async function availablePacks(scope: Scope, cwd?: string, environment: Env = process.env): Promise<Map<string, Pack>> {

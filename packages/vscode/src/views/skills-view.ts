@@ -27,12 +27,12 @@ export class SkillsViewProvider implements vscode.TreeDataProvider<vscode.TreeIt
     ]);
     const projectNode = new vscode.TreeItem("项目作用域", vscode.TreeItemCollapsibleState.Expanded);
     const globalNode = new vscode.TreeItem("全局作用域", vscode.TreeItemCollapsibleState.Expanded);
-    this.scopeChildren.set(projectNode, this.fromViewModels(skillsToViewModels(project, projectDetected, PROJECT_EMPTY_HINT)));
-    this.scopeChildren.set(globalNode, this.fromViewModels(skillsToViewModels(global, globalDetected, GLOBAL_EMPTY_HINT)));
+    this.scopeChildren.set(projectNode, this.fromViewModels(skillsToViewModels(project, projectDetected, PROJECT_EMPTY_HINT), "project"));
+    this.scopeChildren.set(globalNode, this.fromViewModels(skillsToViewModels(global, globalDetected, GLOBAL_EMPTY_HINT), "global"));
     return [projectNode, globalNode];
   }
 
-  private fromViewModels(groups: SkillsViewGroup[]): vscode.TreeItem[] {
+  private fromViewModels(groups: SkillsViewGroup[], scope: "project" | "global"): vscode.TreeItem[] {
     return groups.map((group) => {
       const item = new vscode.TreeItem(
         group.item.label,
@@ -41,18 +41,27 @@ export class SkillsViewProvider implements vscode.TreeDataProvider<vscode.TreeIt
       item.description = group.item.description;
       item.contextValue = group.item.kind; // T9 命令菜单 when 绑定按 group/pack/skill/direct 分类
       item.iconPath = new vscode.ThemeIcon(group.item.iconHint);
+      this.attachScope(item, scope); // 检测行携带所属作用域：菜单键直传 scoop，免再问
       if (group.children !== undefined) {
-        this.scopeChildren.set(item, group.children.map((child) => this.leaf(child)));
+        this.scopeChildren.set(item, group.children.map((child) => this.leaf(child, scope)));
       }
       return item;
     });
   }
 
-  private leaf(model: SkillsViewItem): vscode.TreeItem {
+  private leaf(model: SkillsViewItem, scope: "project" | "global"): vscode.TreeItem {
     const item = new vscode.TreeItem(model.label, vscode.TreeItemCollapsibleState.None);
     item.description = model.description;
     item.contextValue = model.kind;
     item.iconPath = new vscode.ThemeIcon(model.iconHint);
+    this.attachScope(item, scope);
     return item;
+  }
+
+  // TreeItem.scope 是 VS Code 保留 API 属性（TreeItemScope），选 avanicScope 自定义名承载
+  private attachScope(item: vscode.TreeItem, scope: "project" | "global"): void {
+    if (item.contextValue === "detected") {
+      (item as vscode.TreeItem & { avenicScope?: string }).avenicScope = scope;
+    }
   }
 }

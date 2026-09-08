@@ -113,4 +113,20 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     if (lines.length === 0) { await vscode.window.showInformationMessage("暂无直装 Skills"); return; }
     await vscode.window.showInformationMessage(lines.join("\n"));
   });
+
+  // 托管磁盘上未托管的 Skills（旧版/外部工具安装、手工拷贝）：core 补齐缺失 target 并写入
+  // lock.adopted。树的"检测到 N 个 Skill（未托管）"行携带具体 scope 参数；命令面板调用回退
+  // 为交互选择。零候选 → 警告而非空操作。
+  register("avenic.skills.adopt", async (arg?: unknown) => {
+    if (busy()) return;
+    // 右键行 → arg 为带 avenicScope 的 TreeItem（provider 挂载）；命令面板调用 → 交互选择
+    const scope = (arg as { avenicScope?: Scope } | undefined)?.avenicScope ?? (await pickScope());
+    if (scope === null) return;
+    const cwd = await scopeCwd(scope, deps);
+    if (cwd === null) return;
+    const names = await skills.detected(scope, cwd);
+    if (names.length === 0) { warnNoOptions(); return; }
+    const result = await runMutation(deps.queue, () => withProgress("托管磁盘 Skills", async (report) => { report(`托管 ${names.length} 个 Skill…`); return skills.adopt(scope, names, cwd); }), () => deps.refresh());
+    await vscode.window.showInformationMessage(`已托管 ${result.adopted.length} 个 Skills（补齐 ${result.placed} 处目标）`);
+  });
 }

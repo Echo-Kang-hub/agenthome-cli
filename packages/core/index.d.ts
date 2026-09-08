@@ -313,6 +313,7 @@ export interface InstallStatus {
 }
 export function skillsInstallationStatus(context: InstallContext): Promise<InstallStatus | null>;
 export function detectedSkillNames(context: InstallContext): Promise<string[]>;
+export function adoptSkills(context: InstallContext, skillNames: string[]): Promise<{ adopted: string[]; placed: number }>;
 
 export interface DirectSourceState {
   directSources: Array<Source & { skills: string[] }>;
