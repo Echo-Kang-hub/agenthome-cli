@@ -4,6 +4,7 @@ import type { Scope } from "../services/skills.ts";
 import { defaultSpec as catalogDefaultSpec } from "../services/catalog.ts";
 import { MutationQueue, runMutation } from "../ui/mutation-queue.ts";
 import { assertIdle, NO_CANDIDATES_WARNING, pickManyOrNotify } from "../ui/flows.ts";
+import { pickScope, scopeCwd } from "../ui/scope.ts";
 import { showError } from "./errors.ts";
 import { withProgress } from "./progress.ts";
 
@@ -13,25 +14,6 @@ export interface SkillsDeps {
   resolveRoot: () => Promise<string | null>;
   queue: MutationQueue;
   refresh: () => void;
-}
-
-// 决议 2：全局作用域 → cwd undefined（绝不把项目根传给全局操作）；
-// 项目作用域 → resolveRoot 项目根。返回 null 表示未选项目（已提示），调用方直接 return。
-async function scopeCwd(scope: Scope, deps: SkillsDeps): Promise<string | undefined | null> {
-  if (scope === "global") return undefined;
-  const root = await deps.resolveRoot();
-  if (root === null) { await vscode.window.showWarningMessage("未选择项目文件夹"); return null; }
-  return root;
-}
-
-// 决议 4：无参 pickScope（brief 原带参/无参混调为类型错误，统一为无参）；
-// Esc/关闭 → undefined → null → 静默无操作
-async function pickScope(): Promise<Scope | null> {
-  const picked = await vscode.window.showQuickPick([
-    { label: "项目作用域", description: "当前项目根" },
-    { label: "全局作用域", description: "用户配置目录" },
-  ]);
-  return picked?.label === "全局作用域" ? "global" : picked !== undefined ? "project" : null;
 }
 
 export function registerSkillsCommands(context: vscode.ExtensionContext, deps: SkillsDeps): void {
@@ -52,7 +34,7 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     if (busy()) return;
     const scope = await pickScope();
     if (scope === null) return;
-    const cwd = await scopeCwd(scope, deps);
+    const cwd = await scopeCwd(scope, deps.resolveRoot);
     if (cwd === null) return;
     if ((await catalogDefaultSpec()) === null) { await vscode.window.showWarningMessage("尚未选择默认 Catalog，请先执行 Avenic: Catalog 添加"); return; }
     const all = await skills.availablePacks(scope, cwd);
@@ -68,7 +50,7 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     if (busy()) return;
     const scope = await pickScope();
     if (scope === null) return;
-    const cwd = await scopeCwd(scope, deps);
+    const cwd = await scopeCwd(scope, deps.resolveRoot);
     if (cwd === null) return;
     // common 永驻不可卸（core normalizePackIds 注入、uninstallPacks 跳过 common——与 CLI 语义一致，spec §5.3）
     const installed = ((await skills.installedPackIds(scope, cwd)) ?? []).filter((id) => id !== "common");
@@ -81,7 +63,7 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     if (busy()) return;
     const scope = await pickScope();
     if (scope === null) return;
-    const cwd = await scopeCwd(scope, deps);
+    const cwd = await scopeCwd(scope, deps.resolveRoot);
     if (cwd === null) return;
     const repo = await vscode.window.showInputBox({ prompt: "owner/repo 或仓库 URL" });
     if (repo === undefined || repo.trim() === "") return;
@@ -93,7 +75,7 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     if (busy()) return;
     const scope = await pickScope();
     if (scope === null) return;
-    const cwd = await scopeCwd(scope, deps);
+    const cwd = await scopeCwd(scope, deps.resolveRoot);
     if (cwd === null) return;
     const state = await skills.directSkills(scope, cwd);
     const direct = state.directSources.flatMap((s) => s.skills);
@@ -106,7 +88,7 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
   register("avenic.skills.directList", async () => {
     const scope = await pickScope();
     if (scope === null) return;
-    const cwd = await scopeCwd(scope, deps);
+    const cwd = await scopeCwd(scope, deps.resolveRoot);
     if (cwd === null) return;
     const state = await skills.directSkills(scope, cwd);
     const lines = state.directSources.map((s) => `${s.id} → ${s.skills.join(", ")}`);
@@ -122,7 +104,7 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     // 右键行 → arg 为带 avenicScope 的 TreeItem（provider 挂载）；命令面板调用 → 交互选择
     const scope = (arg as { avenicScope?: Scope } | undefined)?.avenicScope ?? (await pickScope());
     if (scope === null) return;
-    const cwd = await scopeCwd(scope, deps);
+    const cwd = await scopeCwd(scope, deps.resolveRoot);
     if (cwd === null) return;
     const names = await skills.detected(scope, cwd);
     if (names.length === 0) { warnNoOptions(); return; }

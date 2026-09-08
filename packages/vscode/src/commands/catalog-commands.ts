@@ -1,24 +1,28 @@
 import * as vscode from "vscode";
 import * as catalog from "../services/catalog.ts";
+import * as skills from "../services/skills.ts";
 import { MutationQueue, runMutation } from "../ui/mutation-queue.ts";
 import { assertIdle, pickOne } from "../ui/flows.ts";
+import { pickScope, scopeCwd } from "../ui/scope.ts";
 import { showError } from "./errors.ts";
 import { withProgress } from "./progress.ts";
 
 export interface CatalogDeps {
-  // 决议 1：交互（InputBox/QuickPick/消息）在队列外，变更（add/select/sync）在队列内；
-  // catalog 操作为 core 全局 / state-dir 域，与项目根无关，故无 resolveRoot/projectRoot。
+  // 决议 1：交互（InputBox/QuickPick/消息）在队列外，变更（add/select/sync/installPack）在队列内；
+  // catalog 操作为 core 全局 / state-dir 域，与项目根无关（故无 resolveRoot）；唯独从 Catalog
+  // 安装 Pack 需写入某作用域 → resolveRoot 仅在 installPack 路径用于引导项目根。
   queue: MutationQueue;
   refresh: () => void;
+  resolveRoot: () => Promise<string | null>;
 }
 
 export function registerCatalogCommands(context: vscode.ExtensionContext, deps: CatalogDeps): void {
   // 决议 2：busy 守卫在命令体最前（spec §6 进行中时相关命令禁用）；runMutation 保证成功/失败都 refresh。
-  const register = (id: string, fn: () => Promise<void>) =>
-    context.subscriptions.push(vscode.commands.registerCommand(id, async () => {
+  const register = (id: string, fn: (arg?: unknown) => Promise<void>) =>
+    context.subscriptions.push(vscode.commands.registerCommand(id, async (arg?: unknown) => {
       try {
         // try/catch 覆盖整个命令体：交互与队列内的拒绝同样经 showError 呈现
-        await fn();
+        await fn(arg);
       } catch (err) { await showError(err); }
     }));
 
@@ -59,5 +63,24 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
     if (spec === null) { await vscode.window.showWarningMessage("未选择默认 Catalog"); return; }
     const info = await runMutation(deps.queue, () => withProgress("同步 Catalog", async (report) => { report("拉取并解析…"); return catalog.sync(spec); }), () => deps.refresh());
     await vscode.window.showInformationMessage(`已同步 ${spec} → revision ${info.revision}`);
+  });
+
+  // Catalog 树 Pack 行 → 一键安装：arg 为行 TreeItem（packId/catalogSpec 由 provider 挂载）。
+  // core 按默认 Catalog spec 解析 Pack → 非默认 Catalog 的 Pack 必须先选中；作用域经交互选择。
+  register("avenic.catalog.installPack", async (arg?: unknown) => {
+    if (busy()) return;
+    const { packId, catalogSpec } = (arg ?? {}) as { packId?: string; catalogSpec?: string };
+    if (packId === undefined) { await vscode.window.showWarningMessage("请在 Catalog 树中右键 Pack 行安装"); return; }
+    const current = await catalog.defaultSpec();
+    if (current === null) { await vscode.window.showWarningMessage("尚未选择默认 Catalog，请先执行 Avenic: Catalog 添加"); return; }
+    if (catalogSpec !== undefined && catalogSpec !== current) {
+      await vscode.window.showWarningMessage("该 Pack 属于非默认 Catalog，先执行 Avenic: Catalog 选择再安装"); return;
+    }
+    const scope = await pickScope();
+    if (scope === null) return;
+    const cwd = await scopeCwd(scope, deps.resolveRoot);
+    if (cwd === null) return;
+    const result = await runMutation(deps.queue, () => withProgress("安装 Packs", async (report) => { report(`安装 Pack ${packId}…`); return skills.installPacks(scope, [packId], cwd); }), () => deps.refresh());
+    await vscode.window.showInformationMessage(`Pack ${packId} 已安装：${result.resolvedPacks.names.join(", ")}`);
   });
 }

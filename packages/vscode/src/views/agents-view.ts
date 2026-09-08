@@ -20,7 +20,8 @@ export class AgentsViewProvider implements vscode.TreeDataProvider<vscode.TreeIt
       item.id = m.id; // T7 上下文菜单命令经 treeItem.id 取 agent
       item.description = m.description;
       item.tooltip = m.tooltip;
-      item.contextValue = "agent";
+      // 按状态区分行类型：未初始化 → agent-inactive（右键/悬停仅显示「初始化」）；已初始化 → agent
+      item.contextValue = m.active ? "agent" : "agent-inactive";
       item.iconPath = new vscode.ThemeIcon(m.iconHint);
       return item;
     });

@@ -1,7 +1,7 @@
-import type { InstallStatus, KnownCatalogEntry } from "@avenic/core";
+import type { InstallStatus, KnownCatalogEntry, Pack } from "@avenic/core";
 import type { AgentStatus } from "../services/agents.ts";
 
-export interface AgentViewItem { id: string; label: string; description: string; tooltip: string; iconHint: string; }
+export interface AgentViewItem { id: string; label: string; description: string; tooltip: string; iconHint: string; active: boolean; }
 
 export function agentsToViewModels(statuses: AgentStatus[]): AgentViewItem[] {
   return statuses.map(({ agent, executableAvailable, effective }) => ({
@@ -10,6 +10,7 @@ export function agentsToViewModels(statuses: AgentStatus[]): AgentViewItem[] {
     description: effective ? `已初始化 · ${effective.auth} / ${effective.sessions}` : "未初始化",
     tooltip: `${agent.executable} · CLI ${executableAvailable ? "可用" : "不可用"} · ${effective ? `auth: ${effective.auth}, sessions: ${effective.sessions}` : "未初始化"}`,
     iconHint: effective ? "pass-filled" : "circle-outline",
+    active: effective !== null,
   }));
 }
 
@@ -19,6 +20,29 @@ export function catalogToViewModels(defaultSpec: string | null, known: KnownCata
   const first = [] as CatalogViewItem[];
   if (defaultSpec) first.push({ kind: "current", label: defaultSpec, description: current?.name ?? "" });
   return first.concat(known.filter((k) => k.spec !== defaultSpec).map((k) => ({ kind: "entry", label: k.spec, description: k.name })));
+}
+
+// Catalog 树子级行：pack（可展开）/ skill / hint（未缓存提示）
+export interface CatalogChildItem { kind: "pack" | "skill" | "hint"; label: string; description: string; iconHint: string; id?: string; }
+
+export function catalogPacksToViewModels(packs: Pack[]): CatalogChildItem[] {
+  return [...packs].sort((a, b) => a.id.localeCompare(b.id)).map((pack) => ({
+    kind: "pack",
+    label: pack.name,
+    description: pack.description ?? pack.id,
+    iconHint: "package",
+    id: pack.id,
+  }));
+}
+
+// Pack → Skill 行：保持 pack.sources 顺序，同名 Skill 只出现一次，描述标来源 source id
+export function catalogPackSkillsToViewModels(pack: Pack): CatalogChildItem[] {
+  const seen = new Set<string>();
+  return pack.sources.flatMap((source) =>
+    source.skills
+      .filter((name) => (seen.has(name) ? false : (seen.add(name), true)))
+      .map((name) => ({ kind: "skill", label: name, description: source.source, iconHint: "file", id: name })),
+  );
 }
 
 export interface SkillsViewItem { kind: "group" | "pack" | "skill" | "direct" | "detected"; label: string; description: string; iconHint: string; }

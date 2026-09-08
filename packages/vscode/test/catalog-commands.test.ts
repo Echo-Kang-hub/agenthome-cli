@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { add, defaultSpec, listKnown, select, sync } from "../src/services/catalog.ts";
+import { add, defaultSpec, listKnown, packsFor, select, sync } from "../src/services/catalog.ts";
 import { makeCatalogFixture, testEnv } from "./helpers.ts";
 
 test("catalog add → select → sync round-trip with local fixture", async () => {
@@ -28,11 +28,37 @@ test("catalog add → select → sync round-trip with local fixture", async () =
   }
 });
 
-test("manifest registers the four catalog command ids", async () => {
+test("packsFor previews the packs of a catalog spec (read-only view data)", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-catalog-"));
+  try {
+    const catalogDir = path.join(root, "catalog");
+    const env = testEnv(path.join(root, "state"));
+    await makeCatalogFixture(catalogDir);
+    const packs = await packsFor(catalogDir, env);
+    assert.ok(packs !== null, "Catalog 树展开须拿到 Pack 列表");
+    assert.deepEqual([...packs.keys()].sort(), ["common", "extra"]);
+    assert.deepEqual(packs.get("common")?.sources.flatMap((s) => s.skills), ["alpha"]);
+    assert.deepEqual(packs.get("extra")?.sources.flatMap((s) => s.skills), ["beta"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("manifest registers the five catalog command ids with pack-row and title menus", async () => {
   const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const manifest = JSON.parse(await readFile(path.join(pkgDir, "package.json"), "utf8"));
   const ids = manifest.contributes?.commands ?? [];
-  for (const id of ["avenic.catalog.add", "avenic.catalog.select", "avenic.catalog.default", "avenic.catalog.sync"]) {
+  for (const id of ["avenic.catalog.add", "avenic.catalog.select", "avenic.catalog.default", "avenic.catalog.sync", "avenic.catalog.installPack"]) {
     assert.ok(ids.some((c: { command: string }) => c.command === id), id);
+  }
+  // installPack：Catalog 树 Pack 行右键 + 悬停 inline 键
+  const contextMenus: Array<{ command: string; when: string; group?: string }> = manifest.contributes?.menus?.["view/item/context"] ?? [];
+  const packBinding = "view == avenic.catalog && viewItem == catalog-pack";
+  assert.ok(contextMenus.some((m) => m.command === "avenic.catalog.installPack" && m.when === packBinding && m.group === "inline@1"), "pack 行悬停键位");
+  assert.ok(contextMenus.some((m) => m.command === "avenic.catalog.installPack" && m.when === packBinding && m.group === undefined), "pack 行右键菜单");
+  // Catalog 标题栏三键位
+  const titleMenus: Array<{ command: string; when: string }> = manifest.contributes?.menus?.["view/title"] ?? [];
+  for (const id of ["avenic.catalog.add", "avenic.catalog.select", "avenic.catalog.sync"]) {
+    assert.ok(titleMenus.some((m) => m.command === id && m.when === "view == avenic.catalog"), id);
   }
 });

@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { agentsToViewModels, catalogToViewModels, GLOBAL_EMPTY_HINT, PROJECT_EMPTY_HINT, skillsToViewModels } from "../src/views/view-models.ts";
+import { agentsToViewModels, catalogPackSkillsToViewModels, catalogPacksToViewModels, catalogToViewModels, GLOBAL_EMPTY_HINT, PROJECT_EMPTY_HINT, skillsToViewModels } from "../src/views/view-models.ts";
 
 test("uninitialized agent renders as 未初始化", () => {
   const items = agentsToViewModels([{ agent: { id: "claude", displayName: "Claude Code", executable: "claude" }, executableAvailable: true, effective: null }]);
-  assert.deepEqual(items[0], { id: "claude", label: "Claude Code", description: "未初始化", tooltip: "claude · CLI 可用 · 未初始化", iconHint: "circle-outline" });
+  assert.deepEqual(items[0], { id: "claude", label: "Claude Code", description: "未初始化", tooltip: "claude · CLI 可用 · 未初始化", iconHint: "circle-outline", active: false });
+});
+
+test("initialized agent is active for state-specific row keys", () => {
+  const items = agentsToViewModels([{ agent: { id: "claude", displayName: "Claude Code", executable: "claude" }, executableAvailable: true, effective: { enabled: true, auth: "global", sessions: "project", configuredAuth: "global", localAuth: null } }]);
+  assert.equal(items[0].active, true);
 });
 
 test("initialized agent shows auth/sessions", () => {
@@ -73,4 +78,27 @@ test("fully managed status adds no detected group", () => {
   const groups = skillsToViewModels(status, ["managed-one"], PROJECT_EMPTY_HINT);
   assert.equal(groups.length, 3);
   assert.ok(groups.every((g) => g.item.kind === "group"));
+});
+
+test("catalog packs map to sorted pack rows with id", () => {
+  const rows = catalogPacksToViewModels([
+    { id: "extra", name: "Extra", sources: [] },
+    { id: "common", name: "Common", sources: [] },
+  ]);
+  assert.deepEqual(rows.map((r) => r.id), ["common", "extra"]);
+  assert.equal(rows[0].kind, "pack");
+  assert.equal(rows[0].label, "Common");
+});
+
+test("catalog pack expands to deduped skill rows keeping source order", () => {
+  const rows = catalogPackSkillsToViewModels({
+    id: "common", name: "Common",
+    sources: [
+      { source: "demo", skills: ["alpha", "beta"] },
+      { source: "other", skills: ["beta", "gamma"] },
+    ],
+  });
+  assert.deepEqual(rows.map((r) => r.label), ["alpha", "beta", "gamma"]); // 同名 beta 只出现一次
+  assert.equal(rows[2].description, "other"); // 描述标来源 source id
+  assert.ok(rows.every((r) => r.kind === "skill"));
 });

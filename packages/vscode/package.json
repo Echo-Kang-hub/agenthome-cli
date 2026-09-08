@@ -3,7 +3,7 @@
   "displayName": "Avenic Agent Manager",
   "description": "管理 Avenic Agent 运行时与 Skills 的图形界面",
   "publisher": "EchoKang",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/Echo-Kang-hub/avenic.git" },
@@ -23,8 +23,8 @@
       ]
     },
     "commands": [
-      { "command": "avenic.agents.init", "title": "Avenic: 初始化 Agent", "category": "Avenic" },
-      { "command": "avenic.agents.deinit", "title": "Avenic: 移除 Agent", "category": "Avenic" },
+      { "command": "avenic.agents.init", "title": "Avenic: 初始化 Agent", "category": "Avenic", "icon": "$(add)" },
+      { "command": "avenic.agents.deinit", "title": "Avenic: 移除 Agent", "category": "Avenic", "icon": "$(trash)" },
       { "command": "avenic.agents.switchAuth", "title": "Avenic: 切换认证模式", "category": "Avenic" },
       { "command": "avenic.agents.switchSessions", "title": "Avenic: 切换会话存储", "category": "Avenic" },
       { "command": "avenic.agents.sessionsImport", "title": "Avenic: 导入会话", "category": "Avenic" },
@@ -38,11 +38,14 @@
       { "command": "avenic.skills.addDirect", "title": "Avenic: 添加直装 Skill", "category": "Avenic" },
       { "command": "avenic.skills.removeDirect", "title": "Avenic: 移除直装 Skill", "category": "Avenic" },
       { "command": "avenic.skills.directList", "title": "Avenic: 直装 Skills 列表", "category": "Avenic" },
-      { "command": "avenic.skills.adopt", "title": "Avenic: 托管未托管 Skills", "category": "Avenic" }
+      { "command": "avenic.skills.adopt", "title": "Avenic: 托管未托管 Skills", "category": "Avenic", "icon": "$(sync)" },
+      { "command": "avenic.catalog.installPack", "title": "Avenic: 安装 Pack", "category": "Avenic", "icon": "$(cloud-download)" }
     ],
     "menus": {
       "view/item/context": [
-        { "command": "avenic.agents.init", "when": "view == avenic.agents && viewItem == agent" },
+        { "command": "avenic.agents.init", "when": "view == avenic.agents && viewItem == agent-inactive", "group": "inline@1" },
+        { "command": "avenic.agents.init", "when": "view == avenic.agents && viewItem == agent-inactive" },
+        { "command": "avenic.agents.deinit", "when": "view == avenic.agents && viewItem == agent", "group": "inline@2" },
         { "command": "avenic.agents.deinit", "when": "view == avenic.agents && viewItem == agent" },
         { "command": "avenic.agents.switchAuth", "when": "view == avenic.agents && viewItem == agent" },
         { "command": "avenic.agents.switchSessions", "when": "view == avenic.agents && viewItem == agent" },
@@ -53,12 +56,18 @@
         { "command": "avenic.skills.addDirect", "when": "view == avenic.skills" },
         { "command": "avenic.skills.removeDirect", "when": "view == avenic.skills" },
         { "command": "avenic.skills.directList", "when": "view == avenic.skills" },
-        { "command": "avenic.skills.adopt", "when": "view == avenic.skills && viewItem == detected" }
+        { "command": "avenic.skills.adopt", "when": "view == avenic.skills && viewItem == detected", "group": "inline@1" },
+        { "command": "avenic.skills.adopt", "when": "view == avenic.skills && viewItem == detected" },
+        { "command": "avenic.catalog.installPack", "when": "view == avenic.catalog && viewItem == catalog-pack", "group": "inline@1" },
+        { "command": "avenic.catalog.installPack", "when": "view == avenic.catalog && viewItem == catalog-pack" }
       ],
       "view/title": [
         { "command": "avenic.catalog.add", "when": "view == avenic.catalog" },
         { "command": "avenic.catalog.select", "when": "view == avenic.catalog" },
-        { "command": "avenic.catalog.sync", "when": "view == avenic.catalog" }
+        { "command": "avenic.catalog.sync", "when": "view == avenic.catalog" },
+        { "command": "avenic.agents.init", "when": "view == avenic.agents" },
+        { "command": "avenic.skills.installPacks", "when": "view == avenic.skills" },
+        { "command": "avenic.skills.addDirect", "when": "view == avenic.skills" }
       ],
       "commandPalette": [
         { "command": "avenic.catalog.add" },

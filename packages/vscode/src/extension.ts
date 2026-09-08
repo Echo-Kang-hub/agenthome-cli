@@ -38,7 +38,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(OverviewProvider.viewType, overview),
   );
   registerAgentsCommands(context, { queue, resolveRoot, refresh });
-  registerCatalogCommands(context, { queue, refresh });
+  registerCatalogCommands(context, { queue, refresh, resolveRoot });
   registerSkillsCommands(context, { queue, resolveRoot, refresh });
 }
 
