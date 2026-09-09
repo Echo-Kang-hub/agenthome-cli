@@ -105,9 +105,9 @@ export async function ensureCatalog(spec, options = {}) {
     return { catalogRoot: directory, repository, ref, revision, spec };
   } catch (error) {
     fail(
-      `${error.message}\nUnable to fetch catalog: ${spec}\n` +
-      "Check your GitHub authentication (gh auth login, SSH key, or credential helper) and the catalog spec.\n" +
-      "To point Avenic at your own catalog: avenic catalog add <owner/repo>",
+      `${error.message}\nUnable to fetch Hub: ${spec}\n` +
+      "Check your GitHub authentication (gh auth login, SSH key, or credential helper) and the Hub spec.\n" +
+      "To point Avenic at your own Hub: avenic hub add <owner/repo>",
     );
   }
 }

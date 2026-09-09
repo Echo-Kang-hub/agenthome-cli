@@ -22,7 +22,7 @@ import {
   validateAuthMode,
   validateSessionsMode,
 } from "#core";
-import { dispatchCatalog, dispatchSkills } from "./skills-cli.mjs";
+import { dispatchHub, dispatchSkills } from "./skills-cli.mjs";
 import { updateAvenic } from "./self-update.mjs";
 import { spawnSessionWatchdog } from "./watchdog.mjs";
 
@@ -83,15 +83,16 @@ Skills:
   avenic skills status [-g]           Show the installed tree
   -g, --global                        Use the global user scope
 
-Catalog:
-  avenic catalog add <spec>           Add a catalog source (owner/repo[#ref], URL, or local path) and preview its Packs
-  avenic catalog select [name|spec]   Pick the current catalog from registered ones (interactive picker on a terminal)
-  avenic catalog list                 List registered catalogs
-  avenic catalog sync                 Fetch or update the cached catalog
-  avenic catalog default              Show the configured catalog spec
+Hub:
+  avenic hub add <spec>               Add a Hub source (owner/repo[#ref], URL, or local path) and preview its Packs
+  avenic hub select [name|spec]       Pick the current Hub from registered ones (interactive picker on a terminal)
+  avenic hub list                     List registered Hubs
+  avenic hub sync                     Fetch or update the cached Hub
+  avenic hub default                  Show the configured Hub spec
   Private repos use your local git credentials (gh auth login or SSH)
-  avenic catalog doctor|update|skill-add|remove|pack-add|pack-remove|source-add
-                                      (run inside your catalog Git clone)
+  avenic hub doctor|update|skill-add|remove|pack-add|pack-remove|source-add
+                                      (run inside your Hub Git clone)
+  Note: the deprecated verb 'catalog' still works, with a deprecation warning.
 
 Update Avenic:
   avenic self-update
@@ -404,8 +405,10 @@ export async function runCli(options = {}) {
   if (command === "skills") {
     return dispatchSkillsCommand(remainingArguments);
   }
-  if (command === "catalog") {
-    return dispatchCatalog(remainingArguments, {
+  if (command === "hub" || command === "catalog") {
+    // `catalog` 是弃用别名：继续可用，但警告（与 AGENTHOME_* 环境变量的弃用风格一致）
+    if (command === "catalog") console.warn("warning: `avenic catalog` is deprecated; use `avenic hub`");
+    return dispatchHub(remainingArguments, {
       io: console,
       cwd: process.cwd(),
       environment: process.env,

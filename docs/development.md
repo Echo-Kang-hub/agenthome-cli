@@ -47,6 +47,6 @@ cd packages/cli && npm publish
 
 core 变更 → bump `packages/core/package.json` 版本 → `cd packages/core && npm publish`（由维护者执行）→ CLI `npm run sync-core` 照旧。
 
-## catalog 仓库
+## Hub 仓库
 
-私有 catalog 仓库是纯数据仓库：`skills/`、`packs/`、`sources.lock.json`、`licenses/`，加每日 CI（auto-update-skills.yml，从 registry 安装 CLI 后运行 `avenic catalog update` + `avenic catalog doctor` 并提交）。不得再分发的第三方 Skills 只允许存在于该私有仓库，不进入本公开仓库。
+私有 Hub 仓库是纯数据仓库：`skills/`、`packs/`、`sources.lock.json`、`licenses/`，加每日 CI（auto-update-skills.yml，从 registry 安装 CLI 后运行 `avenic hub update` + `avenic hub doctor` 并提交）。不得再分发的第三方 Skills 只允许存在于该私有仓库，不进入本公开仓库。

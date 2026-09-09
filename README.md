@@ -27,8 +27,8 @@ avenic codex init --sessions global           # Codex 会话留在全局原生�
 avenic claude sessions import                 # 把本机会话复制进项目便携存储
 avenic claude sessions writeback              # 把项目便携会话显式回写本机
 avenic sessions git off                       # 会话不进 Git
-avenic catalog add <owner/repo>               # 导入 catalog（可导入多个，会打印 Pack 预览树）
-avenic catalog select                         # 上下键切换当前 catalog
+avenic hub add <owner/repo>               # 导入 Hub（可导入多个，会打印 Pack 预览树）
+avenic hub select                         # 上下键切换当前 Hub
 avenic skills install                         # 安装默认 Pack（common）
 avenic skills add <owner/repo>                # 从任意 GitHub 仓库直接安装 Skills
 ```
@@ -89,12 +89,12 @@ avenic sessions git on|off|status # 项目会话记录的 Git 同步开关
 
 ## Skills
 
-### Catalog
+### Hub
 
-Catalog 是一个 git 仓库，公开或私有均可；私有仓库使用本机 git 认证（gh、SSH 或 credential helper），CLI 不接触 token。标准结构：
+Hub 是一个 git 仓库，公开或私有均可；私有仓库使用本机 git 认证（gh、SSH 或 credential helper），CLI 不接触 token。标准结构：
 
 ```
-my-catalog/
+my-hub/
 ├── sources.lock.json                    # 上游源登记：id、仓库地址、锁定 commit、Skill 根目录、许可证
 ├── packs/
 │   ├── common.json                      # Pack 定义（common 为默认 Pack，安装时自动包含）
@@ -116,84 +116,84 @@ Pack 定义示例（`packs/development.json`）：
 }
 ```
 
-一个 catalog 可聚合多个上游源；Pack 从这些源挑选 Skill（可跨源），`description` 是 Pack 的用途说明，会显示在 `catalog add` 的预览树中。
+一个 Hub 可聚合多个上游源；Pack 从这些源挑选 Skill（可跨源），`description` 是 Pack 的用途说明，会显示在 `hub add` 的预览树中。
 
 #### 使用
 
 ```bash
-avenic catalog add <owner/repo>         # 导入 catalog（owner/repo[#ref]、URL 或本地路径），成功后打印 Pack 预览树
+avenic hub add <owner/repo>         # 导入 Hub（owner/repo[#ref]、URL 或本地路径），成功后打印 Pack 预览树
 avenic skills install                   # 安装默认 Pack（common）
 avenic skills install development       # 安装多个 Pack；common 自动包含
 avenic skills uninstall development     # 卸载 Pack（不带参数移除全部受管理 Skills）
 avenic skills -g development            # 安装到全局作用域（skills <pack> 是 install 的简写）
-avenic skills tree [pack...]            # 查看 catalog 内容树
+avenic skills tree [pack...]            # 查看 Hub 内容树
 avenic skills packs                     # 列出可用 Packs
 avenic skills status [-g]               # 当前安装状态
 ```
 
-`catalog add` 拉取失败不影响源保存，之后 `avenic catalog sync` 重试。可反复 `add` 注册多个 catalog，同一时间生效一个（该 catalog 聚合的多个上游源共享所有 Pack）：
+`hub add` 拉取失败不影响源保存，之后 `avenic hub sync` 重试。可反复 `add` 注册多个 Hub，同一时间生效一个（该 Hub 聚合的多个上游源共享所有 Pack）：
 
 ```bash
-avenic catalog select [name|spec]       # ↑/↓ 选择当前 catalog（无终端时打印列表）
-avenic catalog list                     # 列出已注册 catalog（> 标记当前）
-avenic catalog default                  # 查看当前 catalog
-avenic catalog sync                     # 拉取或更新缓存（~/.config/avenic/catalog/）
+avenic hub select [name|spec]       # ↑/↓ 选择当前 Hub（无终端时打印列表）
+avenic hub list                     # 列出已注册 Hub（> 标记当前）
+avenic hub default                  # 查看当前 Hub
+avenic hub sync                     # 拉取或更新缓存（~/.config/avenic/catalog/）
 ```
 
-每次安装把 catalog commit 写入项目锁 `.avenic.lock.json`，跨设备可复现。
+每次安装把 Hub commit 写入项目锁 `.avenic.lock.json`，跨设备可复现。
 
-> 默认 catalog 为维护者提供的示例；使用前请通过 `avenic catalog add <owner/repo>` 指向自己的 catalog。
+> 默认 Hub 为维护者提供的示例；使用前请通过 `avenic hub add <owner/repo>` 指向自己的 Hub。
 
-#### 构造与维护 catalog
+#### 构造与维护 Hub
 
 初始化骨架、登记上游、建 Pack、校验后推送：
 
 ```bash
-mkdir my-catalog && cd my-catalog
+mkdir my-hub && cd my-hub
 git init
 mkdir -p packs skills
 echo '{"schemaVersion":1,"sources":[]}' > sources.lock.json
-avenic catalog pack-add common --name Common                        # 新建 Pack
-avenic catalog skill-add <owner/repo> --pack common                 # 登记第一个上游源并收录其全部 Skill
-avenic catalog pack-add development --name Development
-avenic catalog skill-add <owner/repo> skill-a skill-b --pack development
-avenic catalog doctor                                               # 校验结构
-git add -A && git commit -m "catalog" && git push
+avenic hub pack-add common --name Common                        # 新建 Pack
+avenic hub skill-add <owner/repo> --pack common                 # 登记第一个上游源并收录其全部 Skill
+avenic hub pack-add development --name Development
+avenic hub skill-add <owner/repo> skill-a skill-b --pack development
+avenic hub doctor                                               # 校验结构
+git add -A && git commit -m "hub" && git push
 ```
 
 `skill-add` 自动登记未收录的上游源（锁定 commit、保存许可证）；省略 `[skill...]` 收录该源全部 Skill；可反复 `skill-add` 聚合多个上游源。
 
-维护命令（在 catalog 克隆内运行）：
+维护命令（在 Hub 克隆内运行）：
 
 ```bash
-avenic catalog skill-add <source-id|owner/repo> [skill...] [--pack <pack,pack>]
-avenic catalog remove <source-id|owner/repo> <skill...> [--pack <pack,pack>]   # 从 Pack 移除 Skill；无 Pack 引用时删除副本
-avenic catalog pack-add <id> [--name <name>] [--description <text>]
-avenic catalog pack-remove <pack...>                                          # 删除 Pack（common 不可删），无引用 Skill 一并清理
-avenic catalog source-add <id> <repo> [--name <name>] [--skill-root <path>] [--license <path>]
-avenic catalog update [source] [--check]                                      # 跟进上游更新，锁定新 commit
-avenic catalog doctor                                                         # 校验 catalog
+avenic hub skill-add <source-id|owner/repo> [skill...] [--pack <pack,pack>]
+avenic hub remove <source-id|owner/repo> <skill...> [--pack <pack,pack>]   # 从 Pack 移除 Skill；无 Pack 引用时删除副本
+avenic hub pack-add <id> [--name <name>] [--description <text>]
+avenic hub pack-remove <pack...>                                          # 删除 Pack（common 不可删），无引用 Skill 一并清理
+avenic hub source-add <id> <repo> [--name <name>] [--skill-root <path>] [--license <path>]
+avenic hub update [source] [--check]                                      # 跟进上游更新，锁定新 commit
+avenic hub doctor                                                         # 校验 Hub
 ```
 
 #### 连接私有 Skills 仓库
 
-私有仓库不需要额外配置：CLI 不接触 token，clone 与 fetch 全部由本机 git 完成。以连接私有 catalog `Echo-Kang-hub/avenic-catalog` 为例：
+私有仓库不需要额外配置：CLI 不接触 token，clone 与 fetch 全部由本机 git 完成。以连接私有 Hub `Echo-Kang-hub/SkillsHub` 为例：
 
 ```bash
 gh auth login                                            # 1. 登录 GitHub（或改用 SSH key，二选一，只需一次）
-avenic catalog add Echo-Kang-hub/avenic-catalog    # 2. 设置 catalog 源（换成 <你的用户名>/<你的仓库>），终端会打印 Pack 预览树
-avenic catalog sync                                   # 3. 验证可拉取（输出 40 位 commit 即成功）
+avenic hub add Echo-Kang-hub/SkillsHub    # 2. 设置 Hub 源（换成 <你的用户名>/<你的仓库>），终端会打印 Pack 预览树
+avenic hub sync                                   # 3. 验证可拉取（输出 40 位 commit 即成功）
 avenic skills install                                 # 4. 安装默认 Pack（common）
 ```
 
-- Windows 上 HTTPS 方式默认使用 Git Credential Manager（首次自动弹窗登录）；也可以使用 SSH 地址：`avenic catalog add git@github.com:<owner>/<repo>.git`
+- Windows 上 HTTPS 方式默认使用 Git Credential Manager（首次自动弹窗登录）；也可以使用 SSH 地址：`avenic hub add git@github.com:<owner>/<repo>.git`
 - `avenic skills add <owner/repo>` 从单个私有仓库安装 Skill，认证方式相同
 
 | 现象 | 处理 |
 |---|---|
 | `schannel: failed to receive handshake / SSL/TLS connection failed` | 网络或代理阻断了到 github.com 的 TLS 连接，与认证无关；检查代理/VPN，或改用 SSH 地址 |
-| `Unable to fetch catalog` + `Check your GitHub authentication` | git 没有该私有仓库的访问权限；先运行 `gh auth status` 或 `ssh -T git@github.com` |
-| 换回其他 catalog | 已注册的直接 `avenic catalog select` 切换；未注册的再次 `avenic catalog add <spec>` |
+| `Unable to fetch Hub` + `Check your GitHub authentication` | git 没有该私有仓库的访问权限；先运行 `gh auth status` 或 `ssh -T git@github.com` |
+| 换回其他 Hub | 已注册的直接 `avenic hub select` 切换；未注册的再次 `avenic hub add <spec>` |
 
 ### 直接源
 
@@ -214,7 +214,7 @@ avenic skills remove <skill...>   # 撤回：移除通过 add 安装的 Skills
 | `avenic sessions git off` | `avenic sessions git on` |
 | `avenic skills install [pack...]`（简写 `avenic skills [pack...]`） | `avenic skills uninstall`（全部）或 `avenic skills uninstall <pack>` |
 | `avenic skills add <owner/repo>` | `avenic skills remove <skill...>` |
-| `avenic catalog add <spec>` | `avenic catalog select` 选回已注册 catalog，或再次 `avenic catalog add <原 spec>` |
+| `avenic hub add <spec>` | `avenic hub select` 选回已注册 Hub，或再次 `avenic hub add <原 spec>` |
 | `avenic self-update` | `npm install -g avenic@<旧版本>` |
 
 ## 自更新

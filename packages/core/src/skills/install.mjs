@@ -475,7 +475,7 @@ export async function resolveInstallSource(options, { refresh = false } = {}) {
 export async function installPacks(context, explicitPacks = [], options = {}) {
   const io = options.io ?? console;
   if (!context.global && isCatalogDirectory(context.root)) {
-    fail("Run installation from a work project, not from the Avenic catalog");
+    fail("Run installation from a work project, not from the Avenic Hub");
   }
   const catalogInfo = await resolveInstallSource({
     global: context.global,

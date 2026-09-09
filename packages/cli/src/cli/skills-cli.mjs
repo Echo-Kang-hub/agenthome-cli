@@ -132,7 +132,7 @@ async function interactiveInstall(options = {}) {
   const context = createInstallContext(options.global ?? false, options);
   const quietIo = { log() {} };
   intro(stdout, "Install Skills");
-  const spin = spinner({ ...prompts, text: "Loading catalog…" });
+  const spin = spinner({ ...prompts, text: "Loading Hub…" });
   let catalogInfo;
   let sourceConfig;
   let catalog;
@@ -152,10 +152,10 @@ async function interactiveInstall(options = {}) {
     throw error;
   }
   if (packs.size === 0) {
-    spin.stop("Catalog loaded");
-    fail("Catalog has no Packs: add one inside the catalog clone (avenic catalog pack-add <id>)");
+    spin.stop("Hub loaded");
+    fail("Hub has no Packs: add one inside the Hub clone (avenic hub pack-add <id>)");
   }
-  spin.stop("Catalog loaded");
+  spin.stop("Hub loaded");
   const entries = [...packs.values()].map((pack) => {
     const own = resolvePack(catalog, sourceConfig, pack);
     const effective = resolvePacks(catalog, sourceConfig, packs, [pack.id]);
@@ -214,7 +214,7 @@ async function commandAddDirect(argumentsList, options = {}) {
   const io = options.io ?? console;
   const context = createInstallContext(options.global ?? false, options);
   if (!options.global && isCatalogDirectory(options.cwd ?? process.cwd())) {
-    fail("Run installation from a work project, not from the Avenic catalog");
+    fail("Run installation from a work project, not from an Avenic Hub");
   }
   const [sourceReference, ...skillNames] = argumentsList;
   if (!sourceReference) {
@@ -380,7 +380,7 @@ async function commandTree(packArguments, options = {}) {
   const sourceConfig = await loadSources(catalogInfo.catalogRoot);
   const catalog = await buildCatalog(sourceConfig, path.join(catalogInfo.catalogRoot, "skills"));
   if (packArguments.length === 0) {
-    printTree(catalog.groups, "All catalog Skills", [], io);
+    printTree(catalog.groups, "All Hub Skills", [], io);
     return;
   }
   const packs = await loadPacks(catalogInfo.catalogRoot);
@@ -840,7 +840,7 @@ async function commandSourceAdd(argumentsList, catalogRoot, io = console) {
     repository,
     skillRoot,
   }, io);
-  io.log(`Next: avenic catalog skill-add ${id} <skill-name> --pack <pack>`);
+  io.log(`Next: avenic hub skill-add ${id} <skill-name> --pack <pack>`);
 }
 
 async function commandPackAdd(argumentsList, catalogRoot, io = console) {
@@ -872,7 +872,7 @@ async function commandPackAdd(argumentsList, catalogRoot, io = console) {
   });
   io.log(`Created Pack: ${id}`);
   io.log(`File: ${packFile}`);
-  io.log(`Next: avenic catalog skill-add <source> <skill-name> --pack ${id}`);
+  io.log(`Next: avenic hub skill-add <source> <skill-name> --pack ${id}`);
 }
 
 async function runMaintenanceCommand(command, argumentsList, catalogRoot, io) {
@@ -903,29 +903,29 @@ async function runMaintenanceCommand(command, argumentsList, catalogRoot, io) {
   }
 }
 
-async function commandCatalogSync(options = {}) {
+async function commandHubSync(options = {}) {
   const io = options.io ?? console;
   const spec = await loadDefaultCatalogSpec(options.environment);
   const catalogInfo = await ensureCatalog(spec, {
     environment: options.environment,
     io,
   });
-  io.log("Catalog sync\n");
-  io.log(`Catalog   ${catalogInfo.spec}`);
+  io.log("Hub sync\n");
+  io.log(`Hub   ${catalogInfo.spec}`);
   io.log(`Cache     ${catalogInfo.catalogRoot}`);
   io.log(`Revision  ${catalogInfo.revision}`);
 }
 
-async function commandCatalogAdd(argumentsList, options = {}) {
+async function commandHubAdd(argumentsList, options = {}) {
   const io = options.io ?? console;
   const [spec] = argumentsList;
   if (!spec || argumentsList.length !== 1) {
-    fail("Usage: avenic catalog add <spec>");
+    fail("Usage: avenic hub add <spec>");
   }
   const result = await registerCatalog(spec, { environment: options.environment, io });
-  io.log(`Default catalog: ${spec}`);
+  io.log(`Default Hub: ${spec}`);
   if (result.previewFailed) {
-    io.log("\nSpec saved. Catalog preview unavailable:");
+    io.log("\nSpec saved. Hub preview unavailable:");
     io.log(`  ${String(result.error.message).split("\n")[0]}`);
   } else {
     io.log(`\nPacks · ${result.packs.length}`);
@@ -937,11 +937,11 @@ async function commandCatalogAdd(argumentsList, options = {}) {
     });
     io.log("\nInstall: avenic skills install [pack...]");
   }
-  io.log("Run: avenic catalog sync");
+  io.log("Run: avenic hub sync");
 }
 
 // Seed the registry with the current spec on first use, so upgrading users
-// see their catalog in `catalog list`/`catalog select` immediately.
+// see their Hub in `hub list`/`hub select` immediately.
 async function ensureKnownCatalogs(options = {}) {
   let known = await loadKnownCatalogs(options.environment);
   if (known.length === 0) {
@@ -952,33 +952,33 @@ async function ensureKnownCatalogs(options = {}) {
   return known;
 }
 
-async function commandCatalogList(options = {}) {
+async function commandHubList(options = {}) {
   const io = options.io ?? console;
   const current = await loadDefaultCatalogSpec(options.environment);
   const known = await ensureKnownCatalogs(options);
-  io.log("\nRegistered catalogs\n");
+  io.log("\nRegistered Hubs\n");
   for (const entry of known) {
     const marker = entry.spec === current ? ">" : " ";
     io.log(`${marker} ${entry.name}${entry.spec !== entry.name ? `   ${entry.spec}` : ""}`);
   }
-  io.log("\n> = current. Switch: avenic catalog select");
+  io.log("\n> = current. Switch: avenic hub select");
 }
 
 // clack 风格单选（prompts.select 内部实现帧重绘，含键盘处理与取消打印）。
-// 非 TTY 时 commandCatalogSelect 在进入本函数前已回退为纯文本清单。
-function promptCatalogChoice(entries, currentIndex) {
+// 非 TTY 时 commandHubSelect 在进入本函数前已回退为纯文本清单。
+function promptHubChoice(entries, currentIndex) {
   return select({
-    title: "Choose a catalog",
+    title: "Choose a Hub",
     options: entries.map((entry) => ({ value: entry.spec, label: entry.name })),
     initial: currentIndex >= 0 ? currentIndex : 0,
   });
 }
 
-async function commandCatalogSelect(argumentsList, options = {}) {
+async function commandHubSelect(argumentsList, options = {}) {
   const io = options.io ?? console;
   const [target] = argumentsList;
   if (argumentsList.length > 1) {
-    fail("Usage: avenic catalog select [name|spec]");
+    fail("Usage: avenic hub select [name|spec]");
   }
   const current = await loadDefaultCatalogSpec(options.environment);
   const known = await ensureKnownCatalogs(options);
@@ -986,34 +986,34 @@ async function commandCatalogSelect(argumentsList, options = {}) {
     const entry = known.find((candidate) => candidate.spec === target)
       ?? known.find((candidate) => candidate.name === target);
     if (!entry) {
-      fail(`Unknown catalog: ${target}\nAdd one first: avenic catalog add <spec>`);
+      fail(`Unknown Hub: ${target}\nAdd one first: avenic hub add <spec>`);
     }
     await setDefaultCatalogSpec(options.environment, entry.spec);
-    io.log(`Current catalog: ${entry.spec}`);
+    io.log(`Current Hub: ${entry.spec}`);
     return;
   }
   if (!isInteractive()) {
     // No terminal (pipes, scripts): print the plain list instead.
-    await commandCatalogList(options);
+    await commandHubList(options);
     return;
   }
   const currentIndex = known.findIndex((entry) => entry.spec === current);
   // The picker paints its own title as the first frame line.
-  const chosen = await promptCatalogChoice(known, currentIndex);
+  const chosen = await promptHubChoice(known, currentIndex);
   if (chosen === null) {
     io.log("No change.");
     return;
   }
   await setDefaultCatalogSpec(options.environment, chosen);
-  io.log(`Current catalog: ${chosen}`);
+  io.log(`Current Hub: ${chosen}`);
 }
 
-async function commandCatalogDefault(options = {}) {
+async function commandHubDefault(options = {}) {
   const io = options.io ?? console;
-  io.log(`Default catalog: ${await loadDefaultCatalogSpec(options.environment)}`);
+  io.log(`Default Hub: ${await loadDefaultCatalogSpec(options.environment)}`);
 }
 
-export async function dispatchCatalog(argumentsList, options = {}) {
+export async function dispatchHub(argumentsList, options = {}) {
   const io = options.io ?? console;
   const scope = parseScopeArguments(argumentsList);
   // The entry point (dispatchSkills) strips scope flags before delegating here,
@@ -1022,37 +1022,37 @@ export async function dispatchCatalog(argumentsList, options = {}) {
   const [command, ...remainingArguments] = scope.argumentsList;
   if (command === "sync") {
     if (global || remainingArguments.length > 0) {
-      fail("Usage: avenic catalog sync");
+      fail("Usage: avenic hub sync");
     }
-    await commandCatalogSync(options);
+    await commandHubSync(options);
     return;
   }
   if (command === "add") {
     if (global) {
-      fail("avenic catalog add does not accept a global scope");
+      fail("avenic hub add does not accept a global scope");
     }
-    await commandCatalogAdd(remainingArguments, options);
+    await commandHubAdd(remainingArguments, options);
     return;
   }
   if (command === "default") {
     if (global || remainingArguments.length > 0) {
-      fail("Usage: avenic catalog default");
+      fail("Usage: avenic hub default");
     }
-    await commandCatalogDefault(options);
+    await commandHubDefault(options);
     return;
   }
   if (command === "select") {
     if (global) {
-      fail("avenic catalog select does not accept a global scope");
+      fail("avenic hub select does not accept a global scope");
     }
-    await commandCatalogSelect(remainingArguments, options);
+    await commandHubSelect(remainingArguments, options);
     return;
   }
   if (command === "list") {
     if (global || remainingArguments.length > 0) {
-      fail("Usage: avenic catalog list");
+      fail("Usage: avenic hub list");
     }
-    await commandCatalogList(options);
+    await commandHubList(options);
     return;
   }
   const maintenanceCommands = new Set([
@@ -1065,14 +1065,14 @@ export async function dispatchCatalog(argumentsList, options = {}) {
     "source-add",
   ]);
   if (!command || !maintenanceCommands.has(command)) {
-    fail("Usage: avenic catalog <sync|add|select|list|default|doctor|update|skill-add|remove|pack-add|pack-remove|source-add>");
+    fail("Usage: avenic hub <sync|add|select|list|default|doctor|update|skill-add|remove|pack-add|pack-remove|source-add>");
   }
   if (global) {
     fail(`${command} does not accept a global scope`);
   }
   const cwd = options.cwd ?? process.cwd();
   if (!isCatalogDirectory(cwd)) {
-    fail(`${command} must run inside the Avenic Git clone`);
+    fail(`${command} must run inside the Hub Git clone`);
   }
   return runMaintenanceCommand(command, remainingArguments, cwd, io);
 }
@@ -1107,7 +1107,9 @@ export async function dispatchSkills(argumentsList, options = {}) {
     return;
   }
   if (command === "catalog") {
-    await dispatchCatalog(remainingArguments, {
+    // 旧嵌套写法 `avenic skills catalog …`：同样弃用，转发到 hub
+    console.warn("warning: `avenic skills catalog` is deprecated; use `avenic hub`");
+    await dispatchHub(remainingArguments, {
       io,
       cwd: options.cwd ?? process.cwd(),
       environment: options.environment ?? process.env,

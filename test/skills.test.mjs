@@ -267,7 +267,7 @@ test("installPacks installs the resolved packs and writes metadata", async () =>
     const lock = await readJson(context.lockFile);
     assert.equal(lock.catalog.revision.length, 40);
     assert.equal(lock.packs[0].id, "common");
-    await assert.rejects(() => installPacks(createInstallContext(false, { cwd: catalog, environment }), [], { io: { log() {} } }), /not from the Avenic catalog/);
+    await assert.rejects(() => installPacks(createInstallContext(false, { cwd: catalog, environment }), [], { io: { log() {} } }), /not from the Avenic Hub/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

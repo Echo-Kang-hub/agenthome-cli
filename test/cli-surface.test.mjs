@@ -391,39 +391,50 @@ test("catalog add, default, and sync round-trip through the CLI", async () => {
         await createCatalogFixture(catalogRoot);
         const environment = { AVENIC_STATE_DIR: stateRoot };
 
-        const used = runAgent(projectRoot, ["catalog", "add", catalogRoot], environment);
+        const used = runAgent(projectRoot, ["hub", "add", catalogRoot], environment);
         assert.equal(used.status, 0, used.stderr);
-        assert.match(used.stdout, /Default catalog: /);
+        assert.match(used.stdout, /Default Hub: /);
         assert.match(used.stdout, /Packs · 2/);
         assert.match(used.stdout, /├── common \(Common\) — Common tools for everyday work\./);
         assert.match(used.stdout, /└── development \(Development\)\n/);
         assert.doesNotMatch(used.stdout, /Development — /);
         assert.doesNotMatch(used.stdout, /alpha|beta|gamma/);
         assert.match(used.stdout, /Install: avenic skills install \[pack\.\.\.\]/);
-        assert.match(used.stdout, /Run: avenic catalog sync/);
+        assert.match(used.stdout, /Run: avenic hub sync/);
 
         // "use" was renamed to "add" and is no longer accepted.
-        const legacy = runAgent(projectRoot, ["catalog", "use", catalogRoot], environment);
+        const legacy = runAgent(projectRoot, ["hub", "use", catalogRoot], environment);
         assert.equal(legacy.status, 1);
-        assert.match(legacy.stderr, /Usage: avenic catalog <sync\|add\|select\|list\|default\|doctor\|update\|skill-add\|remove\|pack-add\|pack-remove\|source-add>/);
+        assert.match(legacy.stderr, /Usage: avenic hub <sync\|add\|select\|list\|default\|doctor\|update\|skill-add\|remove\|pack-add\|pack-remove\|source-add>/);
 
-        const shown = runAgent(projectRoot, ["catalog", "default"], environment);
+        const shown = runAgent(projectRoot, ["hub", "default"], environment);
         assert.equal(shown.status, 0, shown.stderr);
-        assert.equal(shown.stdout.trim(), `Default catalog: ${catalogRoot}`);
+        assert.equal(shown.stdout.trim(), `Default Hub: ${catalogRoot}`);
 
-        const synced = runAgent(projectRoot, ["catalog", "sync"], environment);
+        const synced = runAgent(projectRoot, ["hub", "sync"], environment);
         assert.equal(synced.status, 0, synced.stderr);
-        assert.match(synced.stdout, /Catalog sync/);
+        assert.match(synced.stdout, /Hub sync/);
         assert.match(synced.stdout, /Revision\s+[0-9a-f]{40}/);
 
-        const missingSpec = runAgent(projectRoot, ["catalog", "add"], environment);
+        const missingSpec = runAgent(projectRoot, ["hub", "add"], environment);
         assert.equal(missingSpec.status, 1);
-        assert.match(missingSpec.stderr, /Usage: avenic catalog add <spec>/);
+        assert.match(missingSpec.stderr, /Usage: avenic hub add <spec>/);
 
-        const globalSync = runAgent(projectRoot, ["catalog", "-g", "sync"], environment);
+        const globalSync = runAgent(projectRoot, ["hub", "-g", "sync"], environment);
         assert.equal(globalSync.status, 1);
-        assert.match(globalSync.stderr, /Usage: avenic catalog sync/);
+        assert.match(globalSync.stderr, /Usage: avenic hub sync/);
       });
+    });
+  });
+});
+
+test("deprecated `catalog` verb still works with a deprecation warning", async () => {
+  await withTempDirectory("avenic-hub-alias-", async (projectRoot) => {
+    await withTempDirectory("avenic-state-", async (stateRoot) => {
+      const legacy = runAgent(projectRoot, ["catalog", "default"], { AVENIC_STATE_DIR: stateRoot });
+      assert.equal(legacy.status, 0, legacy.stderr);
+      assert.match(legacy.stderr, /`avenic catalog` is deprecated/);
+      assert.match(legacy.stdout, /Default Hub: /);
     });
   });
 });
@@ -434,15 +445,15 @@ test("catalog add keeps the spec saved when the preview fetch fails", async () =
       const environment = { AVENIC_STATE_DIR: stateRoot };
       const missing = path.join(projectRoot, "no-such-catalog");
 
-      const used = runAgent(projectRoot, ["catalog", "add", missing], environment);
+      const used = runAgent(projectRoot, ["hub", "add", missing], environment);
       assert.equal(used.status, 0, used.stderr);
-      assert.match(used.stdout, /Default catalog: /);
-      assert.match(used.stdout, /Spec saved\. Catalog preview unavailable:/);
-      assert.match(used.stdout, /Run: avenic catalog sync/);
+      assert.match(used.stdout, /Default Hub: /);
+      assert.match(used.stdout, /Spec saved\. Hub preview unavailable:/);
+      assert.match(used.stdout, /Run: avenic hub sync/);
 
-      const shown = runAgent(projectRoot, ["catalog", "default"], environment);
+      const shown = runAgent(projectRoot, ["hub", "default"], environment);
       assert.equal(shown.status, 0, shown.stderr);
-      assert.equal(shown.stdout.trim(), `Default catalog: ${missing}`);
+      assert.equal(shown.stdout.trim(), `Default Hub: ${missing}`);
     });
   });
 });
@@ -459,10 +470,10 @@ test("catalog skill-add registers the first source in a fresh catalog", async ()
       await commitAll(catalogRoot, "fresh catalog");
       await createUpstreamFixture(upstreamRoot);
 
-      const packAdded = runAgent(catalogRoot, ["catalog", "pack-add", "common"]);
+      const packAdded = runAgent(catalogRoot, ["hub", "pack-add", "common"]);
       assert.equal(packAdded.status, 0, packAdded.stderr);
 
-      const added = runAgent(catalogRoot, ["catalog", "skill-add", upstreamRoot, "--pack", "common"]);
+      const added = runAgent(catalogRoot, ["hub", "skill-add", upstreamRoot, "--pack", "common"]);
       assert.equal(added.status, 0, added.stderr);
       assert.match(added.stdout, /Added all Skills: [a-z0-9._-]+ \(2\)/);
       assert.match(added.stdout, /Packs: common/);
@@ -471,7 +482,7 @@ test("catalog skill-add registers the first source in a fresh catalog", async ()
       assert.equal(lock.schemaVersion, 1);
       assert.equal(lock.sources.length, 1);
 
-      const doctor = runAgent(catalogRoot, ["catalog", "doctor"]);
+      const doctor = runAgent(catalogRoot, ["hub", "doctor"]);
       assert.equal(doctor.status, 0, doctor.stderr);
       assert.match(doctor.stdout, /OK: 2 Skills, 1 sources, 1 Packs/);
     });
@@ -489,37 +500,37 @@ test("catalog list and select switch between registered catalogs", async () => {
           const nameA = path.basename(catalogA);
           const nameB = path.basename(catalogB);
 
-          const usedA = runAgent(projectRoot, ["catalog", "add", catalogA], environment);
+          const usedA = runAgent(projectRoot, ["hub", "add", catalogA], environment);
           assert.equal(usedA.status, 0, usedA.stderr);
-          const usedB = runAgent(projectRoot, ["catalog", "add", catalogB], environment);
+          const usedB = runAgent(projectRoot, ["hub", "add", catalogB], environment);
           assert.equal(usedB.status, 0, usedB.stderr);
 
           // Most recently used first; the current one is marked.
-          const listed = runAgent(projectRoot, ["catalog", "list"], environment);
+          const listed = runAgent(projectRoot, ["hub", "list"], environment);
           assert.equal(listed.status, 0, listed.stderr);
-          assert.match(listed.stdout, /Registered catalogs/);
+          assert.match(listed.stdout, /Registered Hubs/);
           assert.match(listed.stdout, new RegExp(`> ${nameB}`));
           assert.match(listed.stdout, new RegExp(`^ {2}${nameA}`, "m"));
-          assert.match(listed.stdout, /> = current\. Switch: avenic catalog select/);
+          assert.match(listed.stdout, /> = current\. Switch: avenic hub select/);
 
           // Without a TTY, `select` falls back to the plain list.
-          const picked = runAgent(projectRoot, ["catalog", "select"], environment);
+          const picked = runAgent(projectRoot, ["hub", "select"], environment);
           assert.equal(picked.status, 0, picked.stderr);
-          assert.match(picked.stdout, /Registered catalogs/);
+          assert.match(picked.stdout, /Registered Hubs/);
 
-          // Select by display name switches the current catalog.
-          const selected = runAgent(projectRoot, ["catalog", "select", nameA], environment);
+          // Select by display name switches the current Hub.
+          const selected = runAgent(projectRoot, ["hub", "select", nameA], environment);
           assert.equal(selected.status, 0, selected.stderr);
-          assert.match(selected.stdout, /Current catalog: /);
-          const shown = runAgent(projectRoot, ["catalog", "default"], environment);
-          assert.equal(shown.stdout.trim(), `Default catalog: ${catalogA}`);
+          assert.match(selected.stdout, /Current Hub: /);
+          const shown = runAgent(projectRoot, ["hub", "default"], environment);
+          assert.equal(shown.stdout.trim(), `Default Hub: ${catalogA}`);
 
-          const unknown = runAgent(projectRoot, ["catalog", "select", "no-such"], environment);
+          const unknown = runAgent(projectRoot, ["hub", "select", "no-such"], environment);
           assert.equal(unknown.status, 1);
-          assert.match(unknown.stderr, /Unknown catalog: no-such/);
+          assert.match(unknown.stderr, /Unknown Hub: no-such/);
 
           // A fresh state seeds the registry with the configured catalog.
-          const freshList = runAgent(projectRoot, ["catalog", "list"], {
+          const freshList = runAgent(projectRoot, ["hub", "list"], {
             AVENIC_STATE_DIR: path.join(stateRoot, "fresh"),
           });
           assert.equal(freshList.status, 0, freshList.stderr);
@@ -595,31 +606,31 @@ test("skills install and remove are explicit verb pairs", async () => {
 
 test("catalog maintenance requires the catalog clone and doctor validates it", async () => {
   await withTempDirectory("avenic-catalog-maintenance-", async (projectRoot) => {
-    const outsideDoctor = runAgent(projectRoot, ["catalog", "doctor"]);
+    const outsideDoctor = runAgent(projectRoot, ["hub", "doctor"]);
     assert.equal(outsideDoctor.status, 1);
-    assert.match(outsideDoctor.stderr, /must run inside the Avenic Git clone/);
+    assert.match(outsideDoctor.stderr, /must run inside the Hub Git clone/);
 
-    const outsideAdd = runAgent(projectRoot, ["catalog", "skill-add", "some", "skill"]);
+    const outsideAdd = runAgent(projectRoot, ["hub", "skill-add", "some", "skill"]);
     assert.equal(outsideAdd.status, 1);
-    assert.match(outsideAdd.stderr, /must run inside the Avenic Git clone/);
+    assert.match(outsideAdd.stderr, /must run inside the Hub Git clone/);
 
-    // "add" is the catalog import verb, not a maintenance command.
-    const importUsage = runAgent(projectRoot, ["catalog", "add", "some", "skill"]);
+    // "add" is the Hub import verb, not a maintenance command.
+    const importUsage = runAgent(projectRoot, ["hub", "add", "some", "skill"]);
     assert.equal(importUsage.status, 1);
-    assert.match(importUsage.stderr, /Usage: avenic catalog add <spec>/);
+    assert.match(importUsage.stderr, /Usage: avenic hub add <spec>/);
 
     await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
       await createCatalogFixture(catalogRoot);
       const cloneRoot = `${catalogRoot}-work`;
       await gitQuiet(catalogRoot, ["clone", "--quiet", catalogRoot, cloneRoot]);
 
-      const doctor = runAgent(cloneRoot, ["catalog", "doctor"]);
+      const doctor = runAgent(cloneRoot, ["hub", "doctor"]);
       assert.equal(doctor.status, 0, doctor.stderr);
       assert.match(doctor.stdout, /OK: 3 Skills, 1 sources, 2 Packs/);
 
-      const unknown = runAgent(cloneRoot, ["catalog", "bogus"]);
+      const unknown = runAgent(cloneRoot, ["hub", "bogus"]);
       assert.equal(unknown.status, 1);
-      assert.match(unknown.stderr, /Usage: avenic catalog <sync\|add\|select\|list\|default\|doctor\|update\|skill-add\|remove\|pack-add\|pack-remove\|source-add>/);
+      assert.match(unknown.stderr, /Usage: avenic hub <sync\|add\|select\|list\|default\|doctor\|update\|skill-add\|remove\|pack-add\|pack-remove\|source-add>/);
     });
   });
 });
@@ -632,24 +643,24 @@ test("catalog pack-add and source-add manage the catalog", async () => {
       const cloneRoot = `${catalogRoot}-work`;
       await gitQuiet(catalogRoot, ["clone", "--quiet", catalogRoot, cloneRoot]);
 
-      const packAdded = runAgent(cloneRoot, ["catalog", "pack-add", "design", "--name", "Design"]);
+      const packAdded = runAgent(cloneRoot, ["hub", "pack-add", "design", "--name", "Design"]);
       assert.equal(packAdded.status, 0, packAdded.stderr);
       assert.match(packAdded.stdout, /Created Pack: design/);
       const packFile = JSON.parse(await readFile(path.join(cloneRoot, "packs", "design.json"), "utf8"));
       assert.equal(packFile.name, "Design");
 
-      const packRepeated = runAgent(cloneRoot, ["catalog", "pack-add", "design"]);
+      const packRepeated = runAgent(cloneRoot, ["hub", "pack-add", "design"]);
       assert.equal(packRepeated.status, 1);
       assert.match(packRepeated.stderr, /Pack already exists: design/);
 
-      const sourceAdded = runAgent(cloneRoot, ["catalog", "source-add", "second", upstreamRoot, "--name", "Second"]);
+      const sourceAdded = runAgent(cloneRoot, ["hub", "source-add", "second", upstreamRoot, "--name", "Second"]);
       assert.equal(sourceAdded.status, 0, sourceAdded.stderr);
       assert.match(sourceAdded.stdout, /Registered second @ [0-9a-f]{8}/);
-      assert.match(sourceAdded.stdout, /Next: avenic catalog skill-add second/);
+      assert.match(sourceAdded.stdout, /Next: avenic hub skill-add second/);
       const sources = JSON.parse(await readFile(path.join(cloneRoot, "sources.lock.json"), "utf8"));
       assert.equal(sources.sources.some((source) => source.id === "second"), true);
 
-      const sourceRepeated = runAgent(cloneRoot, ["catalog", "source-add", "second", upstreamRoot]);
+      const sourceRepeated = runAgent(cloneRoot, ["hub", "source-add", "second", upstreamRoot]);
       assert.equal(sourceRepeated.status, 1);
       assert.match(sourceRepeated.stderr, /Source already exists: second/);
     });
@@ -663,10 +674,10 @@ test("catalog skill-add registers a source and vendors its Skills", async () => 
       await createUpstreamFixture(upstreamRoot);
       const cloneRoot = `${catalogRoot}-work`;
       await gitQuiet(catalogRoot, ["clone", "--quiet", catalogRoot, cloneRoot]);
-      const packAdded = runAgent(cloneRoot, ["catalog", "pack-add", "design"]);
+      const packAdded = runAgent(cloneRoot, ["hub", "pack-add", "design"]);
       assert.equal(packAdded.status, 0, packAdded.stderr);
 
-      const added = runAgent(cloneRoot, ["catalog", "skill-add", upstreamRoot, "delta", "--pack", "design"]);
+      const added = runAgent(cloneRoot, ["hub", "skill-add", upstreamRoot, "delta", "--pack", "design"]);
       assert.equal(added.status, 0, added.stderr);
       assert.match(added.stdout, /Added: [a-z0-9._-]+ -> delta/);
       assert.match(added.stdout, /Packs: design/);
@@ -678,11 +689,11 @@ test("catalog skill-add registers a source and vendors its Skills", async () => 
       const sources = JSON.parse(await readFile(path.join(cloneRoot, "sources.lock.json"), "utf8"));
       assert.equal(sources.sources.some((source) => source.id === sourceId), true);
 
-      const repeated = runAgent(cloneRoot, ["catalog", "skill-add", upstreamRoot, "delta", "--pack", "design"]);
+      const repeated = runAgent(cloneRoot, ["hub", "skill-add", upstreamRoot, "delta", "--pack", "design"]);
       assert.equal(repeated.status, 0, repeated.stderr);
       assert.match(repeated.stdout, /Already installed/);
 
-      const missing = runAgent(cloneRoot, ["catalog", "skill-add", upstreamRoot, "nosuchskill", "--pack", "design"]);
+      const missing = runAgent(cloneRoot, ["hub", "skill-add", upstreamRoot, "nosuchskill", "--pack", "design"]);
       assert.equal(missing.status, 1);
       assert.match(missing.stderr, /Skill not found upstream: nosuchskill/);
       const unchanged = JSON.parse(await readFile(path.join(cloneRoot, "packs", "design.json"), "utf8"));
@@ -715,15 +726,15 @@ test("catalog update follows upstream revisions", async () => {
     await gitQuiet(upstreamRoot, ["-c", "user.name=f", "-c", "user.email=f@e", "commit", "--quiet", "-m", "upstream v2"]);
     const secondRevision = gitQuiet(upstreamRoot, ["rev-parse", "HEAD"]);
 
-    const check = runAgent(cloneRoot, ["catalog", "update", "--check"]);
+    const check = runAgent(cloneRoot, ["hub", "update", "--check"]);
     assert.equal(check.status, 0, check.stderr);
     assert.match(check.stdout, /up: update available/);
 
-    const unknown = runAgent(cloneRoot, ["catalog", "update", "bogus", "--check"]);
+    const unknown = runAgent(cloneRoot, ["hub", "update", "bogus", "--check"]);
     assert.equal(unknown.status, 1);
     assert.match(unknown.stderr, /Unknown source: bogus/);
 
-    const updated = runAgent(cloneRoot, ["catalog", "update"]);
+    const updated = runAgent(cloneRoot, ["hub", "update"]);
     assert.equal(updated.status, 0, updated.stderr);
     assert.match(updated.stdout, /Fetching upstream: Up/);
     assert.match(updated.stdout, /Update complete/);
@@ -731,7 +742,7 @@ test("catalog update follows upstream revisions", async () => {
     const sources = JSON.parse(await readFile(path.join(cloneRoot, "sources.lock.json"), "utf8"));
     assert.equal(sources.sources[0].revision, secondRevision);
 
-    const upToDate = runAgent(cloneRoot, ["catalog", "update", "--check"]);
+    const upToDate = runAgent(cloneRoot, ["hub", "update", "--check"]);
     assert.equal(upToDate.status, 0, upToDate.stderr);
     assert.match(upToDate.stdout, /up: up to date/);
   });
