@@ -400,7 +400,7 @@
     "package": "npm run build && vsce package --out dist/avenic-agent-manager.vsix"
   },
   "devDependencies": {
-    "@avenic/core": "^1.0.3",
+    "@avenic/core": "^1.0.4",
     "@types/node": "^18.19.0",
     "@types/vscode": "^1.90.0",
     "@vscode/codicons": "^0.0.46-24",
