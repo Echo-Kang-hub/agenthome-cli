@@ -2,8 +2,18 @@ import { existsSync } from "node:fs";
 import { readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import readline from "node:readline";
 import { fileURLToPath } from "node:url";
+import {
+  box,
+  cancel,
+  confirm,
+  intro,
+  isInteractive,
+  multiselect,
+  outro,
+  select,
+  spinner,
+} from "./prompts.mjs";
 import {
   AGENTS,
   addDirectSkills,
@@ -90,6 +100,12 @@ function parseScopeArguments(argumentsList) {
 
 async function commandInstall(explicitPacks = [], options = {}) {
   const io = options.io ?? console;
+  // 无参 + 终端：clack 风格交互（多选 Pack → Yes/No 确认 → 摘要框 → Done）。
+  // 无参 + 管道/脚本：维持「默认 common」的既有行为（CLI surface 测试即此路径）。
+  if (explicitPacks.length === 0 && isInteractive(options.prompts ?? {})) {
+    await interactiveInstall(options);
+    return;
+  }
   const context = createInstallContext(options.global ?? false, options);
   const { resolvedPacks } = await installPacks(context, explicitPacks, {
     io,
@@ -105,6 +121,93 @@ async function commandInstall(explicitPacks = [], options = {}) {
   io.log(`\nInstallation complete: ${resolvedPacks.names.length} unique Skills`);
   io.log(`Config: ${context.configFile}`);
   io.log(`Lock:   ${context.lockFile}`);
+}
+
+// 交互式安装：多选 Pack（common 预选）→ 确认 → 安装 → 摘要框 → Done。
+// 安装输出走 spinner + 摘要框，installPacks 的 io 进度被吞掉（交互帧是唯一状态输出）。
+async function interactiveInstall(options = {}) {
+  const io = options.io ?? console;
+  const prompts = options.prompts ?? {};
+  const { stdout } = prompts;
+  const context = createInstallContext(options.global ?? false, options);
+  const quietIo = { log() {} };
+  intro(stdout, "Install Skills");
+  const spin = spinner({ ...prompts, text: "Loading catalog…" });
+  let catalogInfo;
+  let sourceConfig;
+  let catalog;
+  let packs;
+  try {
+    catalogInfo = await resolveInstallSource({
+      global: context.global,
+      cwd: context.root,
+      environment: context.environment,
+      io: quietIo,
+    }, { refresh: true });
+    sourceConfig = await loadSources(catalogInfo.catalogRoot);
+    catalog = await buildCatalog(sourceConfig, path.join(catalogInfo.catalogRoot, "skills"));
+    packs = await loadPacks(catalogInfo.catalogRoot);
+  } catch (error) {
+    spin.fail(error.message);
+    throw error;
+  }
+  if (packs.size === 0) {
+    spin.stop("Catalog loaded");
+    fail("Catalog has no Packs: add one inside the catalog clone (avenic catalog pack-add <id>)");
+  }
+  spin.stop("Catalog loaded");
+  const entries = [...packs.values()].map((pack) => {
+    const own = resolvePack(catalog, sourceConfig, pack);
+    const effective = resolvePacks(catalog, sourceConfig, packs, [pack.id]);
+    const count = pack.id === "common"
+      ? `${own.names.length}`
+      : `${own.names.length} + common = ${effective.names.length}`;
+    return { value: pack.id, label: `${pack.name} — ${count} Skills` };
+  });
+  const picked = await multiselect({
+    ...prompts,
+    title: "Select Packs",
+    options: entries,
+    initial: packs.has("common") ? ["common"] : [],
+  });
+  if (picked === null) {
+    cancel(stdout, "Install cancelled");
+    return;
+  }
+  if (picked.length === 0) {
+    cancel(stdout, "Nothing selected");
+    return;
+  }
+  const yes = await confirm({
+    ...prompts,
+    title: picked.length === 1 ? "Install 1 Pack?" : `Install ${picked.length} Packs?`,
+    initial: true,
+  });
+  if (yes !== true) {
+    cancel(stdout, "Install cancelled");
+    return;
+  }
+  const installSpin = spinner({ ...prompts, text: "Installing…" });
+  let result;
+  try {
+    result = await installPacks(context, picked, { io: quietIo });
+  } catch (error) {
+    installSpin.fail(error.message);
+    throw error;
+  }
+  installSpin.stop("Installed");
+  const packLines = picked.map((id, index) => {
+    const effective = resolvePacks(catalog, sourceConfig, packs, [id]);
+    return `${index === picked.length - 1 ? "└─" : "├─"} ${packs.get(id).name} (${effective.names.length} Skills)`;
+  });
+  box(stdout, [
+    `✓  ${result.resolvedPacks.names.length} unique Skills installed`,
+    ...packLines,
+    "",
+    `scope: ${context.label}`,
+    `config: ${context.configFile}`,
+  ]);
+  outro(stdout, `Done! Installed ${picked.length} Pack${picked.length === 1 ? "" : "s"}`);
 }
 
 async function commandAddDirect(argumentsList, options = {}) {
@@ -141,19 +244,12 @@ async function commandUninstall(packArguments, options = {}) {
   }
 
   if (packArguments.length === 0) {
-    const managed = await previousManagedState(context);
-    const directState = await readDirectState(context);
-    const directNames = directState.directSources.flatMap((source) => source.skills);
-    if (directNames.length > 0) {
-      await removeDirectSkills(context, directNames);
-      await removeSkillDirectories(context, directNames, io);
+    // 无参 + 终端：Yes/No 确认（清空是破坏性操作）；无参 + 管道/脚本维持直接执行。
+    if (isInteractive(options.prompts ?? {})) {
+      await interactiveRemoveAll(context, options, options.prompts ?? {}, current);
+      return;
     }
-    const total = await removeAllManagedSkills(context, managed, io);
-    await removeInstallationFiles(context);
-    if (options.global) {
-      await removeEmptyDirectory(stateRoot(options.environment));
-    }
-    io.log(`Uninstalled all managed ${context.label.toLowerCase()} Skills: ${total}`);
+    await removeAllManaged(context, options, io);
     return;
   }
 
@@ -180,6 +276,68 @@ async function commandUninstall(packArguments, options = {}) {
     return;
   }
   io.log(`\nUninstall complete: ${result.removed.join(", ")}`);
+}
+
+// 无参卸载的全量清理（管道/脚本路径）：直接移除直装与托管 Skills 并清元数据。
+async function removeAllManaged(context, options, io) {
+  const managed = await previousManagedState(context);
+  const directState = await readDirectState(context);
+  const directNames = directState.directSources.flatMap((source) => source.skills);
+  if (directNames.length > 0) {
+    await removeDirectSkills(context, directNames);
+    await removeSkillDirectories(context, directNames, io);
+  }
+  const total = await removeAllManagedSkills(context, managed, io);
+  await removeInstallationFiles(context);
+  if (options.global) {
+    await removeEmptyDirectory(stateRoot(options.environment));
+  }
+  io.log(`Uninstalled all managed ${context.label.toLowerCase()} Skills: ${total}`);
+}
+
+// 交互式卸载：Yes/No 确认 → 清空 → 摘要框 + Done。
+async function interactiveRemoveAll(context, options, prompts, current) {
+  const { stdout } = prompts;
+  const quietIo = { log() {} };
+  const label = context.label.toLowerCase();
+  const directState = await readDirectState(context);
+  const directNames = directState.directSources.flatMap((source) => source.skills);
+  intro(stdout, "Uninstall Skills");
+  const yes = await confirm({
+    ...prompts,
+    title: `Remove ALL managed ${label} Skills? (${current.length} Pack${current.length === 1 ? "" : "s"}${
+      directNames.length > 0 ? ` + ${directNames.length} direct` : ""
+    })`,
+    initial: false,
+  });
+  if (yes !== true) {
+    cancel(stdout, "Uninstall cancelled");
+    return;
+  }
+  const spin = spinner({ ...prompts, text: "Removing…" });
+  let total;
+  try {
+    if (directNames.length > 0) {
+      await removeDirectSkills(context, directNames);
+      await removeSkillDirectories(context, directNames, quietIo);
+    }
+    total = await removeAllManagedSkills(context, await previousManagedState(context), quietIo);
+    await removeInstallationFiles(context);
+    if (options.global) {
+      await removeEmptyDirectory(stateRoot(options.environment));
+    }
+  } catch (error) {
+    spin.fail(error.message);
+    throw error;
+  }
+  spin.stop("Removed");
+  box(stdout, [
+    `✓  ${[directNames.length > 0 && `${directNames.length} direct`, `${total} managed`].filter(Boolean).join(" + ")} Skills removed`,
+    "",
+    `scope: ${context.label}`,
+    `config: ${context.configFile}`,
+  ]);
+  outro(stdout, "Done! All managed Skills removed");
 }
 
 async function commandAdopt(skillArguments, options = {}) {
@@ -806,59 +964,13 @@ async function commandCatalogList(options = {}) {
   io.log("\n> = current. Switch: avenic catalog select");
 }
 
-// Arrow-key picker over the registered catalogs. Resolves to the chosen spec,
-// or null when cancelled. Repaints the whole frame on every keypress with
-// saved-cursor positioning: some terminals mishandle relative moveCursor
-// repaints (frames pile up instead of replacing each other), so each paint
-// restores the cursor saved at picker start, clears to the bottom of the
-// screen, and rewrites the full frame. Runs in raw mode; callers must ensure
-// the process owns a TTY.
+// clack 风格单选（prompts.select 内部实现帧重绘，含键盘处理与取消打印）。
+// 非 TTY 时 commandCatalogSelect 在进入本函数前已回退为纯文本清单。
 function promptCatalogChoice(entries, currentIndex) {
-  const output = process.stdout;
-  const input = process.stdin;
-  const count = entries.length;
-  let selected = currentIndex >= 0 ? currentIndex : 0;
-  return new Promise((resolve) => {
-    const paint = () => {
-      const width = Math.max(
-        "Select a catalog:".length,
-        "↑/↓ select · Enter confirm · Esc cancel".length,
-        ...entries.map((entry) => entry.name.length),
-      );
-      const lines = ["Select a catalog:"];
-      for (let index = 0; index < count; index += 1) {
-        lines.push(`${index === selected ? ">" : " "} ${entries[index].name}`);
-      }
-      lines.push("↑/↓ select · Enter confirm · Esc cancel");
-      output.write("\x1b[u"); // restore the cursor saved at picker start
-      readline.clearScreenDown(output);
-      output.write(lines.map((line) => line.padEnd(width)).join("\n"));
-    };
-    const finish = (result) => {
-      input.setRawMode(false);
-      input.pause();
-      input.removeAllListeners("keypress");
-      output.write("\n"); // keep the last frame visible; resume on a fresh line
-      resolve(result);
-    };
-    input.on("keypress", (value, key) => {
-      if (key.name === "up") {
-        selected = (selected - 1 + count) % count;
-        paint();
-      } else if (key.name === "down") {
-        selected = (selected + 1) % count;
-        paint();
-      } else if (key.name === "return" || key.name === "enter") {
-        finish(entries[selected].spec);
-      } else if (key.name === "escape" || (key.ctrl && key.name === "c")) {
-        finish(null);
-      }
-    });
-    readline.emitKeypressEvents(input);
-    input.setRawMode(true);
-    input.resume();
-    output.write("\x1b[s"); // remember where the frame starts
-    paint();
+  return select({
+    title: "Choose a catalog",
+    options: entries.map((entry) => ({ value: entry.spec, label: entry.name })),
+    initial: currentIndex >= 0 ? currentIndex : 0,
   });
 }
 
@@ -880,7 +992,7 @@ async function commandCatalogSelect(argumentsList, options = {}) {
     io.log(`Current catalog: ${entry.spec}`);
     return;
   }
-  if (!(process.stdin.isTTY && process.stdout.isTTY)) {
+  if (!isInteractive()) {
     // No terminal (pipes, scripts): print the plain list instead.
     await commandCatalogList(options);
     return;

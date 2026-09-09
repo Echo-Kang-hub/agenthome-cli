@@ -47,6 +47,46 @@ function hintIconName(hint) {
   return ICON_BY_HINT[hint] ?? "circle-outline";
 }
 
+// ---- Agent 品牌标记（单色 inline SVG，currentColor，无远程资产） ----
+// 规则 R1（无远程）：纯 DOM 构建（createElementNS），不经 innerHTML；
+// 规则 R3（文本安全）：不存在文本内容。窗格横向压缩到最终态时（媒体查询
+// ≤430px，见 style.css），agent 行的文字全部隐藏，只剩「品牌图标 + 状态点」。
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svgNode(tag, attrs) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+  return node;
+}
+function agentMark(agentId) {
+  const svg = svgNode("svg", { viewBox: "0 0 16 16", class: "agent-mark" });
+  svg.setAttribute("aria-hidden", "true");
+  if (agentId === "claude") {
+    // 星芒：八向光线（claude code 风格标记）
+    const path = svgNode("path", { d: "M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4L3.4 12.6", fill: "none", stroke: "currentColor" });
+    path.setAttribute("stroke-width", "1.8");
+    path.setAttribute("stroke-linecap", "round");
+    svg.append(path);
+  } else if (agentId === "codex") {
+    // 六边宝石 + 中点（codex 风格标记）
+    const gem = svgNode("polygon", {
+      points: "8 1.8 13.3 4.9 13.3 11.1 8 14.2 2.7 11.1 2.7 4.9",
+      fill: "none",
+      stroke: "currentColor",
+    });
+    gem.setAttribute("stroke-width", "1.6");
+    gem.setAttribute("stroke-linejoin", "round");
+    svg.append(gem);
+    svg.append(svgNode("circle", { cx: "8", cy: "8", r: "1.6", fill: "currentColor" }));
+  } else {
+    // 环 + 点（opencode 风格标记）
+    const ring = svgNode("circle", { cx: "8", cy: "8", r: "5.1", fill: "none", stroke: "currentColor" });
+    ring.setAttribute("stroke-width", "1.8");
+    svg.append(ring);
+    svg.append(svgNode("circle", { cx: "8", cy: "8", r: "1.5", fill: "currentColor" }));
+  }
+  return svg;
+}
+
 // ---- 三态：loading / error / empty-friendly data ----
 
 function renderLoading() {
@@ -115,7 +155,10 @@ function blockTitle(title, count) {
 
 function agentCard(a) {
   const card = el("div", undefined, "card agent-card");
+  // 悬停 tooltip：压缩态（图标化）下唯一的信息来源
+  card.title = `${a.label} · ${a.statusText} · ${a.executableAvailable ? "可执行文件就绪" : "可执行文件缺失"}`;
   const head = el("div", undefined, "agent-head");
+  head.append(agentMark(a.id));
   head.append(icon(hintIconName(a.iconHint)));
   head.append(el("span", a.label, "agent-name"));
   card.append(head);

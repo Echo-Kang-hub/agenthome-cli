@@ -122,9 +122,9 @@ Pack 定义示例（`packs/development.json`）：
 
 ```bash
 avenic catalog add <owner/repo>         # 导入 catalog（owner/repo[#ref]、URL 或本地路径），成功后打印 Pack 预览树
-avenic skills install                   # 安装默认 Pack（common）
+avenic skills install                   # 无参数：终端上交互多选（space 切换，common 预选）；管道/脚本回退默认 common
 avenic skills install development       # 安装多个 Pack；common 自动包含
-avenic skills uninstall development     # 卸载 Pack（不带参数移除全部受管理 Skills）
+avenic skills uninstall development     # 卸载 Pack（不带参数移除全部受管理 Skills，终端上先 Yes/No 确认）
 avenic skills -g development            # 安装到全局作用域（skills <pack> 是 install 的简写）
 avenic skills tree [pack...]            # 查看 catalog 内容树
 avenic skills packs                     # 列出可用 Packs

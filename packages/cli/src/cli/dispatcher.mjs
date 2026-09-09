@@ -71,13 +71,13 @@ Agent runtimes:
   avenic doctor                       Check the environment
 
 Skills:
-  avenic skills install [pack...]     Install or sync Packs (default: common)
+  avenic skills install [pack...]     Install Packs (no args: interactive multi-select on a terminal; scripts fall back to common)
   avenic skills [pack...]             Shorthand for skills install
   avenic skills add <owner/repo> [skill...] [-g]    Install directly from a GitHub repo
   avenic skills adopt <skill...> [-g] Adopt existing on-disk Skills into management
   avenic skills remove <skill...>     Remove external, unmanaged Skills
   avenic skills uninstall <pack...>   Remove Packs and unneeded managed Skills
-  avenic skills uninstall             Remove all managed Skills
+  avenic skills uninstall             Remove all managed Skills (Yes/No confirm on a terminal)
   avenic skills tree [pack...]        Show source -> Skill tree
   avenic skills packs                 List available Packs
   avenic skills status [-g]           Show the installed tree
@@ -85,7 +85,7 @@ Skills:
 
 Catalog:
   avenic catalog add <spec>           Add a catalog source (owner/repo[#ref], URL, or local path) and preview its Packs
-  avenic catalog select [name|spec]   Pick the current catalog from registered ones (↑/↓, Enter)
+  avenic catalog select [name|spec]   Pick the current catalog from registered ones (interactive picker on a terminal)
   avenic catalog list                 List registered catalogs
   avenic catalog sync                 Fetch or update the cached catalog
   avenic catalog default              Show the configured catalog spec

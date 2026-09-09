@@ -30,6 +30,22 @@ test("style uses vscode theme variables and bundles the codicon font locally", a
   await access(path.join(media, "codicon.ttf"));
 });
 
+test("compressed dashboard keeps agent identity via inline SVG marks", async () => {
+  const js = await readFile(path.join(media, "main.js"), "utf8");
+  const css = await readFile(path.join(media, "style.css"), "utf8");
+  // 品牌标记：inline SVG（createElementNS），无远程资源、不经 innerHTML
+  assert.match(js, /createElementNS/);
+  assert.match(js, /agentMark/);
+  assert.ok(js.includes('agentId === "claude"'));
+  assert.ok(js.includes('agentId === "codex"'));
+  assert.ok(!/\.innerHTML\s*=/.test(js)); // 品牌标记同样不经 innerHTML
+  // 响应式分层：中等与最终压缩态都以媒体查询驱动，最终态隐藏 agent 文字
+  assert.match(css, /@media\s*\(max-width: 600px\)/);
+  assert.match(css, /@media\s*\(max-width: 430px\)/);
+  assert.match(css, /\.agent-mark/);
+  assert.match(css, /\.agent-name\s*\{\s*display:\s*none/);
+});
+
 test("every icon name used by main.js has a style.css glyph mapping", async () => {
   const js = await readFile(path.join(media, "main.js"), "utf8");
   const css = await readFile(path.join(media, "style.css"), "utf8");

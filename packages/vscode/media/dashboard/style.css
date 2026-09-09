@@ -180,6 +180,8 @@ p { margin: 0; }
 .agent-name { font-weight: 600; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-status { font-size: 0.8rem; color: var(--vscode-terminal-ansiCyan, var(--vscode-foreground)); flex: none; }
 .agent-meta { font-size: 0.74rem; color: var(--vscode-descriptionForeground); margin-left: auto; flex: none; }
+/* Agent 品牌标记（inline SVG，currentColor 继承前景色）：全宽态与窄屏态都显示 */
+.agent-mark { width: 13px; height: 13px; flex: none; }
 
 /* ---------- Skills 健康：[✓]/[✗] 终端标记 ---------- */
 .skill-rows { display: flex; flex-direction: column; }
@@ -255,3 +257,28 @@ p { margin: 0; }
 }
 .state-error .button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
 .state-error .button:hover { background: var(--vscode-button-hoverBackground); }
+
+/* ---------- 响应式分层：面板横向压缩时优雅降级 ----------
+   webview 视口宽度即面板宽度（@media 随面板缩放重算）。
+   第一层（≤600px）：去掉非关键文本（元信息），核心内容不动。
+   第二层（≤430px）：关键内容只留图标 —— agent 行 = 品牌图标 + 状态点，
+   完整信息转移到悬停 tooltip（main.js 写入 card.title）。 */
+@media (max-width: 600px) {
+  body { padding: 0.45rem 0.5rem 0.8rem; }
+  .prompt-line { display: none; }
+  .agent-meta { display: none; }
+  .skill-details { display: none; }
+  .card .meta { display: none; }
+  .card .hint { display: none; }
+  .topbar .brand h1 { font-size: 0.9rem; }
+}
+@media (max-width: 430px) {
+  .agent-name { display: none; }
+  .agent-status { display: none; }
+  .agent-meta { display: none; }
+  .agent-mark { width: 15px; height: 15px; }
+  .value { font-size: 0.82rem; }
+  .button { padding: 0.25rem 0.45rem; font-size: 0.74rem; }
+  .button .icon { width: 11px; height: 11px; font-size: 11px; line-height: 11px; }
+  .skill-row { gap: 0.35rem; }
+}
