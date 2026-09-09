@@ -177,11 +177,11 @@ avenic catalog doctor                                                         # 
 
 #### 连接私有 Skills 仓库
 
-私有仓库不需要额外配置：CLI 不接触 token，clone 与 fetch 全部由本机 git 完成。以连接私有 catalog `Echo-Kang-hub/avenic-catalog` 为例：
+私有仓库不需要额外配置：CLI 不接触 token，clone 与 fetch 全部由本机 git 完成。以连接私有 catalog `Echo-Kang-hub/SkillsHub` 为例：
 
 ```bash
 gh auth login                                            # 1. 登录 GitHub（或改用 SSH key，二选一，只需一次）
-avenic catalog add Echo-Kang-hub/avenic-catalog    # 2. 设置 catalog 源（换成 <你的用户名>/<你的仓库>），终端会打印 Pack 预览树
+avenic catalog add Echo-Kang-hub/SkillsHub    # 2. 设置 catalog 源（换成 <你的用户名>/<你的仓库>），终端会打印 Pack 预览树
 avenic catalog sync                                   # 3. 验证可拉取（输出 40 位 commit 即成功）
 avenic skills install                                 # 4. 安装默认 Pack（common）
 ```

@@ -64,6 +64,18 @@
         "icon": "$(play)"
       },
       {
+        "command": "avenic.agents.install",
+        "title": "Avenic: 安装 Agent CLI",
+        "category": "Avenic",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "avenic.agents.update",
+        "title": "Avenic: 升级 Agent CLI",
+        "category": "Avenic",
+        "icon": "$(arrow-up)"
+      },
+      {
         "command": "avenic.agents.deinit",
         "title": "Avenic: 移除 Agent",
         "category": "Avenic",
@@ -168,6 +180,24 @@
     "menus": {
       "view/item/context": [
         {
+          "command": "avenic.agents.install",
+          "when": "view == avenic.agents && viewItem == agent-bootstrap",
+          "group": "inline@1"
+        },
+        {
+          "command": "avenic.agents.install",
+          "when": "view == avenic.agents && viewItem == agent-bootstrap"
+        },
+        {
+          "command": "avenic.agents.init",
+          "when": "view == avenic.agents && viewItem == agent-bootstrap",
+          "group": "inline@2"
+        },
+        {
+          "command": "avenic.agents.init",
+          "when": "view == avenic.agents && viewItem == agent-bootstrap"
+        },
+        {
           "command": "avenic.agents.init",
           "when": "view == avenic.agents && viewItem == agent-inactive",
           "group": "inline@1"
@@ -175,6 +205,24 @@
         {
           "command": "avenic.agents.init",
           "when": "view == avenic.agents && viewItem == agent-inactive"
+        },
+        {
+          "command": "avenic.agents.install",
+          "when": "view == avenic.agents && viewItem == agent-missing",
+          "group": "inline@1"
+        },
+        {
+          "command": "avenic.agents.install",
+          "when": "view == avenic.agents && viewItem == agent-missing"
+        },
+        {
+          "command": "avenic.agents.deinit",
+          "when": "view == avenic.agents && viewItem == agent-missing",
+          "group": "inline@2"
+        },
+        {
+          "command": "avenic.agents.deinit",
+          "when": "view == avenic.agents && viewItem == agent-missing"
         },
         {
           "command": "avenic.agents.launch",
@@ -193,6 +241,33 @@
         {
           "command": "avenic.agents.deinit",
           "when": "view == avenic.agents && viewItem == agent"
+        },
+        {
+          "command": "avenic.agents.launch",
+          "when": "view == avenic.agents && viewItem == agent-update",
+          "group": "inline@1"
+        },
+        {
+          "command": "avenic.agents.launch",
+          "when": "view == avenic.agents && viewItem == agent-update"
+        },
+        {
+          "command": "avenic.agents.update",
+          "when": "view == avenic.agents && viewItem == agent-update",
+          "group": "inline@2"
+        },
+        {
+          "command": "avenic.agents.update",
+          "when": "view == avenic.agents && viewItem == agent-update"
+        },
+        {
+          "command": "avenic.agents.deinit",
+          "when": "view == avenic.agents && viewItem == agent-update",
+          "group": "inline@3"
+        },
+        {
+          "command": "avenic.agents.deinit",
+          "when": "view == avenic.agents && viewItem == agent-update"
         },
         {
           "command": "avenic.agents.switchAuth",

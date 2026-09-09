@@ -26,11 +26,11 @@ test("init → auth switch → sessions switch → deinit round-trip on real cor
   }
 });
 
-test("manifest registers the seven agent command ids", async () => {
+test("manifest registers the nine agent command ids", async () => {
   const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const manifest = JSON.parse(await readFile(path.join(pkgDir, "package.json"), "utf8"));
   const ids = manifest.contributes?.commands ?? [];
-  for (const id of ["avenic.agents.init", "avenic.agents.launch", "avenic.agents.deinit", "avenic.agents.switchAuth", "avenic.agents.switchSessions", "avenic.agents.sessionsImport", "avenic.agents.sessionsWriteback"]) {
+  for (const id of ["avenic.agents.init", "avenic.agents.launch", "avenic.agents.install", "avenic.agents.update", "avenic.agents.deinit", "avenic.agents.switchAuth", "avenic.agents.switchSessions", "avenic.agents.sessionsImport", "avenic.agents.sessionsWriteback"]) {
     assert.ok(ids.some((c: { command: string }) => c.command === id), id);
   }
 });

@@ -27,6 +27,14 @@ function invocation(executable, argumentsList, environment) {
       argumentsList: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", resolved, ...argumentsList],
     };
   }
+  // .cmd/.bat 不能直接 CreateProcess（EINVAL）；npm 全局安装生成的 agent CLI shim
+  // （如 opencode.cmd）经 shell（cmd）运行。注意：node 20.16+ 对 args 数组会做
+  // CreateProcess 引号转义（\"），cmd 无法还原——必须整体作为 shell 命令透传。
+  if (process.platform === "win32" && /\.(?:cmd|bat)$/i.test(resolved)) {
+    const quoted = argumentsList.map((argument) => (/[\s"]/.test(argument) ? `"${argument}"` : argument));
+    const line = [resolved, ...quoted].map((part) => (/[\s"]/.test(part) ? `"${part}"` : part)).join(" ");
+    return { command: line, argumentsList: [], shell: true };
+  }
   return { command: resolved, argumentsList };
 }
 
@@ -37,5 +45,5 @@ export function spawnExecutableSync(executable, argumentsList, options = {}) {
     return spawn(executable, argumentsList, { ...spawnOptions, env: environment });
   }
   const resolved = invocation(executable, argumentsList, environment);
-  return spawnSync(resolved.command, resolved.argumentsList, { ...spawnOptions, env: environment });
+  return spawnSync(resolved.command, resolved.argumentsList, { ...spawnOptions, shell: resolved.shell ?? false, env: environment });
 }

@@ -1,6 +1,16 @@
 import * as vscode from "vscode";
 import { agentStatus, listAgents } from "../services/agents.ts";
-import { agentsToViewModels } from "./view-models.ts";
+import { agentsToViewModels, type AgentRowState } from "./view-models.ts";
+
+// 行状态 → contextValue（菜单 when 子句按此区分键位）：active/inactive 保持历史命名，
+// 新增 bootstrap（未初始化+缺 CLI）/ missing（已初始化+缺 CLI）/ update（可升级）
+const CONTEXT_BY_STATE: Record<AgentRowState, string> = {
+  active: "agent",
+  update: "agent-update",
+  inactive: "agent-inactive",
+  bootstrap: "agent-bootstrap",
+  missing: "agent-missing",
+};
 
 export class AgentsViewProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private readonly emitter = new vscode.EventEmitter<vscode.TreeItem | undefined>();
@@ -20,8 +30,7 @@ export class AgentsViewProvider implements vscode.TreeDataProvider<vscode.TreeIt
       item.id = m.id; // T7 上下文菜单命令经 treeItem.id 取 agent
       item.description = m.description;
       item.tooltip = m.tooltip;
-      // 按状态区分行类型：未初始化 → agent-inactive（右键/悬停仅显示「初始化」）；已初始化 → agent
-      item.contextValue = m.active ? "agent" : "agent-inactive";
+      item.contextValue = CONTEXT_BY_STATE[m.state];
       item.iconPath = new vscode.ThemeIcon(m.iconHint);
       return item;
     });

@@ -1,6 +1,6 @@
 {
   "name": "@avenic/core",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "license": "MIT",
   "type": "module",
   "main": "src/index.mjs",
@@ -12,7 +12,15 @@
       "default": "./src/index.mjs"
     }
   },
-  "files": ["src/", "index.d.ts", "LICENSE"],
-  "publishConfig": { "access": "public" },
-  "engines": { "node": ">=18.17" }
+  "files": [
+    "src/",
+    "index.d.ts",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.17"
+  }
 }

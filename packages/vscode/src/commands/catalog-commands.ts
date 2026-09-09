@@ -30,7 +30,7 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
 
   register("avenic.catalog.add", async () => {
     if (busy()) return;
-    const spec = await vscode.window.showInputBox({ prompt: "Catalog spec（owner/repo、URL 或本地路径）", value: "Echo-Kang-hub/avenic-catalog#main" });
+    const spec = await vscode.window.showInputBox({ prompt: "Catalog spec（owner/repo、URL 或本地路径）", value: "Echo-Kang-hub/SkillsHub#main" });
     if (spec === undefined || spec.trim() === "") return;
     // runMutation：失败/预览失败后同样 refresh——注册状态已变更，树与 Dashboard 不得停留在旧数据（T8 Minor A）
     const result = await runMutation(deps.queue, () => withProgress("添加 Catalog", async (report) => { report("保存并预览…"); return catalog.add(spec.trim()); }), () => deps.refresh());

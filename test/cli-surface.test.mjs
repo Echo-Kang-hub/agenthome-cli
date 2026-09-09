@@ -523,7 +523,7 @@ test("catalog list and select switch between registered catalogs", async () => {
             AVENIC_STATE_DIR: path.join(stateRoot, "fresh"),
           });
           assert.equal(freshList.status, 0, freshList.stderr);
-          assert.match(freshList.stdout, /Echo-Kang-hub\/avenic-catalog/);
+          assert.match(freshList.stdout, /Echo-Kang-hub\/SkillsHub/);
         });
       });
     });

@@ -16,11 +16,14 @@ import {
   type Agent,
   type EffectiveAgentConfig,
 } from "@avenic/core";
+import { cliVersionStatus, type CliVersionStatus } from "./agent-versions.ts";
 
 export interface AgentStatus {
   agent: Agent;
   executableAvailable: boolean;
   effective: EffectiveAgentConfig | null;
+  // 本机已装版本与 npm registry 最新版（10 分钟缓存，失败容错为 null）
+  cli: CliVersionStatus;
 }
 
 export function listAgents(): Agent[] {
@@ -34,12 +37,16 @@ export function agentExecutableAvailable(agentId: string): boolean {
 
 export async function agentStatus(projectRoot: string, agentId: string): Promise<AgentStatus> {
   const state = await loadRuntime(projectRoot);
-  return {
-    agent: getAgent(agentId),
-    executableAvailable: coreAgentExecutableAvailable(agentId),
-    effective: effectiveAgentConfig(state, agentId),
-  };
+  const agent = getAgent(agentId);
+  // 探测并行化：本机 --version 与 npm registry 查询互不依赖；单次失败容错为 null
+  const [executableAvailable, cli] = await Promise.all([
+    Promise.resolve(coreAgentExecutableAvailable(agentId)),
+    cliVersionStatus(agentId, agent),
+  ]);
+  return { agent, executableAvailable, effective: effectiveAgentConfig(state, agentId), cli };
 }
+
+export { invalidateCliVersionCache, npmPackage } from "./agent-versions.ts";
 
 export function initialize(projectRoot: string, agentId: string, authMode: "global" | "project", sessionsMode: "global" | "project") {
   return initializeAgent(projectRoot, agentId, authMode, sessionsMode);

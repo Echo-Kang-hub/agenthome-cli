@@ -1,17 +1,44 @@
 import type { InstallStatus, KnownCatalogEntry, Pack } from "@avenic/core";
 import type { AgentStatus } from "../services/agents.ts";
 
-export interface AgentViewItem { id: string; label: string; description: string; tooltip: string; iconHint: string; active: boolean; }
+// 行状态驱动菜单键位（icons 键，无文字按钮）：
+//   bootstrap=未初始化+CLI 缺失（安装/初始化）；inactive=未初始化（初始化）；
+//   missing=已初始化+CLI 缺失（安装/移除）；update=可升级（启动/升级/移除）；
+//   active=正常（启动/移除）
+export type AgentRowState = "bootstrap" | "inactive" | "missing" | "update" | "active";
+export interface AgentViewItem { id: string; label: string; description: string; tooltip: string; iconHint: string; active: boolean; state: AgentRowState; }
 
 export function agentsToViewModels(statuses: AgentStatus[]): AgentViewItem[] {
-  return statuses.map(({ agent, executableAvailable, effective }) => ({
-    id: agent.id,
-    label: agent.displayName,
-    description: effective ? `已初始化 · ${effective.auth} / ${effective.sessions}` : "未初始化",
-    tooltip: `${agent.executable} · CLI ${executableAvailable ? "可用" : "不可用"} · ${effective ? `auth: ${effective.auth}, sessions: ${effective.sessions}` : "未初始化"}`,
-    iconHint: effective ? "pass-filled" : "circle-outline",
-    active: effective !== null,
-  }));
+  return statuses.map(({ agent, executableAvailable, effective, cli }) => {
+    const initialized = effective !== null;
+    const state: AgentRowState = !initialized
+      ? executableAvailable ? "inactive" : "bootstrap"
+      : executableAvailable ? (cli.updateAvailable ? "update" : "active") : "missing";
+    const version = cli.installed ? `v${cli.installed}` : null;
+    const description = !initialized
+      ? executableAvailable ? "未初始化" : "未初始化 · CLI 未安装"
+      : !executableAvailable
+        ? "已初始化 · CLI 未安装"
+        : cli.updateAvailable
+          ? `已初始化 · v${cli.installed} → v${cli.latest}`
+          : version
+            ? `已初始化 · ${version}`
+            : "已初始化";
+    const tooltip = [
+      `${agent.executable} · CLI ${executableAvailable ? "可用" : "不可用"}`,
+      cli.updateAvailable ? `v${cli.installed} → v${cli.latest}` : version ?? "",
+      effective ? `auth: ${effective.auth}, sessions: ${effective.sessions}` : "未初始化",
+    ].filter(Boolean).join(" · ");
+    return {
+      id: agent.id,
+      label: agent.displayName,
+      description,
+      tooltip,
+      iconHint: effective ? "pass-filled" : "circle-outline",
+      active: effective !== null,
+      state,
+    };
+  });
 }
 
 export interface CatalogViewItem { kind: "current" | "entry"; label: string; description: string; }

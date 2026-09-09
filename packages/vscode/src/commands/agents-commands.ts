@@ -54,9 +54,27 @@ export function registerAgentsCommands(context: vscode.ExtensionContext, deps: A
     await runMutation(deps.queue, () => withProgress("Avenic Agent 操作", (report) => agents.initialize(target.root, target.id, mode.value.auth, mode.value.sessions).then(() => { report("完成"); })), () => deps.refresh());
   });
 
-  // 启动运行（无需安装 @avenic/cli npm 包）：core 原语准备好环境与会话后，官方 CLI
-  // 在集成终端中交互运行；终端关闭即收官（会话收回项目 + 还原原生存储）。
-  // 注册关闭监听需在 show/sendText 之前，避免漏掉极快的关闭。
+  // 安装/升级官方 Agent CLI（npm @latest）：集成终端实时输出 npm 进度（无文字按钮，
+  // 键位图标区分：安装 cloud-download / 升级 arrow-up）。两条命令共用同一 npm line；
+  // 终端关闭后作废版本缓存并刷新，让「可升级」/「CLI 未安装」态即时退场。
+  const runCliInstall = async (treeItem?: vscode.TreeItem) => {
+    if (busy()) return;
+    const target = await agentTarget(treeItem);
+    if (target === null) return;
+    const pkg = agents.npmPackage(target.id);
+    const terminal = vscode.window.createTerminal({ name: `Avenic · ${pkg}` });
+    const closeListener = vscode.window.onDidCloseTerminal((closed) => {
+      if (closed !== terminal) return;
+      closeListener.dispose();
+      agents.invalidateCliVersionCache(target.id);
+      deps.refresh();
+    });
+    terminal.show();
+    terminal.sendText(`npm install --global ${pkg}@latest`);
+  };
+  register("avenic.agents.install", runCliInstall);
+  register("avenic.agents.update", runCliInstall);
+
   register("avenic.agents.launch", async (treeItem) => {
     if (busy()) return;
     const target = await agentTarget(treeItem);

@@ -2,41 +2,56 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { agentsToViewModels, catalogPackSkillsToViewModels, catalogPacksToViewModels, catalogSourceGroupsToViewModels, catalogToViewModels, GLOBAL_EMPTY_HINT, PROJECT_EMPTY_HINT, skillsToViewModels } from "../src/views/view-models.ts";
 
-test("uninitialized agent renders as 未初始化", () => {
-  const items = agentsToViewModels([{ agent: { id: "claude", displayName: "Claude Code", executable: "claude" }, executableAvailable: true, effective: null }]);
-  assert.deepEqual(items[0], { id: "claude", label: "Claude Code", description: "未初始化", tooltip: "claude · CLI 可用 · 未初始化", iconHint: "circle-outline", active: false });
+import type { EffectiveAgentConfig } from "@avenic/core";
+
+const effective: EffectiveAgentConfig = { enabled: true, auth: "global", sessions: "project", configuredAuth: "global", localAuth: null };
+const agent = { id: "claude", displayName: "Claude Code", executable: "claude" };
+const cli = (installed: string | null, latest: string | null) => ({ installed, latest, updateAvailable: installed !== null && latest !== null && latest > installed });
+
+test("uninitialized agent with CLI missing renders bootstrap row", () => {
+  const items = agentsToViewModels([{ agent, executableAvailable: false, effective: null, cli: cli(null, "2.1.238") }]);
+  assert.deepEqual(items[0], { id: "claude", label: "Claude Code", description: "未初始化 · CLI 未安装", tooltip: "claude · CLI 不可用 · 未初始化", iconHint: "circle-outline", active: false, state: "bootstrap" });
 });
 
-test("initialized agent is active for state-specific row keys", () => {
-  const items = agentsToViewModels([{ agent: { id: "claude", displayName: "Claude Code", executable: "claude" }, executableAvailable: true, effective: { enabled: true, auth: "global", sessions: "project", configuredAuth: "global", localAuth: null } }]);
-  assert.equal(items[0].active, true);
+test("uninitialized agent with CLI present renders inactive row", () => {
+  const items = agentsToViewModels([{ agent, executableAvailable: true, effective: null, cli: cli("2.1.238", "2.1.238") }]);
+  assert.deepEqual(items[0], { id: "claude", label: "Claude Code", description: "未初始化", tooltip: "claude · CLI 可用 · v2.1.238 · 未初始化", iconHint: "circle-outline", active: false, state: "inactive" });
 });
 
-test("initialized agent shows auth/sessions", () => {
-  const items = agentsToViewModels([{ agent: { id: "claude", displayName: "Claude Code", executable: "claude" }, executableAvailable: true, effective: { enabled: true, auth: "global", sessions: "project", configuredAuth: "global", localAuth: null } }]);
-  assert.equal(items[0].description, "已初始化 · global / project");
-  assert.equal(items[0].tooltip, "claude · CLI 可用 · auth: global, sessions: project");
+test("initialized agent with CLI present renders active row with version", () => {
+  const items = agentsToViewModels([{ agent, executableAvailable: true, effective, cli: cli("2.1.238", "2.1.238") }]);
+  assert.deepEqual(items[0], { id: "claude", label: "Claude Code", description: "已初始化 · v2.1.238", tooltip: "claude · CLI 可用 · v2.1.238 · auth: global, sessions: project", iconHint: "pass-filled", active: true, state: "active" });
+});
+
+test("updatable agent renders update row with version arrow", () => {
+  const items = agentsToViewModels([{ agent, executableAvailable: true, effective, cli: cli("2.1.238", "2.2.0") }]);
+  assert.deepEqual(items[0], { id: "claude", label: "Claude Code", description: "已初始化 · v2.1.238 → v2.2.0", tooltip: "claude · CLI 可用 · v2.1.238 → v2.2.0 · auth: global, sessions: project", iconHint: "pass-filled", active: true, state: "update" });
+});
+
+test("initialized agent with CLI missing renders missing row", () => {
+  const items = agentsToViewModels([{ agent, executableAvailable: false, effective, cli: cli(null, null) }]);
+  assert.deepEqual(items[0], { id: "claude", label: "Claude Code", description: "已初始化 · CLI 未安装", tooltip: "claude · CLI 不可用 · auth: global, sessions: project", iconHint: "pass-filled", active: true, state: "missing" });
 });
 
 test("catalog list marks current default", () => {
-  const items = catalogToViewModels("Echo-Kang-hub/avenic-catalog#main", [
-    { name: "Avenic Catalog", spec: "Echo-Kang-hub/avenic-catalog#main" },
+  const items = catalogToViewModels("Echo-Kang-hub/SkillsHub#main", [
+    { name: "Avenic Catalog", spec: "Echo-Kang-hub/SkillsHub#main" },
     { name: "Other", spec: "Echo-Kang-hub/other#main" },
   ]);
   // 模型无 dead tooltip 字段：规则守源码观感，TreeItem 只展示 label
-  assert.deepEqual(items[0], { kind: "current", label: "Echo-Kang-hub/avenic-catalog#main", description: "Avenic Catalog" });
+  assert.deepEqual(items[0], { kind: "current", label: "Echo-Kang-hub/SkillsHub#main", description: "Avenic Catalog" });
   assert.equal(items[1].kind, "entry");
 });
 
 test("catalog model renders entries without a project root (global/state-dir domain)", () => {
   // 无项目根 + 无默认 spec：仅凭注册列表即可渲染数据（W1 根门禁移除）
-  const items = catalogToViewModels(null, [{ name: "Avenic Catalog", spec: "Echo-Kang-hub/avenic-catalog#main" }]);
-  assert.deepEqual(items, [{ kind: "entry", label: "Echo-Kang-hub/avenic-catalog#main", description: "Avenic Catalog" }]);
+  const items = catalogToViewModels(null, [{ name: "Avenic Catalog", spec: "Echo-Kang-hub/SkillsHub#main" }]);
+  assert.deepEqual(items, [{ kind: "entry", label: "Echo-Kang-hub/SkillsHub#main", description: "Avenic Catalog" }]);
 });
 
 test("catalog model is empty only when genuinely nothing to show", () => {
   assert.deepEqual(catalogToViewModels(null, []), []); // 无默认 spec 且无注册 → 视图显示提示行
-  assert.equal(catalogToViewModels("Echo-Kang-hub/avenic-catalog#main", []).length, 1); // 有默认 spec → 仍有数据
+  assert.equal(catalogToViewModels("Echo-Kang-hub/SkillsHub#main", []).length, 1); // 有默认 spec → 仍有数据
 });
 
 test("skills empty-state copy is scope-aware", () => {

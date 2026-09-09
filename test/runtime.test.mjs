@@ -22,7 +22,7 @@ import {
   ensureRuntimeGitignore,
   sessionsGitIgnored,
 } from "../packages/core/src/runtime/gitignore.mjs";
-import { agentExecutableAvailable, stateRoot } from "../packages/core/src/index.mjs";
+import { agentExecutableAvailable, spawnExecutableSync, stateRoot } from "../packages/core/src/index.mjs";
 import { locateProjectRoot } from "../packages/core/src/runtime/project-root.mjs";
 import * as claudeSessions from "../packages/core/src/runtime/adapters/claude.mjs";
 import * as codexSessions from "../packages/core/src/runtime/adapters/codex.mjs";
@@ -819,6 +819,28 @@ test("agentExecutableAvailable probes the official CLI on PATH", async () => {
     if (process.platform !== "win32") await chmod(fake, 0o755);
     assert.equal(agentExecutableAvailable("claude", { ...process.env, PATH: dir }), true);
     assert.equal(agentExecutableAvailable("claude", { ...process.env, PATH: "" }), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// npm 全局安装生成的 agent CLI 是 .cmd shim（如 opencode.cmd）：CreateProcess 无法
+// 直接运行，须经 shell 透传。0.1.7 修正后应能被探测到并输出版本。
+test("agentExecutableAvailable runs npm-style .cmd shims on Windows", { skip: process.platform !== "win32" }, async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "agent-cmd-"));
+  try {
+    const shim = path.join(dir, "opencode.cmd");
+    await writeFile(shim, "@echo off\r\necho 0.15.13\r\nexit /b 0\r\n");
+    assert.equal(agentExecutableAvailable("opencode", { ...process.env, PATH: dir }), true);
+    assert.equal(agentExecutableAvailable("opencode", { ...process.env, PATH: "" }), false);
+    const result = spawnExecutableSync("opencode", ["--version"], {
+      env: { ...process.env, PATH: dir },
+      windowsHide: true,
+      stdio: "pipe",
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /0\.15\.13/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
