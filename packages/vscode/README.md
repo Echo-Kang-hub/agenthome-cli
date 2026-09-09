@@ -1,6 +1,6 @@
 # Avenic VS Code 扩展
 
-Avenic 的图形界面：在 VS Code 中管理 Avenic Agent 运行时与 Skills，并提供 Catalog / Overview 面板。
+Avenic 的图形界面：在 VS Code 中管理 Avenic Agent 运行时与 Skills，并提供 Hub / Overview 面板。
 
 ## 安装
 
@@ -20,9 +20,9 @@ code --install-extension packages/vscode/dist/avenic-agent-manager.vsix
 
 - **Agents 视图**：查看已安装 Agent 与初始化状态；右键 Agent 可初始化 / 移除、切换认证模式、
   切换会话存储（global / project 双作用域）、导入与写回会话。
-- **Catalog 视图**：添加 / 选择 / 同步 Catalog，设置默认 Catalog；当前 spec 在顶部显示。
+- **Hub 视图**：添加 / 选择 / 同步 Hub，设置默认 Hub；当前 spec 在顶部显示。
 - **Skills 视图**：浏览 Packs 中的 Skills，一键安装 / 卸载 Packs，添加与移除直装 Skill。
-- **Overview 面板**：一屏汇总当前项目的 Agent 状态、Catalog spec 与 Skills 安装完成度，
+- **Overview 面板**：一屏汇总当前项目的 Agent 状态、Hub spec 与 Skills 安装完成度，
   并可点击项目根直接跳转目录。
 
 所有命令同时在命令面板（`Avenic: ...`）中可用。
@@ -62,14 +62,14 @@ code --extensionDevelopmentPath packages/vscode <示例项目目录>
 - **AVENIC_* 环境变量继承**：扩展运行在 VS Code 宿主进程内，直接继承宿主的 `process.env`，
   因此在启动 VS Code 前设置的环境变量即可生效，例如：
 
-  - `AVENIC_CATALOG_SPEC` / `AGENTHOME_CATALOG_SPEC`：指定 Catalog spec（优先 `AVENIC_*`）；
+  - `AVENIC_CATALOG_SPEC` / `AGENTHOME_CATALOG_SPEC`：指定 Hub spec（优先 `AVENIC_*`）；
   - `AVENIC_STATE_DIR` / `AGENTHOME_STATE_DIR`：指定 State 目录。
 
   在 `launch.json` 调试配置中通过 `env` 注入的变量仅在对应调试会话生效，对扩展主体同样继承。
 
 ## 截图
 
-> 截图占位空块：Agents 视图、Catalog 视图、Skills 视图、Overview 面板的截图待补充。
+> 截图占位空块：Agents 视图、Hub 视图、Skills 视图、Overview 面板的截图待补充。
 > 发布前请在此处按上图格式插入 4 张实际截图（`media/screenshots/`）。
 
 ## License

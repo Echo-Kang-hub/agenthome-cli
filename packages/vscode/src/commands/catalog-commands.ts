@@ -30,18 +30,18 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
 
   register("avenic.catalog.add", async () => {
     if (busy()) return;
-    const spec = await vscode.window.showInputBox({ prompt: "Catalog spec（owner/repo、URL 或本地路径）", value: "Echo-Kang-hub/SkillsHub#main" });
+    const spec = await vscode.window.showInputBox({ prompt: "Hub spec（owner/repo、URL 或本地路径）", value: "Echo-Kang-hub/SkillsHub#main" });
     if (spec === undefined || spec.trim() === "") return;
     // runMutation：失败/预览失败后同样 refresh——注册状态已变更，树与 Dashboard 不得停留在旧数据（T8 Minor A）
-    const result = await runMutation(deps.queue, () => withProgress("添加 Catalog", async (report) => { report("保存并预览…"); return catalog.add(spec.trim()); }), () => deps.refresh());
+    const result = await runMutation(deps.queue, () => withProgress("添加 Hub", async (report) => { report("保存并预览…"); return catalog.add(spec.trim()); }), () => deps.refresh());
     if (result.previewFailed) await vscode.window.showWarningMessage("已保存，可 sync 重试（Preview 失败不致命）");
-    else await vscode.window.showInformationMessage(`Catalog 已添加并预览 ${result.packs.length} 个 Pack`);
+    else await vscode.window.showInformationMessage(`Hub 已添加并预览 ${result.packs.length} 个 Pack`);
   });
 
   register("avenic.catalog.select", async () => {
     if (busy()) return;
     const known = await catalog.listKnown();
-    if (known.length === 0) { await vscode.window.showInformationMessage("暂无已注册 Catalog，先执行 Avenic: Catalog 添加"); return; }
+    if (known.length === 0) { await vscode.window.showInformationMessage("暂无已注册 Hub，先执行 Avenic: Hub 添加"); return; }
     const picked = await pickOne(known.map((k) => ({ label: k.spec, description: k.name })), async (items) => vscode.window.showQuickPick(items));
     if (picked === undefined) return;
     await runMutation(deps.queue, () => catalog.select(picked.label), () => deps.refresh());
@@ -52,7 +52,7 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
   register("avenic.catalog.default", async () => {
     if (busy()) return;
     const current = await catalog.defaultSpec();
-    const info = await vscode.window.showInformationMessage(`当前默认 Catalog：${current ?? "未设置"}`, "修改");
+    const info = await vscode.window.showInformationMessage(`当前默认 Hub：${current ?? "未设置"}`, "修改");
     if (info === undefined) return;
     await vscode.commands.executeCommand("avenic.catalog.select");
   });
@@ -60,8 +60,8 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
   register("avenic.catalog.sync", async () => {
     if (busy()) return;
     const spec = await catalog.defaultSpec();
-    if (spec === null) { await vscode.window.showWarningMessage("未选择默认 Catalog"); return; }
-    const info = await runMutation(deps.queue, () => withProgress("同步 Catalog", async (report) => { report("拉取并解析…"); return catalog.sync(spec); }), () => deps.refresh());
+    if (spec === null) { await vscode.window.showWarningMessage("未选择默认 Hub"); return; }
+    const info = await runMutation(deps.queue, () => withProgress("同步 Hub", async (report) => { report("拉取并解析…"); return catalog.sync(spec); }), () => deps.refresh());
     await vscode.window.showInformationMessage(`已同步 ${spec} → revision ${info.revision}`);
   });
 
@@ -71,12 +71,12 @@ export function registerCatalogCommands(context: vscode.ExtensionContext, deps: 
     if (busy()) return;
     // packSpec 与 catalogSpec 均可能承载来源 spec（provider 挂 packSpec；兼容早期命名）
     const { packId, catalogSpec, packSpec } = (arg ?? {}) as { packId?: string; catalogSpec?: string; packSpec?: string };
-    if (packId === undefined) { await vscode.window.showWarningMessage("请在 Catalog 树中右键 Pack 行安装"); return; }
+    if (packId === undefined) { await vscode.window.showWarningMessage("请在 Hub 树中右键 Pack 行安装"); return; }
     const current = await catalog.defaultSpec();
-    if (current === null) { await vscode.window.showWarningMessage("尚未选择默认 Catalog，请先执行 Avenic: Catalog 添加"); return; }
+    if (current === null) { await vscode.window.showWarningMessage("尚未选择默认 Hub，请先执行 Avenic: Hub 添加"); return; }
     const sourceSpec = catalogSpec ?? packSpec;
     if (sourceSpec !== undefined && sourceSpec !== current) {
-      await vscode.window.showWarningMessage("该 Pack 属于非默认 Catalog，先执行 Avenic: Catalog 选择再安装"); return;
+      await vscode.window.showWarningMessage("该 Pack 属于非默认 Hub，先执行 Avenic: Hub 选择再安装"); return;
     }
     const scope = await pickScope();
     if (scope === null) return;

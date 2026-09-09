@@ -203,7 +203,7 @@ export function skillsToViewModels(status: InstallStatus | null, detected: strin
       item: { kind: "group", label: "Installed Packs", description: `${status.names.length} 个 Skill / ${status.packs.length} 个 Pack · 安装目标 ${complete}/${status.targets.length}`, iconHint: "package" },
       children,
     },
-    { item: { kind: "group", label: "Catalog Packs", description: `${status.packs.length} 个 Pack / ${status.groups.length} 个分组`, iconHint: "repo" } },
+    { item: { kind: "group", label: "Hub Packs", description: `${status.packs.length} 个 Pack / ${status.groups.length} 个分组`, iconHint: "repo" } },
   );
   return groups;
 }

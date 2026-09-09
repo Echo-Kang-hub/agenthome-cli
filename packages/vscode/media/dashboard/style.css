@@ -174,6 +174,10 @@ p { margin: 0; }
   background: var(--vscode-editorWidget-background, none);
   padding: 0.28rem 0.55rem;
   min-width: 0;
+  /* 内容驱动的降级容器：@container 按卡片自身宽度判定（≠视口断点），
+     文字真的放不下才隐藏，放得下就绝不提前隐藏（用户反馈的 600/430 视口断点
+     会过早隐藏仍可容纳的文字，已废弃）。 */
+  container-type: inline-size;
 }
 .agent-card .icon { width: 12px; height: 12px; font-size: 12px; line-height: 12px; }
 .agent-head { display: flex; align-items: center; gap: 0.4rem; flex: 0 1 auto; min-width: 0; }
@@ -259,26 +263,38 @@ p { margin: 0; }
 .state-error .button:hover { background: var(--vscode-button-hoverBackground); }
 
 /* ---------- 响应式分层：面板横向压缩时优雅降级 ----------
-   webview 视口宽度即面板宽度（@media 随面板缩放重算）。
-   第一层（≤600px）：去掉非关键文本（元信息），核心内容不动。
-   第二层（≤430px）：关键内容只留图标 —— agent 行 = 品牌图标 + 状态点，
-   完整信息转移到悬停 tooltip（main.js 写入 card.title）。 */
+   agent 行的文字降级走容器查询（@container，见 .agent-card 的 container-type），
+   按卡片自身宽度（=内容实际可容纳宽度）判定；视口 @media 只处理非代理内容
+   （提示行、技能细节、卡片元信息/提示、字号缩放），其宽度与文字可容纳性
+   大致对应，保留视口断点即可。 */
 @media (max-width: 600px) {
   body { padding: 0.45rem 0.5rem 0.8rem; }
   .prompt-line { display: none; }
-  .agent-meta { display: none; }
   .skill-details { display: none; }
   .card .meta { display: none; }
   .card .hint { display: none; }
   .topbar .brand h1 { font-size: 0.9rem; }
 }
 @media (max-width: 430px) {
-  .agent-name { display: none; }
-  .agent-status { display: none; }
-  .agent-meta { display: none; }
-  .agent-mark { width: 15px; height: 15px; }
   .value { font-size: 0.82rem; }
   .button { padding: 0.25rem 0.45rem; font-size: 0.74rem; }
   .button .icon { width: 11px; height: 11px; font-size: 11px; line-height: 11px; }
   .skill-row { gap: 0.35rem; }
+}
+
+/* ---------- Agent 行容器降级（内容驱动，非视口断点） ----------
+   降级顺序（文字放不下才逐级隐藏，放得下则完整显示）：
+   第一级（卡片 ≤430px，完整行「名称+状态+元信息」已容纳不下）：
+   只隐「已初始化 · global/project」状态行与「可执行文件就绪」元信息行，
+   名称「Claude Code」保留显示；完整信息仍在悬停 tooltip（main.js 写入 card.title）。
+   第二级（卡片 ≤180px，名称+图标行也容纳不下）：名称也隐藏，
+   只剩「品牌图标 + 状态点」（提示圆点 still = 状态点，见 .agent-head 内 icon）。
+   两级之间的宽度区间（430px~180px）名称始终显示，不会提前图标化。 */
+@container (max-width: 430px) {
+  .agent-status { display: none; }
+  .agent-meta { display: none; }
+}
+@container (max-width: 180px) {
+  .agent-name { display: none; }
+  .agent-mark { width: 15px; height: 15px; }
 }

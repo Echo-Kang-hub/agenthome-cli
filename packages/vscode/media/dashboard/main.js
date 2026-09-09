@@ -12,7 +12,7 @@ const state = { loading: true, error: null, data: null };
 // ---- 快捷动作（白名单，见 src/dashboard/protocol.ts）----
 // 点击向 host 转发 { type: "command" }；所涉命令均有无参数 QuickPick 回退，无需携带参数。
 const ACTIONS = [
-  { command: "catalog.sync", label: "同步 Catalog", iconName: "sync" },
+  { command: "catalog.sync", label: "同步 Hub", iconName: "sync" },
   { command: "skills.installPacks", label: "安装 Packs", iconName: "package" },
   { command: "skills.addDirect", label: "添加直装 Skill", iconName: "plus" },
   { command: "agents.init", label: "初始化 Agent", iconName: "robot" },
@@ -49,40 +49,42 @@ function hintIconName(hint) {
 
 // ---- Agent 品牌标记（单色 inline SVG，currentColor，无远程资产） ----
 // 规则 R1（无远程）：纯 DOM 构建（createElementNS），不经 innerHTML；
-// 规则 R3（文本安全）：不存在文本内容。窗格横向压缩到最终态时（媒体查询
-// ≤430px，见 style.css），agent 行的文字全部隐藏，只剩「品牌图标 + 状态点」。
+// 规则 R3（文本安全）：不存在文本内容。品牌形状取自官方标记的路径数据：
+// claude=八向星芒（示意）、codex=六边形环结+水平短杠（OpenAI Codex 官方标记，
+// 数据取自 LobeHub 官方静态图标库 codex.svg）、opencode=方框回字形（SST
+// opencode 官方「回字方框 O」标记，方框+偏下内块）。窗格横向压缩到最终态时
+// （容器查询 ≤180px，见 style.css），agent 行文字全部隐藏，只剩「品牌图标 + 状态点」。
 const SVG_NS = "http://www.w3.org/2000/svg";
 function svgNode(tag, attrs) {
   const node = document.createElementNS(SVG_NS, tag);
   for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
   return node;
 }
+// OpenAI Codex 官方标记（24×24，fill-rule=evenodd，单 path）
+const CODEX_D = "M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z";
 function agentMark(agentId) {
-  const svg = svgNode("svg", { viewBox: "0 0 16 16", class: "agent-mark" });
+  const svg = svgNode("svg", { viewBox: "0 0 24 24", class: "agent-mark" });
   svg.setAttribute("aria-hidden", "true");
   if (agentId === "claude") {
-    // 星芒：八向光线（claude code 风格标记）
+    // 星芒：八向光线（claude code 风格标记）；viewBox 沿用 16×16
+    svg.setAttribute("viewBox", "0 0 16 16");
     const path = svgNode("path", { d: "M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4L3.4 12.6", fill: "none", stroke: "currentColor" });
     path.setAttribute("stroke-width", "1.8");
     path.setAttribute("stroke-linecap", "round");
     svg.append(path);
   } else if (agentId === "codex") {
-    // 六边宝石 + 中点（codex 风格标记）
-    const gem = svgNode("polygon", {
-      points: "8 1.8 13.3 4.9 13.3 11.1 8 14.2 2.7 11.1 2.7 4.9",
-      fill: "none",
-      stroke: "currentColor",
-    });
-    gem.setAttribute("stroke-width", "1.6");
-    gem.setAttribute("stroke-linejoin", "round");
-    svg.append(gem);
-    svg.append(svgNode("circle", { cx: "8", cy: "8", r: "1.6", fill: "currentColor" }));
+    // 六边形环结 + 水平短杠（OpenAI Codex 官方标记，单色 currentColor）
+    const path = svgNode("path", { d: CODEX_D, fill: "currentColor" });
+    path.setAttribute("fill-rule", "evenodd");
+    svg.append(path);
   } else {
-    // 环 + 点（opencode 风格标记）
-    const ring = svgNode("circle", { cx: "8", cy: "8", r: "5.1", fill: "none", stroke: "currentColor" });
-    ring.setAttribute("stroke-width", "1.8");
-    svg.append(ring);
-    svg.append(svgNode("circle", { cx: "8", cy: "8", r: "1.5", fill: "currentColor" }));
+    // 回字方框 O：外框镂空 + 偏下内块（opencode 官方标记；内块半透明）
+    const frame = svgNode("path", { d: "M2 2h20v20H2V2zm5 5h10v10H7V7z", fill: "currentColor" });
+    frame.setAttribute("fill-rule", "evenodd");
+    svg.append(frame);
+    const inner = svgNode("rect", { x: "7", y: "12", width: "10", height: "5", fill: "currentColor" });
+    inner.setAttribute("opacity", "0.4");
+    svg.append(inner);
   }
   return svg;
 }
@@ -133,7 +135,7 @@ function promptLine() {
   return line;
 }
 
-/** 顶部信息卡片（项目 / Catalog），空态友好：null 值渲染占位文本 + 提示行。 */
+/** 顶部信息卡片（项目 / Hub），空态友好：null 值渲染占位文本 + 提示行。 */
 function infoCard(headIcon, title, valueText, metaText, hintText) {
   const card = el("section", undefined, "card");
   const head = el("header", undefined, "card-head");
@@ -218,18 +220,18 @@ function actionsBlock(projectOpen) {
 function renderData(data) {
   const pages = [topbar(), promptLine()];
 
-  // 顶部状态行：项目 + Catalog（未打开项目 → “未打开项目”+ 提示；未选 Catalog → 同理）
+  // 顶部状态行：项目 + Hub（未打开项目 → “未打开项目”+ 提示；未选 Hub → 同理）
   const grid = el("section", undefined, "status-grid");
   const projectHint = data.projectRoot === null
     ? "打开项目后将自动加载 Agents 与 Skills 状态。"
     : undefined;
   grid.append(infoCard("folder-opened", "项目", data.projectRoot ?? "未打开项目", undefined, projectHint));
   const catalogHint = data.catalog === null
-    ? "在 Catalog 视图选择或添加 Catalog，或直接点击下方「同步 Catalog」。"
+    ? "在 Hub 视图选择或添加 Hub，或直接点击下方「同步 Hub」。"
     : undefined;
   grid.append(infoCard(
-    "repo", "Catalog",
-    data.catalog?.spec ?? "未选择 Catalog",
+    "repo", "Hub",
+    data.catalog?.spec ?? "未选择 Hub",
     data.catalog === null ? undefined : "修订：" + data.catalog.revision,
     catalogHint,
   ));

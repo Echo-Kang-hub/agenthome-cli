@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.9
+
+- **Catalog → Hub 更名**：插件面向用户的标题/文案统一改为 Hub（视图「Catalog」→「Hub」、
+  Overview 项目卡片、快捷动作「同步 Hub」、命令标题「添加/选择/默认/同步 Hub」、
+  树标签「Hub Packs」及各提示/错误消息），与 SkillsHub 品牌一致。
+  命令 ID（`avenic.catalog.*`）、视图 ID、`AVENIC_CATALOG_SPEC` 环境变量与 CLI（`avenic catalog`）
+  保持不变；纯标识符（CatalogViewProvider 等）与源码注释中的技术命名未动。
+- **Overview Agent 行降级改容器查询**：文字压缩改为按卡片自身宽度（`@container`）逐级降级——
+  第一级（≤430px）只隐「已初始化 · global/project」状态行与元信息行，名称「Claude Code」保留显示；
+  第二级（≤180px）名称也隐，只剩品牌图标 + 状态点。之前的视口断点（600px/430px）会在文字
+  仍可容纳时提前隐藏（文字放得下也显示图标），已废弃；视口 @media 只保留非 agent 内容的降级
+  （提示行、技能细节、卡片元信息/提示、字号缩放）。
+- **修正 Codex / OpenCode 官方标记**：codex 从「六边形+圆点」改为官方六边形环结+水平短杠
+  （路径数据取自 LobeHub 官方静态图标库 codex.svg，单 path fill-rule=evenodd）；
+  opencode 从「圆环+圆点」改为官方方形回字框 O（外框镂空 + 偏下半透明内块）。
+
 ## 0.1.8
 
 - **CLI 交互（clack 风格）**：`avenic skills install`（无参 + 终端）→ 多选 Packs

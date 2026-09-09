@@ -3,7 +3,7 @@
   "displayName": "Avenic Agent Manager",
   "description": "管理 Avenic Agent 运行时与 Skills 的图形界面",
   "publisher": "EchoKang",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "license": "MIT",
   "repository": {
@@ -34,8 +34,8 @@
         },
         {
           "id": "avenic.catalog",
-          "name": "Catalog",
-          "contextualTitle": "Avenic · Catalog"
+          "name": "Hub",
+          "contextualTitle": "Avenic · Hub"
         },
         {
           "id": "avenic.skills",
@@ -103,22 +103,22 @@
       },
       {
         "command": "avenic.catalog.add",
-        "title": "Avenic: 添加 Catalog",
+        "title": "Avenic: 添加 Hub",
         "category": "Avenic"
       },
       {
         "command": "avenic.catalog.select",
-        "title": "Avenic: 选择 Catalog",
+        "title": "Avenic: 选择 Hub",
         "category": "Avenic"
       },
       {
         "command": "avenic.catalog.default",
-        "title": "Avenic: 默认 Catalog",
+        "title": "Avenic: 默认 Hub",
         "category": "Avenic"
       },
       {
         "command": "avenic.catalog.sync",
-        "title": "Avenic: 同步 Catalog",
+        "title": "Avenic: 同步 Hub",
         "category": "Avenic"
       },
       {

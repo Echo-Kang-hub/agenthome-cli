@@ -95,8 +95,8 @@ test("installed packs children fall back to merged source rows without layers", 
   assert.equal(children[0].children?.[1].kind, "skill");
   assert.equal(children[2].label, "legacy-one");
   assert.equal(children[2].kind, "adopted");
-  // Catalog Packs 保持为纯信息行（「完整性」分组已移除，完成度并入 Installed Packs 描述）
-  assert.equal(items[1].item.label, "Catalog Packs");
+  // Hub Packs 保持为纯信息行（「完整性」分组已移除，完成度并入 Installed Packs 描述）
+  assert.equal(items[1].item.label, "Hub Packs");
   assert.equal(items.length, 2);
 });
 

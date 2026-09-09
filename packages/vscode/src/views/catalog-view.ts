@@ -33,7 +33,7 @@ export class CatalogViewProvider implements vscode.TreeDataProvider<vscode.TreeI
       this.scopeChildren.clear();
       const [spec, known] = await Promise.all([defaultSpec(), listKnown()]);
       const models = catalogToViewModels(spec, known);
-      if (models.length === 0) return [new vscode.TreeItem("添加或同步 Catalog", vscode.TreeItemCollapsibleState.None)];
+      if (models.length === 0) return [new vscode.TreeItem("添加或同步 Hub", vscode.TreeItemCollapsibleState.None)];
       return models.map((m) => {
         const item = new vscode.TreeItem(m.label, vscode.TreeItemCollapsibleState.Collapsed);
         item.description = m.description; // 名称
@@ -75,7 +75,7 @@ export class CatalogViewProvider implements vscode.TreeDataProvider<vscode.TreeI
   private async packChildren(spec: string): Promise<vscode.TreeItem[]> {
     const packs = await packsFor(spec);
     if (packs === null) {
-      return [this.row({ kind: "hint", label: "Catalog 未缓存", description: "同步后可查看 Packs", iconHint: "info" })];
+      return [this.row({ kind: "hint", label: "Hub 未缓存", description: "同步后可查看 Packs", iconHint: "info" })];
     }
     return Promise.all(catalogPacksToViewModels([...packs.values()]).map(async (model) => {
       const item = this.row(model);

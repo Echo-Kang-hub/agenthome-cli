@@ -36,7 +36,7 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     if (scope === null) return;
     const cwd = await scopeCwd(scope, deps.resolveRoot);
     if (cwd === null) return;
-    if ((await catalogDefaultSpec()) === null) { await vscode.window.showWarningMessage("尚未选择默认 Catalog，请先执行 Avenic: Catalog 添加"); return; }
+    if ((await catalogDefaultSpec()) === null) { await vscode.window.showWarningMessage("尚未选择默认 Hub，请先执行 Avenic: Hub 添加"); return; }
     const all = await skills.availablePacks(scope, cwd);
     const installed = await skills.installedPackIds(scope, cwd);
     // 只列举未安装的 Pack；描述兜底 id
@@ -148,7 +148,7 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     if (names.length === 0) { await vscode.window.showInformationMessage("没有已托管但未关联 Pack 的 Skill"); return; }
     const plan = await skills.planAdopt(scope, names, cwd);
     const candidates = (plan.candidates ?? []).filter((c) => c.coverage >= 0.8);
-    if (candidates.length === 0) { await vscode.window.showInformationMessage(`默认 Catalog 中未找到覆盖 ${names.length} 个 Skill 的 Pack（≥80% 匹配）`); return; }
+    if (candidates.length === 0) { await vscode.window.showInformationMessage(`默认 Hub 中未找到覆盖 ${names.length} 个 Skill 的 Pack（≥80% 匹配）`); return; }
     const items = candidates.map((c) => ({
       label: `识别为 Pack「${c.packName}」并补齐 ${c.missing} 个缺失 Skill`,
       description: `覆盖 ${c.matched.length}/${names.length}（${Math.round(c.coverage * 100)}%）`,
