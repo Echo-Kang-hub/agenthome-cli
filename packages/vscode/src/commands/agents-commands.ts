@@ -12,6 +12,16 @@ export interface AgentDeps {
   refresh: () => void;
 }
 
+// 初始化只选一次作用域：auth 与 sessions 是两个独立维度，但用户视角里两次"global/project"
+// 选择题是同一个问题被问两遍（且后一次显得"才生效"）。合并为一次 QuickPick，每个选项是
+// 一个完整组合；之后需要混合或调整时再分别走 switchAuth / switchSessions。
+const INIT_MODES = [
+  { label: "项目域（认证 + 会话）", description: "认证存在项目内（被 gitignore），会话随项目入库，可迁移", value: { auth: "project", sessions: "project" } },
+  { label: "全局域（认证 + 会话）", description: "认证与会话都走系统级目录，项目只留运行时配置", value: { auth: "global", sessions: "global" } },
+  { label: "认证全局 / 会话项目", description: "认证走系统级目录；会话随项目入库", value: { auth: "global", sessions: "project" } },
+  { label: "认证项目 / 会话全局", description: "项目内放临时认证；会话走系统级目录", value: { auth: "project", sessions: "global" } },
+] as const;
+
 export function registerAgentsCommands(context: vscode.ExtensionContext, deps: AgentDeps): void {
   // 决议 1：交互（resolveRoot / 选择）在队列外，仅 mutation 服务调用进 queue.run；
   // 决议 2：busy 守卫在命令体最前（spec §6 进行中时相关命令禁用），提示并返回不入队；
@@ -38,12 +48,38 @@ export function registerAgentsCommands(context: vscode.ExtensionContext, deps: A
     if (busy()) return;
     const target = await agentTarget(treeItem);
     if (target === null) return;
-    // 交互（auth/sessions 选择）在队列外完成；仅 initialize 突变进队列（W2a）
-    const auth = await pickOne([{ label: "global" }, { label: "project" }], async (items) => vscode.window.showQuickPick(items));
-    if (auth === undefined) return;
-    const sessions = await pickOne([{ label: "global" }, { label: "project" }], async (items) => vscode.window.showQuickPick(items));
-    if (sessions === undefined) return;
-    await runMutation(deps.queue, () => withProgress("Avenic Agent 操作", (report) => agents.initialize(target.root, target.id, auth.label as "global" | "project", sessions.label as "global" | "project").then(() => { report("完成"); })), () => deps.refresh());
+    // 交互（作用域组合一次选择）在队列外完成；仅 initialize 突变进队列（W2a）
+    const mode = await pickOne([...INIT_MODES], async (items) => vscode.window.showQuickPick(items));
+    if (mode === undefined) return;
+    await runMutation(deps.queue, () => withProgress("Avenic Agent 操作", (report) => agents.initialize(target.root, target.id, mode.value.auth, mode.value.sessions).then(() => { report("完成"); })), () => deps.refresh());
+  });
+
+  // 启动运行（无需安装 @avenic/cli npm 包）：core 原语准备好环境与会话后，官方 CLI
+  // 在集成终端中交互运行；终端关闭即收官（会话收回项目 + 还原原生存储）。
+  // 注册关闭监听需在 show/sendText 之前，避免漏掉极快的关闭。
+  register("avenic.agents.launch", async (treeItem) => {
+    if (busy()) return;
+    const target = await agentTarget(treeItem);
+    if (target === null) return;
+    const status = await agents.agentStatus(target.root, target.id);
+    if (status.effective === null) {
+      await vscode.window.showWarningMessage(`${status.agent.displayName} 尚未初始化，请先执行「Avenic: 初始化 Agent」`);
+      return;
+    }
+    if (!status.executableAvailable) {
+      await vscode.window.showWarningMessage(`未找到 ${status.agent.displayName} 官方可执行文件（${status.agent.executable}），请先安装官方 CLI`);
+      return;
+    }
+    const prepared = await runMutation(deps.queue, () => agents.prepareAgentLaunch(target.root, target.id), () => deps.refresh());
+    const { definition, finishRun } = prepared;
+    const terminal = vscode.window.createTerminal({ name: definition.name, cwd: definition.cwd, env: definition.environment });
+    const closeListener = vscode.window.onDidCloseTerminal((closed) => {
+      if (closed !== terminal) return;
+      closeListener.dispose();
+      void finishRun().catch((error) => showError(error));
+    });
+    terminal.show();
+    terminal.sendText(definition.command);
   });
 
   register("avenic.agents.deinit", async (treeItem) => {

@@ -1,10 +1,10 @@
 node_modules/
 *.tgz
 .tmp/
+.claude/
 .agents/
 
 # Agent Runtime
-.claude/skills/
 .agents/skills/
 .agents/local/
 .agents/tmp/

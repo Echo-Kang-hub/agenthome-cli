@@ -3,7 +3,7 @@
   "displayName": "Avenic Agent Manager",
   "description": "管理 Avenic Agent 运行时与 Skills 的图形界面",
   "publisher": "EchoKang",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "license": "MIT",
   "repository": {
@@ -56,6 +56,12 @@
         "title": "Avenic: 初始化 Agent",
         "category": "Avenic",
         "icon": "$(add)"
+      },
+      {
+        "command": "avenic.agents.launch",
+        "title": "Avenic: 启动 Agent",
+        "category": "Avenic",
+        "icon": "$(play)"
       },
       {
         "command": "avenic.agents.deinit",
@@ -169,6 +175,15 @@
         {
           "command": "avenic.agents.init",
           "when": "view == avenic.agents && viewItem == agent-inactive"
+        },
+        {
+          "command": "avenic.agents.launch",
+          "when": "view == avenic.agents && viewItem == agent",
+          "group": "inline@1"
+        },
+        {
+          "command": "avenic.agents.launch",
+          "when": "view == avenic.agents && viewItem == agent"
         },
         {
           "command": "avenic.agents.deinit",

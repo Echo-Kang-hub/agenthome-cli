@@ -27,7 +27,9 @@ test("agent rows expose state-specific keys and title/init key bindings", async 
   const inactive = "view == avenic.agents && viewItem == agent-inactive";
   assert.ok(contextMenus.some((m) => m.command === "avenic.agents.init" && m.when === inactive && m.group === "inline@1"), "未初始化行悬停键位");
   assert.ok(contextMenus.some((m) => m.command === "avenic.agents.init" && m.when === inactive), "未初始化行右键菜单");
-  // 已初始化行：移除等键位（viewItem == agent），初始化键位不出现在已初始化行
+  // 已初始化行：启动（inline@1）+ 移除（inline@2）等键位（viewItem == agent），初始化键位不出现在已初始化行
+  assert.ok(contextMenus.some((m) => m.command === "avenic.agents.launch" && m.when === "view == avenic.agents && viewItem == agent" && m.group === "inline@1"), "已初始化行启动悬停键位");
+  assert.ok(contextMenus.some((m) => m.command === "avenic.agents.launch" && m.when === "view == avenic.agents && viewItem == agent"), "已初始化行启动右键菜单");
   assert.ok(contextMenus.some((m) => m.command === "avenic.agents.deinit" && m.when === "view == avenic.agents && viewItem == agent" && m.group === "inline@2"));
   assert.ok(!contextMenus.some((m) => m.command === "avenic.agents.init" && m.when === "view == avenic.agents && viewItem == agent"));
   // AGENTS 标题栏初始化键位（命令面板式入口，无需先选中行）
