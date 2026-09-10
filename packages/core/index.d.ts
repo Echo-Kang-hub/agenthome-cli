@@ -352,7 +352,11 @@ export interface InstallStatus {
 }
 export function skillsInstallationStatus(context: InstallContext): Promise<InstallStatus | null>;
 export function detectedSkillNames(context: InstallContext): Promise<string[]>;
-export function adoptSkills(context: InstallContext, skillNames: string[]): Promise<{ adopted: string[]; placed: number }>;
+export function adoptSkills(
+  context: InstallContext,
+  skillNames: string[],
+  options?: { io?: Io; createLink?: (canonicalPath: string, linkPath: string) => Promise<void> },
+): Promise<{ adopted: string[]; placed: number; linked: number }>;
 
 export interface AdoptPackCandidate {
   packId: string;

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -22,8 +22,12 @@ test("adoptSkills places the skill into every target and records it in the lock"
     const context = createInstallContext(false, { cwd: dir });
     const result = await adoptSkills(context, ["beta"]);
     assert.deepEqual(result.adopted, ["beta"]);
-    assert.equal(result.placed, 1, ".claude/skills 缺失 → 生成 1 份拷贝");
-    assert.ok(existsSync(path.join(dir, ".claude", "skills", "beta", "SKILL.md")), "补齐的 target 是真实拷贝");
+    assert.equal(result.placed, 1, ".claude/skills 缺失 → 链接补齐（链接也算补齐一个 target）");
+    assert.equal(
+      lstatSync(path.join(dir, ".claude", "skills", "beta")).isSymbolicLink(),
+      true,
+      "补齐的 target 是指向 canonical 的链接",
+    );
     assert.equal(await readFile(path.join(dir, ".claude", "skills", "beta", "SKILL.md"), "utf8"), "# beta");
     const lock = JSON.parse(await readFile(path.join(dir, ".avenic.lock.json"), "utf8"));
     assert.deepEqual(lock.adopted, ["beta"]);

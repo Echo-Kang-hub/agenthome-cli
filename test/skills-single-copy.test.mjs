@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync } from "node:fs";
+import { existsSync, lstatSync, readlinkSync } from "node:fs";
 import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { addDirectSkills, createInstallContext, installCopies } from "../packages/core/src/index.mjs";
+import { addDirectSkills, adoptSkills, createInstallContext, installCopies } from "../packages/core/src/index.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const agentBin = path.join(packageRoot, "packages", "cli", "scripts", "skills.mjs");
@@ -742,5 +742,131 @@ test("uninstall removes a dangling link that points at the missing canonical cop
         assert.match(removed.stdout, /^Uninstalled all managed project Skills: 1$/m, "悬空链接的删除计入总数");
       });
     });
+  });
+});
+
+// --- 接管（avenic skills adopt）走与安装/直装同一套共享语义（spec §5.3/§11）---
+
+// 进程内接管：走 core 源码并透传 createLink（模拟 link-hostile 文件系统）。
+async function runAdopt(root, names, options = {}) {
+  const context = createInstallContext(false, { cwd: root, environment: process.env });
+  const lines = [];
+  const result = await adoptSkills(context, names, {
+    io: { log: (line) => lines.push(line) },
+    ...options,
+  });
+  return { result, lines, context };
+}
+
+test("adopt fills the canonical target and links the shared target", async () => {
+  await withTempDirectory("avenic-adopt-link-", async (projectRoot) => {
+    await withTempDirectory("avenic-state-", async (stateRoot) => {
+      const environment = { AVENIC_STATE_DIR: stateRoot };
+      const host = path.join(projectRoot, ".agents", "skills", "handmade");
+      await mkdir(host, { recursive: true });
+      await writeFile(path.join(host, "SKILL.md"), "---\nname: handmade\n---\n# handmade\n");
+
+      const adopted = runAgent(projectRoot, ["skills", "adopt", "handmade"], environment);
+      assert.equal(adopted.status, 0, adopted.stderr);
+      const shared = path.join(projectRoot, ".claude", "skills", "handmade");
+      assert.equal(await isLink(shared), true, ".claude/skills/handmade 必须是指向 canonical 的链接");
+      assert.equal(await readFile(path.join(shared, "SKILL.md"), "utf8"), "---\nname: handmade\n---\n# handmade\n");
+    });
+  });
+});
+
+test("adopt migrates an identical copy at the share target into a link", async () => {
+  const content = "---\nname: handmade\n---\n# handmade\n";
+  await withTempDirectory("avenic-adopt-migrate-", async (root) => {
+    const sharePath = path.join(root, ".claude", "skills", "handmade");
+    await mkdir(sharePath, { recursive: true });
+    await writeFile(path.join(sharePath, "SKILL.md"), content);
+    const canonical = path.join(root, ".agents", "skills", "handmade");
+    assert.equal(existsSync(canonical), false, "现场只有 .claude 一份真实副本");
+
+    const { result, lines } = await runAdopt(root, ["handmade"]);
+    assert.equal(lstatSync(canonical).isSymbolicLink(), false, "canonical 补齐为真实目录");
+    assert.equal(await readFile(path.join(canonical, "SKILL.md"), "utf8"), content, "内容逐字节一致");
+    assert.equal(await isLink(sharePath), true, "内容一致的真实副本迁移为链接");
+    assert.equal(await readFile(path.join(sharePath, "SKILL.md"), "utf8"), content);
+    assert.equal(result.linked, 1);
+    // placed 语义：canonical 补齐 1 + share 位置由链接补齐 1（迁移也算本轮建立链接）。
+    assert.equal(result.placed, 2);
+    const output = lines.join("\n");
+    assert.doesNotMatch(output, /left untouched/, "一致的副本不是冲突");
+    assert.match(output, /Conflict 0/);
+  });
+});
+
+test("adopt leaves a divergent copy at the share target and reports a conflict", async () => {
+  await withTempDirectory("avenic-adopt-conflict-", async (projectRoot) => {
+    await withTempDirectory("avenic-state-", async (stateRoot) => {
+      const canonical = path.join(projectRoot, ".agents", "skills", "handmade");
+      await mkdir(canonical, { recursive: true });
+      await writeFile(path.join(canonical, "SKILL.md"), "---\nname: handmade\n---\n# v1\n");
+      const sharePath = path.join(projectRoot, ".claude", "skills", "handmade");
+      await mkdir(sharePath, { recursive: true });
+      await writeFile(path.join(sharePath, "SKILL.md"), "---\nname: handmade\n---\n# user edited v2\n");
+
+      const adopted = runAgent(projectRoot, ["skills", "adopt", "handmade"], { AVENIC_STATE_DIR: stateRoot });
+      assert.equal(adopted.status, 0, adopted.stderr);
+      assert.equal(await isLink(sharePath), false, "用户手改的目录原样保留");
+      assert.equal(await readFile(path.join(sharePath, "SKILL.md"), "utf8"), "---\nname: handmade\n---\n# user edited v2\n");
+      assert.equal(await readFile(path.join(canonical, "SKILL.md"), "utf8"), "---\nname: handmade\n---\n# v1\n", "canonical 不得被覆盖");
+      assert.match(
+        adopted.stdout,
+        /⚠ handmade: a copy exists and differs from the shared version — left untouched/,
+        "分歧副本必须被报告为冲突",
+      );
+      assert.match(adopted.stdout, /Conflict 1/, "摘要在 silent 之下不得吞掉冲突");
+    });
+  });
+});
+
+test("adopt keeps a foreign share link and reports a conflict", async () => {
+  await withTempDirectory("avenic-adopt-foreign-", async (projectRoot) => {
+    await withTempDirectory("avenic-state-", async (stateRoot) => {
+      const canonical = path.join(projectRoot, ".agents", "skills", "handmade");
+      await mkdir(canonical, { recursive: true });
+      await writeFile(path.join(canonical, "SKILL.md"), "---\nname: handmade\n---\n# v1\n");
+      const userTarget = path.join(projectRoot, "user-skills", "handmade");
+      await mkdir(userTarget, { recursive: true });
+      await writeFile(path.join(userTarget, "SKILL.md"), "user owned\n");
+      const sharePath = path.join(projectRoot, ".claude", "skills", "handmade");
+      await mkdir(path.dirname(sharePath), { recursive: true }); // junction 的父目录必须先存在
+      await linkToUserSkill(userTarget, sharePath);
+      const before = readlinkSync(sharePath);
+
+      const adopted = runAgent(projectRoot, ["skills", "adopt", "handmade"], { AVENIC_STATE_DIR: stateRoot });
+      assert.equal(adopted.status, 0, adopted.stderr);
+      assert.equal(await isLink(sharePath), true, "用户的链接绝不被 unlink");
+      assert.equal(readlinkSync(sharePath), before, "链接的 target 原样保留");
+      assert.equal(await readFile(path.join(userTarget, "SKILL.md"), "utf8"), "user owned\n", "链接目标内容不得被改动");
+      assert.match(adopted.stdout, /⚠ handmade: a link points somewhere else — left untouched/);
+      assert.match(adopted.stdout, /Conflict 1/);
+    });
+  });
+});
+
+// R2 钉死：接管必须透传 createLink，建链失败时按 §10 降级为真实副本而不是抛错。
+// 预检迁移删掉 share 位置的真实副本后建链失败 → cp 回一份新内容（不是旧内容、不是半成品）。
+test("adopt degrades to a copy at the share target when link creation fails", async () => {
+  const content = "---\nname: handmade\n---\n# handmade\n";
+  await withTempDirectory("avenic-adopt-hostile-", async (root) => {
+    const sharePath = path.join(root, ".claude", "skills", "handmade");
+    await mkdir(sharePath, { recursive: true });
+    await writeFile(path.join(sharePath, "SKILL.md"), content);
+    const canonical = path.join(root, ".agents", "skills", "handmade");
+
+    const { result, lines } = await runAdopt(root, ["handmade"], { createLink: failingCreateLink() });
+    assert.equal(await isLink(sharePath), false, "建链失败 → 降级为真实副本");
+    assert.equal(await readFile(path.join(sharePath, "SKILL.md"), "utf8"), content, "降级副本内容取自 canonical");
+    assert.equal(await readFile(path.join(canonical, "SKILL.md"), "utf8"), content, "canonical 已从 host 补齐");
+    assert.equal(result.linked, 0);
+    // placed 语义：只有 canonical 补齐计 1；share 位置降级为拷贝，不是链接，不计入 linked。
+    assert.equal(result.placed, 1);
+    const output = lines.join("\n");
+    assert.match(output, /Linked 0 · Migrated 1 · Repaired 0 · Fallback 1 · Conflict 0/);
+    assert.doesNotMatch(output, /left untouched/, "降级不是冲突");
   });
 });

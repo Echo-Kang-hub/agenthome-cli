@@ -350,7 +350,7 @@ async function commandAdopt(skillArguments, options = {}) {
     fail(`Unknown option: ${unknownOption}`);
   }
   const context = createInstallContext(options.global ?? false, options);
-  const result = await adoptSkills(context, skillArguments);
+  const result = await adoptSkills(context, skillArguments, { io });
   io.log(`Adopted Skills: ${result.adopted.join(", ")}`);
   if (result.placed > 0) {
     io.log(`Placed targets: ${result.placed}`);

@@ -380,14 +380,20 @@ export async function removeInstallationFiles(context) {
 }
 
 // Adopt on-disk skills that no install record tracks: validate the names,
-// place a copy into every target destination that lacks the skill (an
-// existing directory is the source of truth — never overwritten), and
-// record them in the lock's `adopted` list so the managed status recognizes
-// them. No catalog/network involved; the skill stays byte-identical.
-export async function adoptSkills(context, skillNames) {
+// place a real copy into every canonical destination that lacks the skill (an
+// existing directory is the source of truth — never overwritten), then link
+// the share targets to canonical via the same §3.2/§5.1 verdicts as install
+// (identical copy → migrated to a link; divergent copy or foreign link →
+// conflict, reported and left untouched). Records them in the lock's
+// `adopted` list so the managed status recognizes them. No catalog/network
+// involved; the skill stays byte-identical.
+export async function adoptSkills(context, skillNames, options = {}) {
+  const io = options.io ?? console;
+  // createLink 透传（测试用于模拟 link-hostile 文件系统）；未提供时按 ensureSkillLinks 的默认建链。
+  const createLink = options.createLink;
   const names = [...new Set(skillNames)];
   names.forEach(assertSafeSkillName);
-  if (names.length === 0) return { adopted: [], placed: 0 };
+  if (names.length === 0) return { adopted: [], placed: 0, linked: 0 };
   // 每个名字必须已在至少一个 target 中存在（否则为鬼路径：绝不凭空创建目录）
   const host = new Map(); // name → source skill directory
   for (const target of context.targets) {
@@ -403,7 +409,8 @@ export async function adoptSkills(context, skillNames) {
     fail(`No on-disk skill found for: ${missing.join(", ")}`);
   }
   let placed = 0;
-  for (const target of context.targets) {
+  // 真身只落 canonical：shareFrom target 由链接补齐（见下），不在这里拷贝。
+  for (const target of canonicalTargets(context)) {
     const destination = target.destination;
     for (const name of names) {
       const targetPath = path.join(destination, name);
@@ -416,12 +423,23 @@ export async function adoptSkills(context, skillNames) {
       placed += 1;
     }
   }
+  // shareFrom target 走 §3.2/§5.1：一致的真实副本迁移为链接，分歧副本/外来链接判 conflict 且不动。
+  // silent 只关闭 ensureSkillLinks 自身的输出；冲突必须在这里（按 direct 的同一模式）汇报，不得被吞。
+  const linkResult = await ensureSkillLinks(context, names, { io, silent: true, createLink });
+  const linked = linkResult.counts.linked;
+  placed += linked; // 链接也算补齐一个 target（与 copy 补齐同义）
+  for (const targetConfig of shareTargets(context)) {
+    io.log(`✓ ${targetConfig.label} (shared from ${targetConfig.shareFrom})`);
+    io.log(`  Path: ${targetConfig.destination}`);
+    io.log(`  ${formatLinkSummary(linkResult.targets[targetConfig.id] ?? linkResult.counts)}`);
+  }
+  logConflicts(io, linkResult.conflicts);
   // 记录进 lock.adopted（schemaVersion 不变；未知字段对旧读者无害，安装/卸载会透传）
   const lockPath = context.lockFile;
   const lock = existsSync(lockPath) ? await readJson(lockPath) : {};
   const adopted = [...new Set([...(lock.adopted ?? []), ...names])];
   await writeJson(lockPath, { ...lock, adopted });
-  return { adopted: names, placed };
+  return { adopted: names, placed, linked };
 }
 
 // Read-only plan for pack-aware adoption: for every Pack in the default
