@@ -8,6 +8,14 @@ import { isInside, removeEmptyDirectory } from "../util/fs.mjs";
 import { readJson, writeJson } from "../util/json.mjs";
 import { ensureCatalog, loadDefaultCatalogSpec, parseCatalogSpec } from "./catalog.mjs";
 import { assertSafeId, assertSafeSkillName } from "./ids.mjs";
+import {
+  canonicalTargets,
+  ensureSkillLinks,
+  formatLinkSummary,
+  logConflicts,
+  removeLinkSafely,
+  shareTargets,
+} from "./links.mjs";
 import { loadPacks, resolvePack, resolvePacks } from "./packs.mjs";
 import { buildCatalog, loadSources } from "./sources.mjs";
 import { normalizePackIds, parsePackArguments } from "./packs.mjs";
@@ -165,6 +173,21 @@ export async function writeInstallMetadata(context, resolvedPacks, catalogInfo =
   }
 }
 
+// 四阶段安装里，动作可能发生在预检（旧副本迁移、失效链接修复）或补链（首次建链）任一趟：
+// 预检迁移过的条目在补链趟已是正确链接（只记 unchanged），只看补链趟会把"本次迁移了 N 个"
+// 印成 0。故动作计数（linked/repaired/migrated/fallback）两趟相加；冲突/跳过/未变是终态观测，
+// 取补链趟，与随后 logConflicts 打印的冲突列表一致。
+function mergeLinkCounts(preflight, final) {
+  const merged = {
+    linked: 0, migrated: 0, repaired: 0, fallback: 0, conflict: 0, unchanged: 0, skipped: 0,
+    ...final,
+  };
+  for (const key of ["linked", "repaired", "migrated", "fallback"]) {
+    merged[key] += preflight?.[key] ?? 0;
+  }
+  return merged;
+}
+
 export async function installCopies(context, resolvedPacks, io = console, options = {}) {
   const selectedSkills = resolvedPacks.groups.flatMap((group) => group.skills);
   const selectedNames = new Set(selectedSkills.map((skill) => skill.name));
@@ -174,7 +197,24 @@ export async function installCopies(context, resolvedPacks, io = console, option
   const staleNames = options.removeStale === false
     ? []
     : [...previousState.keys()].filter((name) => !selectedNames.has(name));
-  for (const targetConfig of context.targets) {
+  // 预检覆盖"本次选中 + 上次受管"：陈旧技能也要先迁移，才能在 canonical 被删前用内容判定副本归属。
+  const preflightNames = new Set([...previousState.keys(), ...selectedNames]);
+  // createLink 透传（测试用于模拟 link-hostile 文件系统）；未提供时按 ensureSkillLinks 的默认建链。
+  const createLink = options.createLink;
+
+  // 1) 预检 + 迁移：必须在 canonical 被改动之前。上次安装留下的 fallback 副本此刻与
+  //    旧 canonical 内容一致 → 安全的迁移（删副本 + 建链）；先改 canonical 会把它误判成冲突。
+  //    restoreCopy: false —— 这一趟建链失败时不得落拷贝：此刻真身还是旧版本，落了就把旧内容
+  //    钉成 fallback 副本，补链趟会把它误判成"用户手改的冲突"，降级副本永远停在旧版本。
+  const preflightResult = await ensureSkillLinks(context, preflightNames, {
+    io,
+    silent: true,
+    restoreCopy: false,
+    createLink,
+  });
+
+  // 2) canonical 安装：只有非 shareFrom 的 target 落真身。
+  for (const targetConfig of canonicalTargets(context)) {
     const destination = targetConfig.destination;
     await mkdir(destination, { recursive: true });
     const result = { added: 0, updated: 0, unchanged: 0, removed: 0 };
@@ -212,6 +252,35 @@ export async function installCopies(context, resolvedPacks, io = console, option
       `  Added ${result.added} · Updated ${result.updated} · Unchanged ${result.unchanged} · Removed ${result.removed}`,
     );
   }
+
+  // 3) 补链：为第 1 步时尚不存在的 canonical 建链（首次安装走这条）；建链失败在此降级拷贝，
+  //    内容取自刚更新过的 canonical。
+  const linkResult = await ensureSkillLinks(context, selectedNames, { io, silent: true, createLink });
+
+  // 4) shareFrom 陈旧清理：只解链，真身已在第 2 步删除。
+  for (const targetConfig of shareTargets(context)) {
+    await mkdir(targetConfig.destination, { recursive: true });
+    let removed = 0;
+    for (const staleName of staleNames) {
+      assertSafeSkillName(staleName);
+      const linkPath = path.join(targetConfig.destination, staleName);
+      if (!isInside(targetConfig.destination, linkPath)) {
+        fail(`Cleanup path escaped its target: ${linkPath}`);
+      }
+      if (await removeLinkSafely(linkPath)) {
+        removed += 1;
+      }
+    }
+    const targetCounts = mergeLinkCounts(
+      preflightResult.targets[targetConfig.id],
+      linkResult.targets[targetConfig.id],
+    );
+    io.log(`✓ ${targetConfig.label} (shared from ${targetConfig.shareFrom})`);
+    io.log(`  Path: ${targetConfig.destination}`);
+    io.log(`  ${formatLinkSummary(targetCounts)}${removed > 0 ? ` · Unlinked ${removed}` : ""}`);
+  }
+  logConflicts(io, linkResult.conflicts);
+  return linkResult;
 }
 
 export async function removeAllManagedSkills(context, managed, io = console) {

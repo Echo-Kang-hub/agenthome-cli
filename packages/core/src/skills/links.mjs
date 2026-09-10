@@ -217,11 +217,15 @@ function emptyCounts() {
 
 // 把 shareFrom target 下的受管技能收敛成"指向 canonical 的链接"。
 // 幂等；只处理传入的名字，绝不枚举目录（外部/未受管技能永不进入）。
-// 失败绝不抛出：建链失败退回拷贝，状态里记 fallback（spec §8/§10）。
+// 失败绝不抛出：建链失败退回拷贝，状态里记 fallback（spec §8/§10）；`restoreCopy: false`
+// （canonical 更新前的预检趟用）例外——不落拷贝、不记 fallback，留给下一趟处置。
 export async function ensureSkillLinks(context, names, options = {}) {
   const io = options.io ?? console;
   const silent = options.silent === true;
   const createLink = options.createLink ?? createSkillLink;
+  // restoreCopy === false：调用方在 canonical 更新前跑时用它推迟拷贝，避免把旧版本落成
+  // fallback 副本；建链失败就让条目保持缺席，交给 canonical 更新后的下一趟（默认值）处置。
+  const restoreCopy = options.restoreCopy !== false;
   const requested = [...new Set(names)].sort();
   const counts = emptyCounts();
   const conflicts = [];
@@ -290,6 +294,11 @@ export async function ensureSkillLinks(context, names, options = {}) {
         counts.linked += 1;
         targetCounts.linked += 1;
       } catch (error) {
+        if (!restoreCopy) {
+          // 预检趟建链失败：不落拷贝（此刻 canonical 还是旧版本），条目保持缺席，也不记 fallback——
+          // 让 canonical 更新后的补链趟用新内容决定建链还是降级。
+          continue;
+        }
         try {
           await mkdir(path.dirname(linkPath), { recursive: true });
           if (!existsSync(path.join(linkPath, "SKILL.md"))) {
