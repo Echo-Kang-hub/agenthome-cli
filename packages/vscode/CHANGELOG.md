@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.10
+
+- **扩展图标**：新增 `media/icon.png`（128×128 PNG，Avenic 品牌标记 + 字标）并声明
+  `package.json` 顶层 `icon` 字段，Marketplace 与扩展列表不再显示默认占位图。
+  侧边栏活动栏图标仍用 `media/icon.svg`（24px 单色，跟随主题着色，二者用途不同）。
+
 ## 0.1.9
 
 - **Catalog → Hub 更名**：插件面向用户的标题/文案统一改为 Hub（视图「Catalog」→「Hub」、
