@@ -195,6 +195,60 @@ avenic skills install                                 # 4. 安装默认 Pack（c
 | `Unable to fetch Hub` + `Check your GitHub authentication` | git 没有该私有仓库的访问权限；先运行 `gh auth status` 或 `ssh -T git@github.com` |
 | 换回其他 Hub | 已注册的直接 `avenic hub select` 切换；未注册的再次 `avenic hub add <spec>` |
 
+### 共享与链接
+
+同一作用域内每个 Skill 只保留一份物理文件：`.agents/skills/<name>` 是真身，`.claude/skills/<name>` 是指向它的链接（Windows 为 junction，macOS/Linux 为相对符号链接）。安装、更新、接管、直装以及 `avenic <agent>` 启动时都会补齐缺失或失效的链接，反复安装不会产生第二份副本。
+
+```text
+<项目>/.agents/skills/<name>     真身（canonical）
+<项目>/.claude/skills/<name>     链接 → .agents/skills/<name>
+```
+
+链接创建失败时（例如文件系统不支持链接），该 Skill 自动退回真实副本：功能不受影响，`avenic skills status` 标记为「可用但未共享」，下一次安装会再尝试迁移为链接。
+
+`avenic skills uninstall` 会解除 Avenic 建立的链接并删除真身；指向其他位置的链接（用户自建）从不改动，`avenic skills status` 会报告冲突并保留原样。手工放进 `.agents/skills` 的技能不属于受管集合，状态里提示用 `avenic skills adopt` 接管。
+
+`avenic skills status` 输出示例（链接健康时）：
+
+```text
+Current Project Skills
+  Packs: Common + Development
+
+Skills · 3 unique
+└── Test Source · 3
+    ├── alpha
+    ├── beta
+    └── gamma
+
+✓ Claude Code: shared via .agents/skills (3 links)
+✓ Codex / OpenCode / universal agents: 3/3
+Optimized
+```
+
+降级（存在未共享的真实副本，仍可用）：
+
+```text
+⚠ Claude Code: available — copies, not shared (1) · run: avenic skills install
+Degraded
+```
+
+链接缺失时：
+
+```text
+⚠ Claude Code: links missing — run: avenic skills install
+Incomplete
+```
+
+链接指向别处时（用户自建链接，保持原样）：
+
+```text
+⚠ Claude Code: 1 conflicting entry — left untouched, resolve manually
+⚠ alpha: a link points somewhere else — left untouched
+Incomplete
+```
+
+末行汇总整体状态：`Optimized` 表示全部共享（磁盘上只有一份），`Degraded` 表示可用但存在未共享的副本，`Incomplete` 表示有链接缺失或冲突。
+
 ### 直接源
 
 ```bash

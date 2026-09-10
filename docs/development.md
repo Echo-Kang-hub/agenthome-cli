@@ -42,10 +42,11 @@ cd packages/cli && npm publish
 - `avenic.packageSpec` 保持 `avenic@latest`（`avenic self-update` 自更新源）。
 - registry 包 `private` 保持 `false`。
 - 发布物是 `packages/cli`（包名 `avenic`）与 `packages/core`（包名 `@avenic/core`）。
+- 发布顺序：core 变更 → bump 并发布 core → `npm run sync-core` → bump 并发布 CLI。发布 CLI 前必须先同步，否则 tarball 里的 `vendor/core-src` 还是旧 core。
 
 ## core 发布纪律
 
-core 变更 → bump `packages/core/package.json` 版本 → `cd packages/core && npm publish`（由维护者执行）→ CLI `npm run sync-core` 照旧。
+core 变更 → bump `packages/core/package.json` 版本 → `cd packages/core && npm publish`（由维护者执行）→ CLI `npm run sync-core` 照旧（**发布 CLI 前必须先同步**）。插件（`packages/vscode`）依赖**已发布**的 `@avenic/core`，故插件改动排在 core 发布之后。
 
 ## Hub 仓库
 

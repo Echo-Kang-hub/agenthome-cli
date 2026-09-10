@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.11
+
+- **Skills 单副本共享**：同一作用域内每个 Skill 只保留一份物理文件——`.agents/skills/<name>`
+  真身 + `.claude/skills/<name>` 链接（Windows 为 junction，macOS/Linux 为相对符号链接）。
+  安装、更新、接管、直装与启动 Agent 前都会补齐缺失或失效的链接，反复安装不再产生第二份副本。
+  链接创建失败时自动退回真实副本（可用但未共享），不阻断安装与启动。依赖 `@avenic/core`
+  1.1.0（配套发布 core 新版本）。
+- **Skills 状态文案**：Skills 视图按共享状态显示——共享（`shared`）、可用但未共享
+  （`copies, not shared`）、链接缺失（`links missing`）、冲突（`conflict`），并汇总为
+  Optimized / Degraded / Incomplete；未受管技能提示接管处理。
+- **修复 Skills 链接命令**：新增 `Avenic: 修复 Skills 链接`（`avenic.skills.repairLinks`），
+  只对 lock 记录的受管 Skill 补齐/迁移链接，绝不改动用户自建链接与未受管技能；启动 Agent
+  前也会自动补齐。
+
 ## 0.1.10
 
 - **扩展图标**：新增 `media/icon.png`（**256×256** PNG，带透明通道；VS Code 只要求
