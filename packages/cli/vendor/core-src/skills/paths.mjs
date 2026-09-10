@@ -20,9 +20,19 @@ export function migrateLegacyProjectFiles(cwd) {
   }
 }
 
+// 锁文件里 agents 字段的规范顺序：与表顺序解耦，避免调整 targets 顺序时改写锁文件字节。
+export const MANAGED_AGENT_ORDER = ["claude-code", "codex", "opencode"];
+
 export const PROJECT_TARGETS = [
-  { agents: ["claude-code"], label: "Claude Code", relativePath: [".claude", "skills"] },
   {
+    id: "claude",
+    agents: ["claude-code"],
+    label: "Claude Code",
+    relativePath: [".claude", "skills"],
+    shareFrom: "agents",
+  },
+  {
+    id: "agents",
     agents: ["codex", "opencode", "universal"],
     label: "Codex / OpenCode / universal agents",
     relativePath: [".agents", "skills"],
@@ -68,11 +78,14 @@ export function stateRoot(environment = process.env) {
 
 export const GLOBAL_TARGETS = [
   {
+    id: "claude",
     agents: ["claude-code"],
     label: "Claude Code",
     destination: path.join(os.homedir(), ".claude", "skills"),
+    shareFrom: "agents",
   },
   {
+    id: "agents",
     agents: ["codex", "opencode", "universal"],
     label: "Codex / OpenCode / universal agents",
     destination: path.join(os.homedir(), ".agents", "skills"),

@@ -158,12 +158,16 @@ export const PROJECT_CONFIG_FILE: string;
 export const PROJECT_LOCK_FILE: string;
 export const LEGACY_PROFILE_FILE: string;
 export interface InstallTarget {
+  id: string;
   agents: string[];
   label: string;
   destination: string;
   relativePath?: string[];
+  shareFrom?: string;
+  shareDestination?: string;
 }
-export const PROJECT_TARGETS: Array<{ agents: string[]; label: string; relativePath: string[] }>;
+export const MANAGED_AGENT_ORDER: string[];
+export const PROJECT_TARGETS: Array<{ id: string; agents: string[]; label: string; relativePath: string[]; shareFrom?: string }>;
 export const GLOBAL_TARGETS: InstallTarget[];
 export function stateRoot(environment?: ProcessEnvLike): string;
 export function catalogCacheRoot(environment?: ProcessEnvLike): string;

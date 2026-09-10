@@ -14,6 +14,7 @@ import { normalizePackIds, parsePackArguments } from "./packs.mjs";
 import {
   GLOBAL_TARGETS,
   LEGACY_PROFILE_FILE,
+  MANAGED_AGENT_ORDER,
   PROJECT_CONFIG_FILE,
   PROJECT_LOCK_FILE,
   PROJECT_TARGETS,
@@ -30,6 +31,22 @@ export function isCatalogDirectory(directory) {
   );
 }
 
+// 解析 shareFrom → shareDestination（同表内另一个 target 的绝对目录）。
+// 解析失败直接 fail：表写错是开发期错误，不能静默降级成"每个 target 各存一份"。
+function withShareDestinations(targets, label) {
+  const byId = new Map(targets.map((target) => [target.id, target]));
+  return targets.map((target) => {
+    if (!target.shareFrom) {
+      return target;
+    }
+    const canonical = byId.get(target.shareFrom);
+    if (!canonical?.destination) {
+      fail(`${label} skill target "${target.id}" references an unknown share source "${target.shareFrom}"`);
+    }
+    return { ...target, shareDestination: canonical.destination };
+  });
+}
+
 export function createInstallContext(global, options = {}) {
   const cwd = options.cwd ?? process.cwd();
   const environment = options.environment ?? process.env;
@@ -41,10 +58,14 @@ export function createInstallContext(global, options = {}) {
       label: "Global",
       lockFile: globalLockFile(environment),
       root: environment.USERPROFILE || environment.HOME || os.homedir(),
-      targets: GLOBAL_TARGETS,
+      targets: withShareDestinations(GLOBAL_TARGETS, "Global"),
     };
   }
   migrateLegacyProjectFiles(cwd);
+  const projectTargets = PROJECT_TARGETS.map((target) => ({
+    ...target,
+    destination: path.join(cwd, ...target.relativePath),
+  }));
   return {
     configFile: path.join(cwd, PROJECT_CONFIG_FILE),
     environment,
@@ -53,10 +74,7 @@ export function createInstallContext(global, options = {}) {
     legacyProfileFile: path.join(cwd, LEGACY_PROFILE_FILE),
     lockFile: path.join(cwd, PROJECT_LOCK_FILE),
     root: cwd,
-    targets: PROJECT_TARGETS.map((target) => ({
-      ...target,
-      destination: path.join(cwd, ...target.relativePath),
-    })),
+    targets: withShareDestinations(projectTargets, "Project"),
   };
 }
 
@@ -130,7 +148,7 @@ export async function writeInstallMetadata(context, resolvedPacks, catalogInfo =
     },
     ...(previousLock.directSources ? { directSources: previousLock.directSources } : {}),
     ...(previousLock.adopted ? { adopted: previousLock.adopted } : {}),
-    agents: context.targets.flatMap((target) => target.agents).filter((agent) => agent !== "universal"),
+    agents: [...MANAGED_AGENT_ORDER],
     sources: resolvedPacks.groups.map((group) => ({
       id: group.source.id,
       name: group.source.name,
