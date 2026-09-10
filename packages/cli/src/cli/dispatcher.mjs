@@ -6,13 +6,18 @@ import {
   acquireSessionLease,
   agentExecutableAvailable,
   clearLocalAuth,
+  createInstallContext,
   deinitializeAgent,
   effectiveAgentConfig,
+  ensureSkillLinks,
+  formatLinkSummary,
   getAgent,
   getSessionAdapter,
   initializeAgent,
   loadRuntime,
   locateProjectRoot,
+  logConflicts,
+  managedSkillNames,
   projectAuthEnvironment,
   sessionLeasePath,
   sessionsGitIgnored,
@@ -291,6 +296,23 @@ async function dispatchAgent(agentId, argumentsList) {
       }
       throw error;
     }
+  }
+  // 启动补齐（spec §5.5）：会话适配器收尾之后、拉起 Agent 之前，按受管集合把缺席/失效的
+  // 链接补回来。未安装过 Skills 的项目零副作用（受管集合为空 → 一个字节都不写）。
+  // 失败绝不影响启动：打印一行警告后照常拉起 Agent（spec §11）。
+  try {
+    const installContext = createInstallContext(false, { cwd: projectRoot, environment: process.env });
+    const managed = await managedSkillNames(installContext);
+    if (managed.size > 0) {
+      const linkResult = await ensureSkillLinks(installContext, managed, { silent: true });
+      const { counts } = linkResult;
+      if (counts.linked > 0 || counts.repaired > 0 || counts.migrated > 0) {
+        console.log(`Skills shared: ${formatLinkSummary(counts)}`);
+      }
+      logConflicts(console, linkResult.conflicts);
+    }
+  } catch (error) {
+    console.warn(`⚠ Skills repair skipped: ${error.code ?? error.message}`);
   }
   let status;
   try {

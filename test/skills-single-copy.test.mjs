@@ -870,3 +870,169 @@ test("adopt degrades to a copy at the share target when link creation fails", as
     assert.doesNotMatch(output, /left untouched/, "降级不是冲突");
   });
 });
+
+// --- 启动补齐（§5.5）：PATH 上放一个假的官方 CLI，由它写标记文件证明确实被拉起 ---
+
+async function withFakeAgentCli(run) {
+  await withTempDirectory("avenic-launch-bin-", async (binDirectory) => {
+    const windows = process.platform === "win32";
+    // Windows 的 .ps1 shim 由运行时经 PowerShell 解析执行（与 runtime.test.mjs 同法）；
+    // POSIX 上是可执行的 sh 脚本。两者都只在 AVENIC_LAUNCH_MARK 存在时写标记。
+    const script = windows
+      ? "if ($env:AVENIC_LAUNCH_MARK) { Set-Content -Path $env:AVENIC_LAUNCH_MARK -Value launched }\nexit 0\n"
+      : "#!/bin/sh\nif [ -n \"$AVENIC_LAUNCH_MARK\" ]; then printf 'launched\\n' > \"$AVENIC_LAUNCH_MARK\"; fi\nexit 0\n";
+    const fake = path.join(binDirectory, windows ? "claude.ps1" : "claude");
+    await writeFile(fake, script);
+    if (!windows) await chmod(fake, 0o755);
+    await run(binDirectory);
+  });
+}
+
+// 启动用的环境：假的 CLI 目录在 PATH 最前。catalogRoot 可为空（纯启动测试不需要 catalog）。
+function launchEnvironment(binDirectory, stateRoot, catalogRoot = null) {
+  const environment = {
+    PATH: `${binDirectory}${path.delimiter}${process.env.PATH}`,
+    Path: `${binDirectory}${path.delimiter}${process.env.PATH}`,
+    AVENIC_STATE_DIR: stateRoot,
+  };
+  if (catalogRoot) environment.AVENIC_CATALOG_SPEC = catalogRoot;
+  return environment;
+}
+
+function launchMarker(projectRoot) {
+  return path.join(projectRoot, "launched.txt");
+}
+
+test("launching an agent repairs a missing link and never touches unmanaged skills", async () => {
+  await withFakeAgentCli(async (binDirectory) => {
+    await withTempDirectory("avenic-launch-", async (projectRoot) => {
+      await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+        await withTempDirectory("avenic-state-", async (stateRoot) => {
+          await createCatalogFixture(catalogRoot);
+          const environment = launchEnvironment(binDirectory, stateRoot, catalogRoot);
+          assert.equal(runAgent(projectRoot, ["claude", "init", "--sessions", "global"], environment).status, 0);
+          assert.equal(runAgent(projectRoot, ["skills", "install", "common"], environment).status, 0);
+
+          // 外部（未受管）技能混在 canonical 里：启动补齐不得给它建链接。
+          const unmanaged = path.join(projectRoot, ".agents", "skills", "outsider");
+          await mkdir(unmanaged, { recursive: true });
+          await writeFile(path.join(unmanaged, "SKILL.md"), "outsider\n");
+
+          const shared = path.join(projectRoot, ".claude", "skills", "alpha");
+          await unlink(shared); // 模拟 clone 后只有真身、没有链接
+          assert.equal(await isLink(shared), false);
+
+          const marker = launchMarker(projectRoot);
+          const launched = runAgent(projectRoot, ["claude"], { ...environment, AVENIC_LAUNCH_MARK: marker });
+          assert.equal(launched.status, 0, launched.stderr);
+          assert.equal(existsSync(marker), true, "the agent was launched");
+          assert.equal(await isLink(shared), true, "launch repaired the link");
+          assert.equal(existsSync(path.join(projectRoot, ".claude", "skills", "outsider")), false, "unmanaged skills are not linked");
+          assert.match(launched.stdout, /Skills shared: Linked 1/, "the repaired link is reported");
+        });
+      });
+    });
+  });
+});
+
+test("launching without any installed skills creates nothing and stays quiet", async () => {
+  await withFakeAgentCli(async (binDirectory) => {
+    await withTempDirectory("avenic-launch-empty-", async (projectRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        const environment = launchEnvironment(binDirectory, stateRoot);
+        assert.equal(runAgent(projectRoot, ["claude", "init", "--sessions", "global"], environment).status, 0);
+
+        const marker = launchMarker(projectRoot);
+        const launched = runAgent(projectRoot, ["claude"], { ...environment, AVENIC_LAUNCH_MARK: marker });
+        assert.equal(launched.status, 0, launched.stderr);
+        assert.equal(existsSync(marker), true, "the agent was launched");
+        assert.equal(existsSync(path.join(projectRoot, ".claude", "skills")), false, "no share directory is created");
+        assert.equal(existsSync(path.join(projectRoot, ".agents", "skills")), false, "no canonical directory is created");
+        assert.doesNotMatch(`${launched.stdout}${launched.stderr}`, /Skills shared:/);
+      });
+    });
+  });
+});
+
+test("launch repair follows the managed set only, never a directory scan", async () => {
+  await withFakeAgentCli(async (binDirectory) => {
+    await withTempDirectory("avenic-launch-unmanaged-", async (projectRoot) => {
+      await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+        await withTempDirectory("avenic-state-", async (stateRoot) => {
+          await createCatalogFixture(catalogRoot);
+          const environment = launchEnvironment(binDirectory, stateRoot, catalogRoot);
+          assert.equal(runAgent(projectRoot, ["claude", "init", "--sessions", "global"], environment).status, 0);
+          assert.equal(runAgent(projectRoot, ["skills", "install", "common"], environment).status, 0);
+
+          // 受管记录清零：锁文件仍在，但没有任何技能归 Avenic 管。
+          await writeFile(
+            path.join(projectRoot, ".avenic.lock.json"),
+            `${JSON.stringify({ schemaVersion: 3, sources: [], adopted: [], directSources: [] }, null, 2)}\n`,
+          );
+          // 现场只剩未受管的 canonical 真身，分享位置整体缺席。
+          const skillsDirectory = path.join(projectRoot, ".claude", "skills");
+          await unlink(path.join(skillsDirectory, "alpha"));
+          await rm(skillsDirectory, { recursive: true, force: true });
+          const unmanaged = path.join(projectRoot, ".agents", "skills", "outsider");
+          await mkdir(unmanaged, { recursive: true });
+          await writeFile(path.join(unmanaged, "SKILL.md"), "outsider\n");
+
+          const marker = launchMarker(projectRoot);
+          const launched = runAgent(projectRoot, ["claude"], { ...environment, AVENIC_LAUNCH_MARK: marker });
+          assert.equal(launched.status, 0, launched.stderr);
+          assert.equal(existsSync(marker), true, "the agent was launched");
+          assert.equal(existsSync(skillsDirectory), false, "unmanaged skills must not be linked");
+          assert.equal(existsSync(path.join(unmanaged, "SKILL.md")), true, "unmanaged skills are left untouched");
+          assert.doesNotMatch(`${launched.stdout}${launched.stderr}`, /Skills shared:/);
+        });
+      });
+    });
+  });
+});
+
+test("a failing repair prints one warning and still launches the agent", async () => {
+  await withFakeAgentCli(async (binDirectory) => {
+    await withTempDirectory("avenic-launch-fail-", async (projectRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        const environment = launchEnvironment(binDirectory, stateRoot);
+        assert.equal(runAgent(projectRoot, ["claude", "init", "--sessions", "global"], environment).status, 0);
+
+        // 损坏的锁文件：managedSkillNames 的 readJson 必抛（JSON.parse 语法错误）。
+        // 触发点与平台无关——不依赖权限位、文件占用、长路径等平台差异。
+        await writeFile(path.join(projectRoot, ".avenic.lock.json"), "{ this is not json\n");
+
+        const marker = launchMarker(projectRoot);
+        const launched = runAgent(projectRoot, ["claude"], { ...environment, AVENIC_LAUNCH_MARK: marker });
+        assert.equal(launched.status, 0, launched.stderr);
+        assert.equal(existsSync(marker), true, "the agent was launched despite the repair failure");
+        const output = `${launched.stdout}${launched.stderr}`;
+        const warnings = output.split(/\r?\n/).filter((line) => line.includes("Skills repair skipped"));
+        assert.equal(warnings.length, 1, output);
+        assert.match(launched.stderr, /⚠ Skills repair skipped: Cannot parse JSON file/);
+      });
+    });
+  });
+});
+
+test("a healthy installation launches without repair noise", async () => {
+  await withFakeAgentCli(async (binDirectory) => {
+    await withTempDirectory("avenic-launch-healthy-", async (projectRoot) => {
+      await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+        await withTempDirectory("avenic-state-", async (stateRoot) => {
+          await createCatalogFixture(catalogRoot);
+          const environment = launchEnvironment(binDirectory, stateRoot, catalogRoot);
+          assert.equal(runAgent(projectRoot, ["claude", "init", "--sessions", "global"], environment).status, 0);
+          assert.equal(runAgent(projectRoot, ["skills", "install", "common"], environment).status, 0);
+
+          const marker = launchMarker(projectRoot);
+          const launched = runAgent(projectRoot, ["claude"], { ...environment, AVENIC_LAUNCH_MARK: marker });
+          assert.equal(launched.status, 0, launched.stderr);
+          assert.equal(existsSync(marker), true, "the agent was launched");
+          const output = `${launched.stdout}${launched.stderr}`;
+          assert.doesNotMatch(output, /Skills shared:/, "nothing needed repair");
+          assert.doesNotMatch(output, /⚠/, "no conflicts are reported");
+        });
+      });
+    });
+  });
+});

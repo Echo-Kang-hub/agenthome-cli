@@ -136,6 +136,7 @@ export {
   installPacks,
   installedPackIds,
   isCatalogDirectory,
+  managedSkillNames,
   previousManagedState,
   removeAllManagedSkills,
   removeInstallationFiles,

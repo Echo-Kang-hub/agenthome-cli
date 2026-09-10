@@ -118,6 +118,25 @@ export async function previousManagedState(context) {
   return managed;
 }
 
+// Avenic 受管的 Skill 名字全集：Pack 安装记录 + 接管记录 + 直装记录。
+// 启动补齐只认这个集合，绝不枚举目录——`.agents/skills` 里手工放入的技能不归我们管。
+export async function managedSkillNames(context) {
+  const managed = new Set((await previousManagedState(context)).keys());
+  if (!existsSync(context.lockFile)) {
+    return managed;
+  }
+  const lock = await readJson(context.lockFile);
+  for (const name of lock.adopted ?? []) {
+    managed.add(name);
+  }
+  for (const source of lock.directSources ?? []) {
+    for (const name of source.skills ?? []) {
+      managed.add(name);
+    }
+  }
+  return managed;
+}
+
 export async function installedPackIds(context) {
   if (existsSync(context.configFile)) {
     const config = await readJson(context.configFile);

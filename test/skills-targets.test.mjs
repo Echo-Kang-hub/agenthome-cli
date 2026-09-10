@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
   MANAGED_AGENT_ORDER,
   createInstallContext,
+  managedSkillNames,
   readJson,
   writeInstallMetadata,
 } from "../packages/core/src/index.mjs";
@@ -50,6 +51,37 @@ test("lock agents field uses the managed agent order, not table order", async ()
     const lock = await readJson(context.lockFile);
     assert.deepEqual(lock.agents, [...MANAGED_AGENT_ORDER]);
     assert.deepEqual(lock.agents, ["claude-code", "codex", "opencode"]);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("managedSkillNames unions packs, adopted and direct records", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "avenic-managed-"));
+  try {
+    const context = createInstallContext(false, { cwd, environment: process.env });
+    await mkdir(path.dirname(context.lockFile), { recursive: true });
+    await writeFile(
+      context.lockFile,
+      `${JSON.stringify({
+        schemaVersion: 3,
+        sources: [{ id: "s", skills: ["alpha", "beta"] }],
+        adopted: ["handmade"],
+        directSources: [{ id: "d", skills: ["direct-one"] }],
+      }, null, 2)}\n`,
+    );
+    const names = await managedSkillNames(context);
+    assert.deepEqual([...names].sort(), ["alpha", "beta", "direct-one", "handmade"]);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("managedSkillNames is empty without a lock file", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "avenic-managed-empty-"));
+  try {
+    const context = createInstallContext(false, { cwd, environment: process.env });
+    assert.equal((await managedSkillNames(context)).size, 0);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

@@ -335,6 +335,7 @@ export function formatLinkSummary(counts: LinkCounts): string;
 export function logConflicts(io: Io, conflicts: LinkConflict[]): void;
 export function resolveInstallPacks(context: InstallContext, explicitPacks: string[]): Promise<string[]>;
 export function previousManagedState(context: InstallContext): Promise<Map<string, { sourceId: string; revision: string }>>;
+export function managedSkillNames(context: InstallContext): Promise<Set<string>>;
 export function installedPackIds(context: InstallContext): Promise<string[] | null>;
 export function installCopies(context: InstallContext, resolvedPacks: ResolvedPacks, io?: Io): Promise<unknown>;
 export function writeInstallMetadata(context: InstallContext, resolvedPacks: ResolvedPacks, catalogInfo?: Partial<CatalogInfo> & { packageMetadata?: unknown }): Promise<unknown>;
