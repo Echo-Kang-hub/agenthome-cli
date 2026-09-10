@@ -146,3 +146,13 @@ export {
   uninstallPacks,
   writeInstallMetadata,
 } from "./skills/install.mjs";
+export {
+  canonicalTargets,
+  classifyShareEntry,
+  createSkillLink,
+  normalizeLinkTarget,
+  readLinkTarget,
+  removeLinkSafely,
+  sameTree,
+  shareTargets,
+} from "./skills/links.mjs";

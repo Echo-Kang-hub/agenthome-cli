@@ -298,6 +298,20 @@ export interface InstallContext {
 }
 export function isCatalogDirectory(directory: string): boolean;
 export function createInstallContext(global: boolean, options?: { cwd?: string; environment?: ProcessEnvLike }): InstallContext;
+export function canonicalTargets(context: InstallContext): InstallTarget[];
+export function shareTargets(context: InstallContext): InstallTarget[];
+export function normalizeLinkTarget(linkPath: string, rawTarget: string): string;
+export function readLinkTarget(linkPath: string): Promise<string | null>;
+export function createSkillLink(canonicalPath: string, linkPath: string): Promise<void>;
+export function removeLinkSafely(linkPath: string): Promise<boolean>;
+export type ShareEntryState = "absent" | "linked" | "repair" | "real-directory" | "conflict";
+export interface ShareEntryVerdict {
+  state: ShareEntryState;
+  reason?: string;
+  target?: string;
+}
+export function classifyShareEntry(canonicalPath: string, linkPath: string): Promise<ShareEntryVerdict>;
+export function sameTree(left: string, right: string): Promise<boolean>;
 export function resolveInstallPacks(context: InstallContext, explicitPacks: string[]): Promise<string[]>;
 export function previousManagedState(context: InstallContext): Promise<Map<string, { sourceId: string; revision: string }>>;
 export function installedPackIds(context: InstallContext): Promise<string[] | null>;
