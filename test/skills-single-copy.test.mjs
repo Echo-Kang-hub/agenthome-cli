@@ -6,7 +6,14 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { addDirectSkills, adoptSkills, createInstallContext, installCopies } from "../packages/core/src/index.mjs";
+import {
+  addDirectSkills,
+  adoptSkills,
+  createInstallContext,
+  ensureSkillLinks,
+  installCopies,
+  skillsInstallationStatus,
+} from "../packages/core/src/index.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const agentBin = path.join(packageRoot, "packages", "cli", "scripts", "skills.mjs");
@@ -1032,6 +1039,272 @@ test("a healthy installation launches without repair noise", async () => {
           assert.doesNotMatch(output, /Skills shared:/, "nothing needed repair");
           assert.doesNotMatch(output, /⚠/, "no conflicts are reported");
         });
+      });
+    });
+  });
+});
+
+// --- 状态语义（spec §8 / plan Task 9）---
+
+function projectContext(projectRoot) {
+  return createInstallContext(false, { cwd: projectRoot, environment: process.env });
+}
+
+function shareTargetOf(status) {
+  return status.targets.find((target) => target.id === "claude");
+}
+
+function canonicalTargetOf(status) {
+  return status.targets.find((target) => target.id === "agents");
+}
+
+test("status reports linked vs fallback vs conflict and the overall install state", async () => {
+  await withTempDirectory("avenic-status-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        const installed = runAgent(projectRoot, ["skills", "install", "common", "development"], environment);
+        assert.equal(installed.status, 0, installed.stderr);
+
+        const optimized = runAgent(projectRoot, ["skills", "status"], environment);
+        assert.equal(optimized.status, 0, optimized.stderr);
+        assert.match(optimized.stdout, /✓ Claude Code: shared via \.agents\/skills \(3 links\)/);
+        assert.match(optimized.stdout, /✓ Codex \/ OpenCode \/ universal agents: 3\/3/);
+        assert.match(optimized.stdout, /Optimized/);
+
+        // 降级：把链接换成真实副本 → "可用但未共享"，仍然 operational（不是失败）
+        const shared = path.join(projectRoot, ".claude", "skills", "alpha");
+        await unlink(shared);
+        await cp(path.join(projectRoot, ".agents", "skills", "alpha"), shared, { recursive: true });
+        const degraded = runAgent(projectRoot, ["skills", "status"], environment);
+        assert.equal(degraded.status, 0, degraded.stderr);
+        assert.match(degraded.stdout, /⚠ Claude Code: available — copies, not shared \(1\) · run: avenic skills install/);
+        assert.match(degraded.stdout, /Degraded/);
+        assert.doesNotMatch(degraded.stdout, /unmanaged/);
+
+        // 冲突：用户自建链接指向别处 → 列出名字与原因，Incomplete
+        await rm(shared, { recursive: true, force: true }); // 此刻是真实副本（unlink 对目录无效）
+        const userTarget = path.join(projectRoot, "user-skills", "alpha");
+        await mkdir(userTarget, { recursive: true });
+        await writeFile(path.join(userTarget, "SKILL.md"), "user\n");
+        if (process.platform === "win32") {
+          await symlink(userTarget, shared, "junction");
+        } else {
+          await symlink(path.relative(path.dirname(shared), userTarget), shared, "dir");
+        }
+        const conflicted = runAgent(projectRoot, ["skills", "status"], environment);
+        assert.equal(conflicted.status, 0, conflicted.stderr);
+        assert.match(conflicted.stdout, /⚠ Claude Code: 1 conflicting entry — left untouched, resolve manually/);
+        assert.match(conflicted.stdout, /⚠ alpha: a link points somewhere else — left untouched/);
+        assert.match(conflicted.stdout, /Incomplete/);
+      });
+    });
+  });
+});
+
+// R1 钉死：canonical 先算完整度（表顺序把 share 目标排在 canonical 前面）。用"运行中的"
+// canonicalComplete 标志算 share 目标会让它在 canonical 缺失时错误地报 complete。
+test("R1: a share target cannot be complete while the canonical copy is missing", async () => {
+  await withTempDirectory("avenic-status-r1-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        const installPacks = () => {
+          const installed = runAgent(projectRoot, ["skills", "install", "common", "development"], environment);
+          assert.equal(installed.status, 0, installed.stderr);
+        };
+        installPacks();
+
+        const context = projectContext(projectRoot);
+        const before = await skillsInstallationStatus(context);
+        assert.equal(before.operational, true);
+        assert.equal(before.state, "optimized");
+
+        // (a) canonical 整个目录缺失 → 链接悬空：share 目标报 missing，绝不 complete
+        await rm(path.join(projectRoot, ".agents", "skills"), { recursive: true, force: true });
+        const missing = await skillsInstallationStatus(context);
+        const share = shareTargetOf(missing);
+        assert.equal(share.complete, false, "canonical 缺失时 share 目标不得报 complete");
+        assert.equal(share.state, "missing");
+        assert.equal(share.counts.linked, 0, "指向缺失 canonical 的悬空链接不可用");
+        assert.equal(share.counts.missing, 3);
+        assert.equal(missing.operational, false);
+        assert.equal(missing.incomplete, true);
+        assert.equal(missing.state, "incomplete");
+        const canonical = canonicalTargetOf(missing);
+        assert.equal(canonical.complete, false);
+        assert.equal(canonical.state, "canonical");
+
+        const cli = runAgent(projectRoot, ["skills", "status"], environment);
+        assert.equal(cli.status, 0, cli.stderr);
+        assert.match(cli.stdout, /⚠ Claude Code: links missing — run: avenic skills install/);
+        assert.match(cli.stdout, /Incomplete/);
+
+        // (b) share 侧全部是**可用**的真实副本、canonical 仍然缺失：running-flag 顺序会误报
+        //     complete=true（share 排在表首，canonicalComplete 还是初始值）。
+        installPacks();
+        for (const name of ["alpha", "beta", "gamma"]) {
+          const linkPath = path.join(projectRoot, ".claude", "skills", name);
+          await unlink(linkPath);
+          await cp(path.join(projectRoot, ".agents", "skills", name), linkPath, { recursive: true });
+        }
+        await rm(path.join(projectRoot, ".agents", "skills"), { recursive: true, force: true });
+        const usableCopies = await skillsInstallationStatus(context);
+        const usableShare = shareTargetOf(usableCopies);
+        assert.equal(usableShare.counts.fallback, 3);
+        assert.equal(usableShare.counts.missing, 0);
+        assert.equal(usableShare.counts.conflict, 0);
+        assert.equal(usableShare.complete, false, "副本可用也救不了缺失的 canonical：不得报 complete");
+        assert.equal(usableShare.state, "fallback");
+        assert.equal(usableCopies.operational, false);
+        assert.equal(usableCopies.incomplete, true);
+
+        const degradedCli = runAgent(projectRoot, ["skills", "status"], environment);
+        assert.equal(degradedCli.status, 0, degradedCli.stderr);
+        assert.match(degradedCli.stdout, /available — copies, not shared \(3\)/);
+        assert.match(degradedCli.stdout, /Incomplete/);
+
+        // 恢复 canonical → 重新 operational
+        installPacks();
+        const after = await skillsInstallationStatus(context);
+        assert.equal(after.operational, true);
+        assert.equal(after.state, "optimized");
+      });
+    });
+  });
+});
+
+// R2 钉死：repair（悬空链接）绝不算 linked —— 它不可用，与旧 present 语义一致。
+test("R2: a dangling share link counts as missing, never as linked", async () => {
+  await withTempDirectory("avenic-status-r2-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        assert.equal(runAgent(projectRoot, ["skills", "install", "common"], environment).status, 0);
+
+        await rm(path.join(projectRoot, ".agents", "skills", "alpha"), { recursive: true, force: true });
+        assert.equal(await isLink(path.join(projectRoot, ".claude", "skills", "alpha")), true, "现场是悬空链接");
+
+        const status = await skillsInstallationStatus(projectContext(projectRoot));
+        const share = shareTargetOf(status);
+        assert.equal(share.counts.missing, 1, "悬空的 repair 条目记 missing");
+        assert.equal(share.counts.linked, 0, "悬空链接绝不记 linked");
+        assert.equal(share.present, 0, "悬空链接不可用，不得计入 present");
+        assert.equal(share.state, "missing");
+        assert.equal(status.operational, false);
+        assert.equal(status.incomplete, true);
+      });
+    });
+  });
+});
+
+// R3 钉死：share 位置上"有 SKILL.md 但不在受管集合"的条目不接管、只计数并提示 adopt。
+test("R3: unmanaged skills at the share target are counted and offered for adoption", async () => {
+  await withTempDirectory("avenic-status-r3-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        assert.equal(runAgent(projectRoot, ["skills", "install", "common"], environment).status, 0);
+
+        const outsider = path.join(projectRoot, ".claude", "skills", "outsider");
+        await mkdir(outsider, { recursive: true });
+        await writeFile(path.join(outsider, "SKILL.md"), "---\nname: outsider\n---\n# outsider\n");
+
+        const status = await skillsInstallationStatus(projectContext(projectRoot));
+        const share = shareTargetOf(status);
+        assert.equal(share.counts.unmanaged, 1);
+        assert.equal(share.counts.linked, 1, "受管计数不受未受管条目影响");
+        assert.equal(share.counts.fallback, 0);
+        assert.equal(share.counts.conflict, 0);
+        assert.equal(share.counts.missing, 0);
+        assert.equal(status.operational, true);
+        assert.equal(status.state, "optimized", "未受管条目不降级");
+
+        const cli = runAgent(projectRoot, ["skills", "status"], environment);
+        assert.equal(cli.status, 0, cli.stderr);
+        assert.match(cli.stdout, /ⓘ Claude Code: 1 unmanaged Skill — not shared \(run: avenic skills adopt\)/);
+
+        const second = path.join(projectRoot, ".claude", "skills", "another-outsider");
+        await mkdir(second, { recursive: true });
+        await writeFile(path.join(second, "SKILL.md"), "---\nname: another-outsider\n---\n# another\n");
+        const plural = runAgent(projectRoot, ["skills", "status"], environment);
+        assert.equal(plural.status, 0, plural.stderr);
+        assert.match(plural.stdout, /ⓘ Claude Code: 2 unmanaged Skills — not shared \(run: avenic skills adopt\)/);
+      });
+    });
+  });
+});
+
+// R4 钉死：冲突必须携带名字 + 原因（与 ensureSkillLinks 同形），CLI 经 logConflicts 逐条列出。
+test("R4: conflicts carry names and reasons and the CLI lists them via logConflicts", async () => {
+  await withTempDirectory("avenic-status-r4-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        assert.equal(runAgent(projectRoot, ["skills", "install", "common"], environment).status, 0);
+
+        const shared = path.join(projectRoot, ".claude", "skills", "alpha");
+        await unlink(shared);
+        const userTarget = path.join(projectRoot, "user-skills", "alpha");
+        await mkdir(userTarget, { recursive: true });
+        await writeFile(path.join(userTarget, "SKILL.md"), "user owned\n");
+        await linkToUserSkill(userTarget, shared);
+
+        const status = await skillsInstallationStatus(projectContext(projectRoot));
+        const share = shareTargetOf(status);
+        assert.equal(share.counts.conflict, 1);
+        assert.equal(share.counts.linked, 0);
+        assert.deepEqual(share.conflicts, [{ name: "alpha", targetId: "claude", reason: "points-elsewhere" }]);
+        assert.equal(share.state, "conflict");
+        assert.equal(share.complete, false);
+        assert.equal(status.operational, false);
+        assert.equal(status.incomplete, true);
+        assert.equal(status.state, "incomplete");
+
+        const cli = runAgent(projectRoot, ["skills", "status"], environment);
+        assert.equal(cli.status, 0, cli.stderr);
+        assert.match(cli.stdout, /⚠ Claude Code: 1 conflicting entry — left untouched, resolve manually/);
+        assert.match(cli.stdout, /⚠ alpha: a link points somewhere else — left untouched/);
+        assert.match(cli.stdout, /Incomplete/);
+        assert.equal(await isLink(shared), true, "状态查询只读：用户的链接原样保留");
+      });
+    });
+  });
+});
+
+// spec §8 钉死：状态查询不做 sameTree 内容比较（migrated 只是安装期动作），真实副本一律
+// fallback —— 分歧副本由下一次安装判 conflict，而不是在只读状态里。
+test("status records a divergent real copy as fallback, not conflict (no content comparison)", async () => {
+  await withTempDirectory("avenic-status-nocompare-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        assert.equal(runAgent(projectRoot, ["skills", "install", "common"], environment).status, 0);
+
+        const shared = path.join(projectRoot, ".claude", "skills", "alpha");
+        await rm(shared, { recursive: true, force: true });
+        await mkdir(shared, { recursive: true });
+        await writeFile(path.join(shared, "SKILL.md"), "---\nname: alpha\n---\n# user divergent\n");
+
+        const status = await skillsInstallationStatus(projectContext(projectRoot));
+        const share = shareTargetOf(status);
+        assert.equal(share.counts.fallback, 1, "§8：状态不做内容比较，真实目录一律 fallback");
+        assert.equal(share.counts.conflict, 0, "分歧副本只在下一次安装路径上判 conflict");
+        assert.equal(share.complete, true, "可用但未共享 = operational");
+        assert.equal(status.operational, true);
+        assert.equal(status.state, "degraded");
+
+        const cli = runAgent(projectRoot, ["skills", "status"], environment);
+        assert.equal(cli.status, 0, cli.stderr);
+        assert.match(cli.stdout, /available — copies, not shared \(1\)/);
+        assert.match(cli.stdout, /Degraded/);
+        assert.doesNotMatch(cli.stdout, /left untouched/);
       });
     });
   });

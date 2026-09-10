@@ -345,11 +345,32 @@ export function removeInstallationFiles(context: InstallContext): Promise<unknow
 export function resolveInstallSource(options: { global?: boolean; cwd?: string; environment?: ProcessEnvLike; io?: Io }, opts?: { refresh?: boolean }): Promise<CatalogInfo & { packageMetadata: unknown }>;
 export function installPacks(context: InstallContext, explicitPacks?: string[], options?: { io?: Io; onPlan?: (resolvedPacks: ResolvedPacks) => void }): Promise<{ catalogInfo: CatalogInfo; packIds: string[]; resolvedPacks: ResolvedPacks }>;
 export function uninstallPacks(context: InstallContext, packArguments?: string[], options?: { io?: Io; onPlan?: (resolvedPacks: ResolvedPacks, removed: string[]) => void }): Promise<{ changed: boolean; removed: string[]; absent: string[]; skippedCommon: boolean; current: string[] | null; resolvedPacks?: ResolvedPacks }>;
+export interface InstallTargetStatus extends InstallTarget {
+  present: number;
+  total: number;
+  complete: boolean;
+  state: "canonical" | "linked" | "fallback" | "missing" | "conflict";
+  counts: {
+    present?: number;
+    total?: number;
+    linked?: number;
+    fallback?: number;
+    missing?: number;
+    conflict?: number;
+    unmanaged?: number;
+  };
+  conflicts?: LinkConflict[];
+}
 export interface InstallStatus {
   groups: SkillGroup[];
   packs: Array<{ id?: string; name?: string } | string>;
   names: string[];
-  targets: Array<InstallTarget & { present: number; total: number; complete: boolean }>;
+  targets: InstallTargetStatus[];
+  state: "optimized" | "degraded" | "incomplete";
+  operational: boolean;
+  optimized: boolean;
+  degraded: boolean;
+  incomplete: boolean;
 }
 export function skillsInstallationStatus(context: InstallContext): Promise<InstallStatus | null>;
 export function detectedSkillNames(context: InstallContext): Promise<string[]>;

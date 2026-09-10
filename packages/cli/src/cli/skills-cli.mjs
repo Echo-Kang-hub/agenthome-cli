@@ -41,6 +41,7 @@ import {
   loadKnownCatalogs,
   loadPacks,
   loadSources,
+  logConflicts,
   parsePackArguments,
   previousManagedState,
   printTree,
@@ -69,7 +70,6 @@ import {
   stageSource,
   stateRoot,
   uninstallPacks,
-  writeInstallMetadata,
   writeJson,
 } from "#core";
 import { updateAvenic } from "./self-update.mjs";
@@ -415,6 +415,14 @@ async function commandPacks(options = {}) {
   io.log();
 }
 
+// share 目标的展示位置：canonical 相对 scope 根（项目内即 `.agents/skills`），
+// 统一用 `/` 分隔以免 Windows 输出 `.agents\skills`。
+function shareLocation(context, target) {
+  const relative = path.relative(context.root, target.shareDestination);
+  const display = relative.startsWith("..") || path.isAbsolute(relative) ? target.shareDestination : relative;
+  return display.split(path.sep).join("/");
+}
+
 async function commandStatus(options = {}) {
   const io = options.io ?? console;
   const context = createInstallContext(options.global ?? false, options);
@@ -425,9 +433,31 @@ async function commandStatus(options = {}) {
   printTree(status.groups, `Current ${context.label} Skills`, [
     `Packs: ${status.packs.map((pack) => pack.name ?? pack.id ?? pack).join(" + ")}`,
   ], io);
+  const conflicts = [];
   for (const targetConfig of status.targets) {
-    io.log(`${targetConfig.complete ? "✓" : "!"} ${targetConfig.label}: ${targetConfig.present}/${targetConfig.total}`);
+    // canonical 目标保持既有形式（present/total + 可用性标记）。
+    if (targetConfig.state === "canonical") {
+      io.log(`${targetConfig.complete ? "✓" : "!"} ${targetConfig.label}: ${targetConfig.present}/${targetConfig.total}`);
+      continue;
+    }
+    const counts = targetConfig.counts ?? {};
+    if (targetConfig.state === "linked") {
+      io.log(`✓ ${targetConfig.label}: shared via ${shareLocation(context, targetConfig)} (${counts.linked} link${counts.linked === 1 ? "" : "s"})`);
+    } else if (targetConfig.state === "fallback") {
+      // fallback 是合法降级，不是失败：副本可用，只是没共享。
+      io.log(`⚠ ${targetConfig.label}: available — copies, not shared (${counts.fallback}) · run: avenic skills install`);
+    } else if (targetConfig.state === "missing") {
+      io.log(`⚠ ${targetConfig.label}: links missing — run: avenic skills install`);
+    } else {
+      io.log(`⚠ ${targetConfig.label}: ${counts.conflict} conflicting ${counts.conflict === 1 ? "entry" : "entries"} — left untouched, resolve manually`);
+    }
+    if ((counts.unmanaged ?? 0) > 0) {
+      io.log(`ⓘ ${targetConfig.label}: ${counts.unmanaged} unmanaged Skill${counts.unmanaged === 1 ? "" : "s"} — not shared (run: avenic skills adopt)`);
+    }
+    conflicts.push(...(targetConfig.conflicts ?? []));
   }
+  logConflicts(io, conflicts);
+  io.log(status.state === "optimized" ? "Optimized" : status.state === "degraded" ? "Degraded" : "Incomplete");
 }
 
 async function commandDoctor(catalogRoot, io = console) {

@@ -585,8 +585,35 @@ export async function detectedSkillNames(context) {
   return [...names].sort();
 }
 
-// Structured `skills status` data: the manifest's packs and per-target
-// presence counts. Returns null when nothing is installed.
+// spec §6/§8：share 位置上"有 SKILL.md 但不在受管集合"的条目数。只读一次目录，
+// 不接管、不链接、不删除——只用于提示 `avenic skills adopt`。
+async function countUnmanagedEntries(directory, managedNames) {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return 0; // 目录不存在＝没有未受管条目
+  }
+  let unmanaged = 0;
+  for (const entry of entries) {
+    if (managedNames.has(entry.name)) {
+      continue;
+    }
+    if (existsSync(path.join(directory, entry.name, "SKILL.md"))) {
+      unmanaged += 1;
+    }
+  }
+  return unmanaged;
+}
+
+// Structured `skills status` data (spec §8): the manifest's packs, per-target
+// presence and the share-target verdict counts. Returns null when nothing is
+// installed. Read-only and cheap: a real copy at a share target is `fallback`
+// (usable but not shared) and content is never compared here (sameTree is
+// install-path only), so a divergent copy is still `fallback`; `conflict` is
+// the §3.2 ownership verdict (foreign/aliased/unreadable links). The canonical
+// pass runs first: share targets come first in the table, and a share entry
+// must never report complete while canonical is incomplete.
 export async function skillsInstallationStatus(context) {
   if (!existsSync(context.lockFile)) {
     return null;
@@ -598,12 +625,91 @@ export async function skillsInstallationStatus(context) {
   }));
   const manifestPacks = manifest.packs ?? (manifest.pack ? [manifest.pack] : []);
   const names = [...new Set([...groups.flatMap((group) => group.skills.map((skill) => skill.name)), ...(manifest.adopted ?? [])])];
-  const targets = context.targets.map((targetConfig) => {
-    const directory = targetConfig.destination;
-    const present = names.filter((name) => existsSync(path.join(directory, name, "SKILL.md"))).length;
-    return { ...targetConfig, present, total: names.length, complete: present === names.length };
-  });
-  return { groups, packs: manifestPacks, names, targets };
+  const managedNames = new Set(names);
+
+  // 第一趟：canonical 目标的完整度必须先全部算完（share 目标排在表前面）。
+  const canonicalState = new Map();
+  let canonicalComplete = true;
+  for (const targetConfig of canonicalTargets(context)) {
+    const present = names.filter((name) => existsSync(path.join(targetConfig.destination, name, "SKILL.md"))).length;
+    const complete = present === names.length;
+    canonicalComplete = canonicalComplete && complete;
+    canonicalState.set(targetConfig.id, { present, complete });
+  }
+
+  // 第二趟：按表顺序输出；share 目标用最终的 canonicalComplete 判定 complete。
+  const targets = [];
+  let fallbackTotal = 0;
+  let brokenTotal = 0;
+  for (const targetConfig of context.targets) {
+    const canonical = canonicalState.get(targetConfig.id);
+    if (canonical) {
+      targets.push({
+        ...targetConfig,
+        present: canonical.present,
+        total: names.length,
+        complete: canonical.complete,
+        state: "canonical",
+        counts: { present: canonical.present, total: names.length },
+      });
+      continue;
+    }
+    const counts = { linked: 0, fallback: 0, missing: 0, conflict: 0, unmanaged: 0 };
+    const conflicts = [];
+    for (const name of names) {
+      const verdict = await classifyShareEntry(
+        path.join(targetConfig.shareDestination, name),
+        path.join(targetConfig.destination, name),
+      );
+      // repair（悬空链接/canonical 不是目录）不可用，绝不算 linked——与旧 present 语义一致。
+      if (verdict.state === "linked") {
+        counts.linked += 1;
+      } else if (verdict.state === "conflict") {
+        counts.conflict += 1;
+        conflicts.push({ name, targetId: targetConfig.id, reason: verdict.reason });
+      } else if (verdict.state === "real-directory") {
+        counts.fallback += 1; // 可用但未共享；内容是否一致留给下一次安装判定
+      } else {
+        counts.missing += 1;
+      }
+    }
+    counts.unmanaged = await countUnmanagedEntries(targetConfig.destination, managedNames);
+    const complete = canonicalComplete && counts.missing === 0 && counts.conflict === 0;
+    const state = counts.conflict > 0
+      ? "conflict"
+      : counts.missing > 0
+        ? "missing"
+        : counts.fallback > 0
+          ? "fallback"
+          : "linked";
+    fallbackTotal += counts.fallback;
+    brokenTotal += counts.missing + counts.conflict;
+    targets.push({
+      ...targetConfig,
+      present: counts.linked + counts.fallback,
+      total: names.length,
+      complete,
+      state,
+      counts,
+      conflicts,
+    });
+  }
+  const operational = canonicalComplete && brokenTotal === 0;
+  const optimized = operational && fallbackTotal === 0;
+  const degraded = operational && fallbackTotal > 0;
+  const incomplete = !operational;
+  return {
+    groups,
+    packs: manifestPacks,
+    names,
+    targets,
+    // 汇总：optimized = 全部链接；degraded = 可用但存在降级副本；incomplete = 有缺失或冲突。
+    state: optimized ? "optimized" : degraded ? "degraded" : "incomplete",
+    operational,
+    optimized,
+    degraded,
+    incomplete,
+  };
 }
 
 async function pinnedCatalogSpec(spec, context) {

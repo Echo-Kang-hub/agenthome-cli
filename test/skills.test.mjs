@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { createInstallContext, installPacks, installedPackIds, resolveInstallSource, setDefaultCatalogSpec, skillsInstallationStatus, uninstallPacks } from "../packages/core/src/index.mjs";
+import { createInstallContext, ensureSkillLinks, installPacks, installedPackIds, resolveInstallSource, setDefaultCatalogSpec, skillsInstallationStatus, uninstallPacks } from "../packages/core/src/index.mjs";
 import { readJson, writeJson } from "../packages/core/src/util/json.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -196,13 +196,40 @@ test("skillsInstallationStatus reports manifest packs and target presence", asyn
       packs: [{ id: "common", name: "Common" }],
       sources: [{ id: "s-source", name: "S", repository: "https://github.com/example/s.git", revision: "a".repeat(40), skills: ["s"] }],
     });
-    await mkdir(path.join(context.targets[0].destination, "s"), { recursive: true });
-    await writeFile(path.join(context.targets[0].destination, "s", "SKILL.md"), "---\nname: s\n---\n");
-    const status = await skillsInstallationStatus(context);
-    assert.equal(status.names.length, 1);
-    assert.equal(status.packs[0].id, "common");
-    assert.equal(status.targets[0].complete, true);
-    assert.equal(status.targets[1].complete, false);
+    // 目标顺序是 [claude(share), agents(canonical)]；先只补 canonical：
+    // canonical 完整但 share 缺席 → 可用性 incomplete（旧语义会误报 share complete）。
+    await mkdir(path.join(context.targets[1].destination, "s"), { recursive: true });
+    await writeFile(path.join(context.targets[1].destination, "s", "SKILL.md"), "---\nname: s\n---\n");
+    const missing = await skillsInstallationStatus(context);
+    assert.equal(missing.names.length, 1);
+    assert.equal(missing.packs[0].id, "common");
+    assert.equal(missing.targets[1].complete, true);
+    assert.equal(missing.targets[1].state, "canonical");
+    assert.equal(missing.targets[0].complete, false, "canonical 完整但 share 条目缺席 = 不可用");
+    assert.equal(missing.targets[0].state, "missing");
+    assert.equal(missing.operational, false);
+    assert.equal(missing.incomplete, true);
+
+    // 补一份内容一致的真实副本 → fallback（可用但未共享）：operational + degraded。
+    const sharePath = path.join(context.targets[0].destination, "s");
+    await mkdir(sharePath, { recursive: true });
+    await writeFile(path.join(sharePath, "SKILL.md"), "---\nname: s\n---\n");
+    const degraded = await skillsInstallationStatus(context);
+    assert.equal(degraded.targets[0].state, "fallback");
+    assert.equal(degraded.targets[0].counts.fallback, 1);
+    assert.equal(degraded.targets[0].complete, true, "canonical 完整 + share 有可用副本 = operational");
+    assert.equal(degraded.operational, true);
+    assert.equal(degraded.degraded, true);
+    assert.equal(degraded.optimized, false);
+
+    // 迁移为链接 → optimized（磁盘上确实只有一份）。
+    await ensureSkillLinks(context, ["s"]);
+    const optimized = await skillsInstallationStatus(context);
+    assert.equal(optimized.targets[0].state, "linked");
+    assert.equal(optimized.targets[0].counts.linked, 1);
+    assert.equal(optimized.targets[0].counts.fallback, 0);
+    assert.equal(optimized.operational, true);
+    assert.equal(optimized.state, "optimized");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
