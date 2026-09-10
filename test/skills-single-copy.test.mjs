@@ -315,6 +315,8 @@ test("uninstall removes the shared copy and unlinks the claude target", async ()
         assert.equal(existsSync(shared), false, "link is gone");
         assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "alpha")), false);
         assert.equal(existsSync(path.join(projectRoot, ".claude", "skills", "alpha", "SKILL.md")), false);
+        assert.equal(existsSync(path.join(projectRoot, ".claude", "skills")), false, "empty share root is removed");
+        assert.equal(existsSync(path.join(projectRoot, ".agents", "skills")), false, "empty canonical root is removed");
       });
     });
   });
@@ -400,9 +402,19 @@ test("uninstall removes a divergent real directory at a share target when canoni
   });
 });
 
+// 建一个指向不存在路径的目录链接（悬空链接），win32 用 junction 避免权限位问题。
+async function linkToMissing(linkPath, missingTarget) {
+  if (process.platform === "win32") {
+    await symlink(missingTarget, linkPath, "junction");
+  } else {
+    await symlink(path.relative(path.dirname(linkPath), missingTarget), linkPath, "dir");
+  }
+}
+
 // R6 钉死：share 轮必须先于 canonical 轮。把 .claude/skills 本身做成指向 canonical 根的
 // 别名后，只有在删除真身之前判定，才会识别出 aliases-canonical 并拒绝动它；顺序反转后
 // 该冲突会静默消失（此时条目已随 canonical 一起不见，被当成 absent）。
+// 别名根是链接：清理绝不跟随、绝不解除它（跨平台语义一致，win32 的 junction 也不得被移除）。
 test("uninstall reports an aliased share root before the canonical pass deletes the copy", async () => {
   await withTempDirectory("avenic-alias-root-", async (projectRoot) => {
     await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
@@ -422,14 +434,49 @@ test("uninstall reports an aliased share root before the canonical pass deletes 
 
         const removed = runAgent(projectRoot, ["skills", "uninstall"], environment);
         assert.equal(removed.status, 0, removed.stderr);
+        assert.equal(removed.stderr, "", "链接形式的 destination 根不得让清理失败");
         assert.match(
           removed.stdout,
           /⚠ alpha: a folder link aliases the shared copy — left untouched/,
           "别名现场必须在 canonical 轮之前被报告",
         );
         assert.equal(existsSync(path.join(canonicalRoot, "alpha")), false, "真身仍由 canonical 轮删除");
-        assert.equal(existsSync(shareRoot), false, "别名根随空目录清理移除");
+        assert.equal(lstatSync(shareRoot).isSymbolicLink(), true, "别名根是链接，清理绝不解除它");
         assert.match(removed.stdout, /^Uninstalled all managed project Skills: 1$/m, "物理目录只删除一次");
+      });
+    });
+  });
+});
+
+// 一般不变式钉死：destination 根本身是悬空链接时，清理必须 lstat-first——不跟随、不删除，
+// 命令照常成功并完成 canonical 清理；重复卸载保持幂等。
+test("uninstall survives a dangling link at the share root and never touches it", async () => {
+  await withTempDirectory("avenic-dangling-root-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        assert.equal(runAgent(projectRoot, ["skills", "install"], environment).status, 0);
+
+        const shareRoot = path.join(projectRoot, ".claude", "skills");
+        const canonicalRoot = path.join(projectRoot, ".agents", "skills");
+        await rm(shareRoot, { recursive: true, force: true });
+        await linkToMissing(shareRoot, path.join(projectRoot, "missing-share-target"));
+        assert.equal(await isLink(shareRoot), true);
+        assert.equal(existsSync(shareRoot), false, "现场是悬空链接");
+
+        const removed = runAgent(projectRoot, ["skills", "uninstall"], environment);
+        assert.equal(removed.status, 0, removed.stderr);
+        assert.equal(removed.stderr, "");
+        assert.equal(lstatSync(shareRoot).isSymbolicLink(), true, "悬空链接不得被解除");
+        assert.equal(existsSync(path.join(canonicalRoot, "alpha")), false, "canonical 真身照常删除");
+        assert.match(removed.stdout, /^Uninstalled all managed project Skills: 1$/m);
+
+        const repeated = runAgent(projectRoot, ["skills", "uninstall"], environment);
+        assert.equal(repeated.status, 0, repeated.stderr);
+        assert.equal(repeated.stderr, "");
+        assert.equal(lstatSync(shareRoot).isSymbolicLink(), true, "第二次卸载仍不得动链接");
+        assert.match(repeated.stdout, /No managed project Skills installation found/, "幂等：第二次是空操作");
       });
     });
   });
