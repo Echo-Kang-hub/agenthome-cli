@@ -312,6 +312,27 @@ export interface ShareEntryVerdict {
 }
 export function classifyShareEntry(canonicalPath: string, linkPath: string): Promise<ShareEntryVerdict>;
 export function sameTree(left: string, right: string): Promise<boolean>;
+export interface LinkCounts {
+  linked: number;
+  repaired: number;
+  migrated: number;
+  fallback: number;
+  conflict: number;
+  unchanged: number;
+  skipped: number;
+}
+export interface LinkConflict {
+  name: string;
+  targetId: string;
+  reason?: string;
+}
+export function ensureSkillLinks(
+  context: InstallContext,
+  names: Iterable<string>,
+  options?: { io?: Io; silent?: boolean; createLink?: (canonicalPath: string, linkPath: string) => Promise<void> },
+): Promise<{ counts: LinkCounts; conflicts: LinkConflict[]; targets: Record<string, LinkCounts> }>;
+export function formatLinkSummary(counts: LinkCounts): string;
+export function logConflicts(io: Io, conflicts: LinkConflict[]): void;
 export function resolveInstallPacks(context: InstallContext, explicitPacks: string[]): Promise<string[]>;
 export function previousManagedState(context: InstallContext): Promise<Map<string, { sourceId: string; revision: string }>>;
 export function installedPackIds(context: InstallContext): Promise<string[] | null>;
