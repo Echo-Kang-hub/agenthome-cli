@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { createInstallContext, installCopies } from "../packages/core/src/index.mjs";
+import { addDirectSkills, createInstallContext, installCopies } from "../packages/core/src/index.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const agentBin = path.join(packageRoot, "packages", "cli", "scripts", "skills.mjs");
@@ -517,6 +517,208 @@ test(
     });
   },
 );
+
+// --- 直装（avenic skills add）走与 Pack 安装同一套共享语义（spec §5.4/§11）---
+
+async function createDirectSource(sourceRoot, content = "---\nname: direct-skill\n---\n# direct v1\n") {
+  await mkdir(path.join(sourceRoot, "skills", "direct-skill"), { recursive: true });
+  await writeFile(path.join(sourceRoot, "skills", "direct-skill", "SKILL.md"), content);
+  await commitAll(sourceRoot, "direct source");
+}
+
+// 上游发新版本并提交：让下一次 skills add 走完整安装路径，而不是 Already installed 快速返回。
+async function publishDirectUpdate(sourceRoot, content) {
+  await writeFile(path.join(sourceRoot, "skills", "direct-skill", "SKILL.md"), content);
+  await gitQuiet(sourceRoot, ["add", "-A"]);
+  await gitQuiet(sourceRoot, [
+    "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "direct update",
+  ]);
+}
+
+// 用相对符号链接指向 canonical 之外的路径（用户自己的技能目录）。
+async function linkToUserSkill(userTarget, linkPath) {
+  if (process.platform === "win32") {
+    await symlink(userTarget, linkPath, "junction");
+  } else {
+    await symlink(path.relative(path.dirname(linkPath), userTarget), linkPath, "dir");
+  }
+}
+
+test("direct install writes the canonical copy and links the claude target", async () => {
+  await withTempDirectory("avenic-direct-src-", async (sourceRoot) => {
+    await createDirectSource(sourceRoot);
+    await withTempDirectory("avenic-direct-", async (projectRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        const environment = { AVENIC_STATE_DIR: stateRoot };
+        const added = runAgent(projectRoot, ["skills", "add", sourceRoot], environment);
+        assert.equal(added.status, 0, added.stderr);
+        const shared = path.join(projectRoot, ".claude", "skills", "direct-skill");
+        assert.equal(await isLink(shared), true, ".claude/skills/direct-skill 必须是指向 canonical 的链接");
+        assert.equal(lstatSync(path.join(projectRoot, ".agents", "skills", "direct-skill")).isSymbolicLink(), false);
+        // git 检出时可能按平台转换行尾（Windows 上为 CRLF），比较前归一化。
+        assert.equal(
+          (await readFile(path.join(shared, "SKILL.md"), "utf8")).replace(/\r\n/g, "\n"),
+          "---\nname: direct-skill\n---\n# direct v1\n",
+        );
+        assert.match(added.stdout, /Claude Code \(shared from agents\)/);
+      });
+    });
+  });
+});
+
+// 直装重装时，share 位置上的手改真实目录是用户的，不得被上游内容覆盖（spec §3.2/§5.1/§9.3）。
+test("direct re-install leaves a divergent share directory untouched and reports a conflict", async () => {
+  await withTempDirectory("avenic-direct-conflict-src-", async (sourceRoot) => {
+    await createDirectSource(sourceRoot);
+    await withTempDirectory("avenic-direct-conflict-", async (projectRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        const environment = { AVENIC_STATE_DIR: stateRoot };
+        assert.equal(runAgent(projectRoot, ["skills", "add", sourceRoot], environment).status, 0);
+
+        const shared = path.join(projectRoot, ".claude", "skills", "direct-skill");
+        await rm(shared, { recursive: true, force: true });
+        await mkdir(shared, { recursive: true });
+        await writeFile(path.join(shared, "SKILL.md"), "---\nname: direct-skill\n---\n# user edited\n");
+
+        await publishDirectUpdate(sourceRoot, "---\nname: direct-skill\n---\n# direct v2\n");
+        const reinstalled = runAgent(projectRoot, ["skills", "add", sourceRoot], environment);
+        assert.equal(reinstalled.status, 0, reinstalled.stderr);
+        assert.match(
+          reinstalled.stdout,
+          /⚠ direct-skill: a copy exists and differs from the shared version — left untouched/,
+        );
+        assert.match(reinstalled.stdout, /Conflict 1/);
+        assert.equal(await isLink(shared), false, "手改目录原样保留，不得换成链接");
+        assert.equal(await readFile(path.join(shared, "SKILL.md"), "utf8"), "---\nname: direct-skill\n---\n# user edited\n");
+        assert.match(
+          await readFile(path.join(projectRoot, ".agents", "skills", "direct-skill", "SKILL.md"), "utf8"),
+          /direct v2/,
+          "canonical 仍是真身来源",
+        );
+      });
+    });
+  });
+});
+
+// 直装重装时，指向 canonical 之外的链接是别人的，绝不 unlink（spec §3.2/§9.7）。
+test("direct re-install keeps a foreign share link and reports a conflict", async () => {
+  await withTempDirectory("avenic-direct-foreign-src-", async (sourceRoot) => {
+    await createDirectSource(sourceRoot);
+    await withTempDirectory("avenic-direct-foreign-", async (projectRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        const environment = { AVENIC_STATE_DIR: stateRoot };
+        assert.equal(runAgent(projectRoot, ["skills", "add", sourceRoot], environment).status, 0);
+
+        const shared = path.join(projectRoot, ".claude", "skills", "direct-skill");
+        await rm(shared, { recursive: true, force: true });
+        const userTarget = path.join(projectRoot, "user-skills", "direct-skill");
+        await mkdir(userTarget, { recursive: true });
+        await writeFile(path.join(userTarget, "SKILL.md"), "user owned\n");
+        await linkToUserSkill(userTarget, shared);
+
+        await publishDirectUpdate(sourceRoot, "---\nname: direct-skill\n---\n# direct v2\n");
+        const reinstalled = runAgent(projectRoot, ["skills", "add", sourceRoot], environment);
+        assert.equal(reinstalled.status, 0, reinstalled.stderr);
+        assert.match(reinstalled.stdout, /⚠ direct-skill: a link points somewhere else — left untouched/);
+        assert.equal(await isLink(shared), true, "用户的链接绝不被 unlink");
+        assert.equal(await readFile(path.join(userTarget, "SKILL.md"), "utf8"), "user owned\n");
+        assert.match(
+          await readFile(path.join(projectRoot, ".agents", "skills", "direct-skill", "SKILL.md"), "utf8"),
+          /direct v2/,
+        );
+      });
+    });
+  });
+});
+
+// 直装 v1 现场：canonical 真身 + share 位置上一个内容一致的**真实副本**（上一次建链失败留下的 fallback）。
+async function buildDirectFallbackState(root, content) {
+  const canonical = path.join(root, ".agents", "skills", "direct-skill");
+  await mkdir(canonical, { recursive: true });
+  await writeFile(path.join(canonical, "SKILL.md"), content);
+  const sharePath = path.join(root, ".claude", "skills", "direct-skill");
+  await cp(canonical, sharePath, { recursive: true });
+  return { canonical, sharePath };
+}
+
+// 进程内直装：走 core 源码并透传 createLink（模拟 link-hostile 文件系统），与 runUpgrade 对称。
+async function runDirectAdd(root, sourceRoot, options = {}) {
+  const context = createInstallContext(false, { cwd: root, environment: process.env });
+  const lines = [];
+  const result = await addDirectSkills(context, sourceRoot, ["direct-skill"], {
+    io: { log: (line) => lines.push(line) },
+    ...options,
+  });
+  return { result, lines };
+}
+
+// A1 的直装版：上次直装留下的一致性 fallback 副本必须升级为链接——预检趟在 canonical 被改写前
+// 用旧内容判定归属；删掉预检调用后，副本会被当成用户手改的冲突，永远停在旧版本。
+test("direct: a fallback copy from a previous direct install upgrades to a link (no conflict)", async () => {
+  await withTempDirectory("avenic-direct-fallback-src-", async (sourceRoot) => {
+    await createDirectSource(sourceRoot);
+    await withTempDirectory("avenic-direct-fallback-", async (projectRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        const environment = { AVENIC_STATE_DIR: stateRoot };
+        const added = runAgent(projectRoot, ["skills", "add", sourceRoot], environment);
+        assert.equal(added.status, 0, added.stderr);
+
+        // 模拟"上次安装时建链失败"的现场：真身内容 + 一个内容完全一致的真实副本。
+        const shared = path.join(projectRoot, ".claude", "skills", "direct-skill");
+        await unlink(shared);
+        await cp(path.join(projectRoot, ".agents", "skills", "direct-skill"), shared, { recursive: true });
+        assert.equal(await isLink(shared), false);
+
+        await publishDirectUpdate(sourceRoot, "---\nname: direct-skill\n---\n# direct v2\n");
+        const upgraded = runAgent(projectRoot, ["skills", "add", sourceRoot], environment);
+        assert.equal(upgraded.status, 0, upgraded.stderr);
+        assert.doesNotMatch(upgraded.stdout, /left untouched/);
+        assert.doesNotMatch(upgraded.stdout, /Conflict [1-9]/);
+        assert.match(upgraded.stdout, /Conflict 0/);
+
+        const canonical = path.join(projectRoot, ".agents", "skills", "direct-skill", "SKILL.md");
+        assert.equal(await isLink(shared), true, "fallback 副本升级为指向 canonical 的链接");
+        assert.match(
+          (await readFile(canonical, "utf8")).replace(/\r\n/g, "\n"),
+          /direct v2/,
+          "canonical 已是新版本",
+        );
+        assert.match(
+          (await readFile(path.join(shared, "SKILL.md"), "utf8")).replace(/\r\n/g, "\n"),
+          /direct v2/,
+          "穿透链接读到的是新版本",
+        );
+      });
+    });
+  });
+});
+
+// 预检趟（restoreCopy: false）的直装版：此刻 canonical 还是旧版本，建链失败绝不允许把旧内容
+// 落成 fallback 副本——否则补链趟会把它误判成冲突，降级副本永远停在旧版本。
+test("direct: a link failure on the preflight pass is settled against the NEW canonical (no stale fallback)", async () => {
+  const v1 = "---\nname: direct-skill\n---\n# direct v1\n";
+  const v2 = "---\nname: direct-skill\n---\n# direct v2\n";
+
+  await withTempDirectory("avenic-direct-hostile-src-", async (sourceRoot) => {
+    await createDirectSource(sourceRoot, v1);
+    await withTempDirectory("avenic-direct-hostile-", async (root) => {
+      const { canonical, sharePath } = await buildDirectFallbackState(root, v1);
+      await publishDirectUpdate(sourceRoot, v2);
+      const { lines } = await runDirectAdd(root, sourceRoot, { createLink: failingCreateLink() });
+
+      assert.equal(await isLink(sharePath), false, "建链失败 → 降级为真实副本");
+      assert.equal(
+        (await readFile(path.join(sharePath, "SKILL.md"), "utf8")).replace(/\r\n/g, "\n"),
+        v2,
+        "副本必须是新版本，不是被预检趟钉住的旧版本",
+      );
+      assert.match(await readFile(path.join(canonical, "SKILL.md"), "utf8"), /direct v2/);
+      const output = lines.join("\n");
+      assert.match(output, /Conflict 0/, "旧副本迁移不得被误判为冲突");
+      assert.equal(lines.some((line) => /left untouched|differs from the shared version/.test(line)), false);
+    });
+  });
+});
 
 // repair 钉死：卸载路径上"指向 canonical 的悬空链接"仍是我方条目，必须删除；
 // 把它当成需要保留的冲突会让这条变红（spec §5.2 表第一行含"悬空"）。

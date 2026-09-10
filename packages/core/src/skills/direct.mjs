@@ -7,6 +7,13 @@ import { readJson, writeJson } from "../util/json.mjs";
 import { cloneHead, deriveSourceId, git, normalizeRepositoryInput } from "./git.mjs";
 import { assertSafeSkillName } from "./ids.mjs";
 import { previousManagedState, removeSkillDirectories } from "./install.mjs";
+import {
+  canonicalTargets,
+  ensureSkillLinks,
+  formatLinkSummary,
+  logConflicts,
+  shareTargets,
+} from "./links.mjs";
 import { stateRoot } from "./paths.mjs";
 import { detectSkillRoot, discoverSourceSkills } from "./sources.mjs";
 
@@ -66,6 +73,8 @@ async function findLicenseFile(cloneDirectory) {
 
 export async function addDirectSkills(context, sourceReference, skillNames, options = {}) {
   const io = options.io ?? console;
+  // createLink 透传（测试用于模拟 link-hostile 文件系统）；未提供时按 ensureSkillLinks 的默认建链。
+  const createLink = options.createLink ?? undefined;
   if (sourceReference.includes("#")) {
     fail(
       `Refs are not supported for direct sources: ${sourceReference}. Add the source to the catalog to pin a revision.`,
@@ -122,7 +131,12 @@ export async function addDirectSkills(context, sourceReference, skillNames, opti
     return { names: requestedNames, sourceId, revision, alreadyInstalled: true };
   }
 
-  for (const targetConfig of context.targets) {
+  // 与 Pack 安装同序：先预检（上次的 fallback 副本要拿旧 canonical 比较），再写真身，最后补链。
+  // restoreCopy: false —— 预检趟建链失败不得落拷贝：此刻 canonical 还是旧版本，落了就会把
+  // 旧内容钉成 fallback 副本，补链趟会把它误判成用户手改的冲突。
+  await ensureSkillLinks(context, requestedNames, { io, silent: true, restoreCopy: false, createLink });
+
+  for (const targetConfig of canonicalTargets(context)) {
     const destination = targetConfig.destination;
     await mkdir(destination, { recursive: true });
     for (const name of requestedNames) {
@@ -138,6 +152,14 @@ export async function addDirectSkills(context, sourceReference, skillNames, opti
     io.log(`  Path: ${destination}`);
     io.log(`  Added ${requestedNames.length} direct Skill${requestedNames.length === 1 ? "" : "s"}`);
   }
+
+  const linkResult = await ensureSkillLinks(context, requestedNames, { io, silent: true, createLink });
+  for (const targetConfig of shareTargets(context)) {
+    io.log(`✓ ${targetConfig.label} (shared from ${targetConfig.shareFrom})`);
+    io.log(`  Path: ${targetConfig.destination}`);
+    io.log(`  ${formatLinkSummary(linkResult.targets[targetConfig.id] ?? linkResult.counts)}`);
+  }
+  logConflicts(io, linkResult.conflicts);
 
   const licenseName = await findLicenseFile(directory);
   if (licenseName) {
