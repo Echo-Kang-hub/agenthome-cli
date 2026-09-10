@@ -1239,6 +1239,34 @@ test("R3: unmanaged skills at the share target are counted and offered for adopt
   });
 });
 
+// R5 钉死（review M1）：直装技能属于 spec §6 受管集合（lock.directSources），状态里的
+// "未受管"计数必须按受管集合算——否则直装用户看到的是 "0 unique" 加
+// "1 unmanaged Skill（run: avenic skills adopt）"，被提示去接管自己已经受管的技能。
+test("R5: a direct-installed skill is not reported as unmanaged at the share target", async () => {
+  await withTempDirectory("avenic-status-r5-src-", async (sourceRoot) => {
+    await createDirectSource(sourceRoot);
+    await withTempDirectory("avenic-status-r5-", async (projectRoot) => {
+      await withTempDirectory("avenic-status-r5-state-", async (stateRoot) => {
+        const environment = { AVENIC_STATE_DIR: stateRoot };
+        const added = runAgent(projectRoot, ["skills", "add", sourceRoot], environment);
+        assert.equal(added.status, 0, added.stderr);
+        assert.equal(await isLink(path.join(projectRoot, ".claude", "skills", "direct-skill")), true);
+
+        const status = await skillsInstallationStatus(projectContext(projectRoot));
+        const share = shareTargetOf(status);
+        assert.equal(share.counts.unmanaged, 0, "直装名在 lock.directSources 里，不得计入 unmanaged");
+        // names 仍是旧组合（Pack + adopted），直装名不在其中——本测试只钉 unmanaged 计数，
+        // 展示口径（present/total、树的 unique 数）的变更另行处理。
+        assert.equal(share.counts.linked, 0);
+
+        const cli = runAgent(projectRoot, ["skills", "status"], environment);
+        assert.equal(cli.status, 0, cli.stderr);
+        assert.doesNotMatch(cli.stdout, /unmanaged Skill/);
+      });
+    });
+  });
+});
+
 // R4 钉死：冲突必须携带名字 + 原因（与 ensureSkillLinks 同形），CLI 经 logConflicts 逐条列出。
 test("R4: conflicts carry names and reasons and the CLI lists them via logConflicts", async () => {
   await withTempDirectory("avenic-status-r4-", async (projectRoot) => {

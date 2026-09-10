@@ -625,7 +625,10 @@ export async function skillsInstallationStatus(context) {
   }));
   const manifestPacks = manifest.packs ?? (manifest.pack ? [manifest.pack] : []);
   const names = [...new Set([...groups.flatMap((group) => group.skills.map((skill) => skill.name)), ...(manifest.adopted ?? [])])];
-  const managedNames = new Set(names);
+  // 未受管计数按 §6 受管集合（Pack + adopted + 直装）算，而不是复用只给展示用的 names
+  // （它保持旧组合 Pack + adopted，直装名不在其中）。否则直装技能会被误报成"未受管"，
+  // 提示用户去 adopt 自己已经受管的技能。
+  const managedNames = await managedSkillNames(context);
 
   // 第一趟：canonical 目标的完整度必须先全部算完（share 目标排在表前面）。
   const canonicalState = new Map();
