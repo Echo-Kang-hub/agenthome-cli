@@ -197,7 +197,7 @@ avenic skills install                                 # 4. 安装默认 Pack（c
 
 ### 共享与链接
 
-同一作用域内每个 Skill 只保留一份物理文件：`.agents/skills/<name>` 是真身，`.claude/skills/<name>` 是指向它的链接（Windows 为 junction，macOS/Linux 为相对符号链接）。安装、更新、接管、直装以及 `avenic <agent>` 启动时都会补齐缺失或失效的链接，反复安装不会产生第二份副本。
+同一作用域内每个 Skill 只保留一份物理文件：`.agents/skills/<name>` 是真身，`.claude/skills/<name>` 是指向它的链接（Windows 为 junction，macOS/Linux 为相对符号链接）。安装、更新、接管、直装以及 `avenic <agent>` 启动时都会补齐缺失的链接、清理已失效的链接，反复安装不会产生第二份副本。
 
 ```text
 <项目>/.agents/skills/<name>     真身（canonical）
@@ -206,7 +206,7 @@ avenic skills install                                 # 4. 安装默认 Pack（c
 
 链接创建失败时（例如文件系统不支持链接），该 Skill 自动退回真实副本：功能不受影响，`avenic skills status` 标记为「可用但未共享」，下一次安装会再尝试迁移为链接。
 
-`avenic skills uninstall` 会解除 Avenic 建立的链接并删除真身；指向其他位置的链接（用户自建）从不改动，`avenic skills status` 会报告冲突并保留原样。手工放进 `.agents/skills` 的技能不属于受管集合，状态里提示用 `avenic skills adopt` 接管。
+`avenic skills uninstall` 会解除 Avenic 建立的链接并删除真身；指向其他位置的链接（用户自建）从不改动，`avenic skills status` 会报告冲突并保留原样。手工放进 `.agents/skills` 或 `.claude/skills` 的技能不属于受管集合，既不会被自动建链，也不会被删除；其中出现在分享位置 `.claude/skills` 的未受管条目，状态里会提示用 `avenic skills adopt` 接管。
 
 `avenic skills status` 输出示例（链接健康时）：
 
@@ -224,6 +224,8 @@ Skills · 3 unique
 ✓ Codex / OpenCode / universal agents: 3/3
 Optimized
 ```
+
+以下三例为节选（省略技能树与 canonical 目标行），所列字符串与真实输出逐字一致：
 
 降级（存在未共享的真实副本，仍可用）：
 
