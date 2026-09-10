@@ -329,7 +329,8 @@ export interface LinkConflict {
 export function ensureSkillLinks(
   context: InstallContext,
   names: Iterable<string>,
-  options?: { io?: Io; silent?: boolean; createLink?: (canonicalPath: string, linkPath: string) => Promise<void> },
+  // restoreCopy: false 用于 canonical 更新前的预检趟——建链失败时不落拷贝（默认 true）。
+  options?: { io?: Io; silent?: boolean; restoreCopy?: boolean; createLink?: (canonicalPath: string, linkPath: string) => Promise<void> },
 ): Promise<{ counts: LinkCounts; conflicts: LinkConflict[]; targets: Record<string, LinkCounts> }>;
 export function formatLinkSummary(counts: LinkCounts): string;
 export function logConflicts(io: Io, conflicts: LinkConflict[]): void;
