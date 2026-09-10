@@ -1,141 +1,190 @@
-# 项目级模型配置 + 可视化配置界面设计（2026-09-10）
+# 本机模型配置库 + 项目绑定 + 可视化配置界面设计（2026-09-10，修订版 2）
+
+> 修订记录：v2 按用户复审意见重构为**两层模型**（本机 profile library + per-project binding，§4）、重写回滚记账（§6）、新增事务与并发（§5.5）、dangling 引用（§7）、multi-root/远程语义（§9.5/§9.6）。v1 中"Claude 写项目 settings.local.json / Codex 启动注入 / OpenCode 注入 / 粘贴识别 / 测试连接"等结论保留（§10、§11）。
 
 ## 1. 背景与目标
 
-两个真实场景：
+需求（用户 2026-09-10 最终明确）：
 
-1. 全局配置的模型正在别处干活，某个项目想用另一套模型（另一个 baseUrl / key / 模型 ID）。当前做法是手写 `.claude/settings.local.json`，字段多、易错、没有校验，也没有"这个项目现在到底用哪套"的单一事实来源。
-2. 用户手里往往已经有一份现成配置（别人给的、从别处导出的、`.claude/settings.local.json` 全文），希望**粘贴一次**就把表单里的 baseUrl / key / 模型等空位填好，而不是逐字段复制。
+> Avenic 应该像 cc-switch 一样，在一台机器上保存多套模型/Provider 配置，然后每个项目可以从这些已经保存的配置中一键选择当前配置。项目 A 可以用 MiMo，项目 B 可以同时用 Kimi，项目 C 可以不选择 Avenic profile 而继续使用 Agent 自己的全局配置。Avenic 没有服务器、没有账号，这些数据全部只存在当前设备本地。
 
 目标：
 
-- 项目内**多套**模型配置，可**一键切换**；切换后 `avenic claude` / `avenic codex` / `avenic opencode` 与插件直接启动 Agent 时都使用当前配置；
-- 插件内提供可视化配置界面（仿 cc-switch 的表单 + 卡片列表），带保存按钮；
-- 界面同时提供**粘贴区**：结构化 JSON 粘贴 → 自动补全表单字段（未识别的键原样保留，不丢信息）；自由文本粘贴 → 识别 baseUrl / key / 模型等并给出"识别到什么"的预览再填入；
-- 提供**测试连接**（发一个最小真实请求），把"配错了"和"网络不通"区分开；
-- 密钥不入 Git、不出现在 CLI 输出与日志中。
+- **本机（设备级）**：一份 Avenic 自有的 profile 库，保存多套 endpoint / key / 模型映射，CLI 与 VS Code 插件读同一份文件；
+- **项目级**：每个项目单独选择"用哪一套"（或不选）；项目之间互不影响；选择的是一次绑定，改库即对所有项目生效（下次应用）；
+- 切换后 `avenic claude` / `avenic codex` / `avenic opencode` 与插件直接启动 Agent 都使用该配置；
+- 插件里像 cc-switch 一样可视化增删改查 + 一键"用于当前项目"，带保存按钮；
+- 粘贴区：结构化 JSON → 自动补全表单（未识别键保留）；自由文本 → 识别并预览后填入，不静默保存；
+- 测试连接：发一个最小真实请求，区分"配错"与"网络不通"；
+- 本机库与项目文件都不进 Git；密钥在所有输出中掩码。
 
-## 2. 已确认的选择（2026-09-10 用户逐条确认）
+## 2. 已确认的选择
 
-| 决策点 | 选择 | 影响 |
+| 决策点 | 选择 | 来源 |
 |---|---|---|
-| 界面入口 | **编辑器标签页**（`WebviewPanel`） | 表单字段多，需要宽屏；不复用窄侧边栏 |
-| 内置预设 | **要，少量** | 预设只做"少填几个字"的起点，不是配置库 |
-| 配置套数 | **多套 + 一键切换** | 需要 profile 列表与激活态 |
-| 测试连接 | **发一个最小真实请求** | 需要真实流量与配额提示，见 §9 |
+| 界面入口 | 编辑器标签页（`WebviewPanel`） | 用户 2026-09-10 |
+| 内置预设 | 要，少量（只预填端点与 API 类型） | 用户 2026-09-10 |
+| 配置套数 | 多套 + 一键切换 | 用户 2026-09-10 |
+| 测试连接 | 发一个最小真实请求 | 用户 2026-09-10 |
+| 库/绑定的分层 | 本机库 + 项目绑定 | 用户修订 B1 |
+| 删除 profile 后的项目引用 | 安全回滚 + 提示 + 清空绑定 | 用户修订 B4 |
+| 事务与并发 | 原子替换 + 版本戳 + 重读重放（§5.5） | 用户修订 B5 |
 
-## 3. 已验证事实（2026-09-10 本机验证）
+## 3. 已验证事实
+
+### 3.1 Agent 侧（2026-09-10 本机验证）
 
 | 结论 | 依据 |
 |---|---|
-| Claude Code 2.1.238 中存在本设计用到的全部环境变量键：`ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_API_KEY`、`ANTHROPIC_MODEL`、`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`、`*_MODEL_NAME`、`CLAUDE_CODE_SUBAGENT_MODEL`、`CLAUDE_CODE_EFFORT_LEVEL`、`CLAUDE_CODE_MAX_OUTPUT_TOKENS`、`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`、`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`、`ENABLE_TOOL_SEARCH`、`DISABLE_AUTOUPDATER` | 已安装二进制的字符串统计 |
-| 配置优先级：managed > CLI/`--settings` > `.claude/settings.local.json` > `.claude/settings.json` > `~/.claude/settings.json`；settings 里的 `env` **覆盖**同名 shell 环境变量 | 隔离环境实测（临时 `CLAUDE_CONFIG_DIR` + 本地假 endpoint 截获请求体） |
-| `includeCoAuthoredBy` 已废弃，改用 `attribution: { commit, pr }` | 同上次调研结论 |
-| Codex 项目级 `.codex/config.toml` **禁止** `model_provider` / `model_providers`（被忽略并告警）；`-c key=value` 是最高优先级；`wire_api = "responses"` 是唯一支持的协议（**无法指向 Anthropic 风格端点**） | Codex 官方配置文档 + 本机实测 |
-| `CODEX_HOME` 重定向有效（avenic 的 project 认证模式已在用：`.agents/local/codex`） | `packages/core/src/runtime/config.mjs:110` |
-| OpenCode 支持 `OPENCODE_CONFIG` / `OPENCODE_CONFIG_CONTENT` 做配置注入，优先级高于项目 `opencode.json`；**没有**模型相关的环境变量 | OpenCode 官方配置文档 |
-| cc-switch（Tauri + React）是单列滚动式界面：卡片列表 + 全屏编辑面板 + 预设磁贴 + 悬停操作行 + 模型映射表（Sonnet/Opus/Fable/Haiku/Subagent + 主模型兜底）+ `[1M]` 标记 + 健康探测；**没有**粘贴 JSON 自动填充功能（该功能是本设计新增） | 上游仓库源码阅读 |
+| Claude Code 2.1.238 存在本设计用到的全部 env 键：`ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_API_KEY`、`ANTHROPIC_MODEL`、`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`、`*_MODEL_NAME`、`CLAUDE_CODE_SUBAGENT_MODEL`、`CLAUDE_CODE_EFFORT_LEVEL`、`CLAUDE_CODE_MAX_OUTPUT_TOKENS`、`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`、`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`、`ENABLE_TOOL_SEARCH`、`DISABLE_AUTOUPDATER` | 已安装二进制字符串统计 |
+| 配置优先级：managed > CLI/`--settings` > `.claude/settings.local.json` > `.claude/settings.json` > `~/.claude/settings.json`；settings 的 `env` **覆盖**同名 shell 环境变量 | 隔离环境实测 |
+| `includeCoAuthoredBy` 已废弃，改用 `attribution: { commit, pr }` | 同上 |
+| Codex 项目级 `.codex/config.toml` **禁止** `model_provider` / `model_providers`（忽略并告警）；`-c key=value` 最高优先级；`wire_api = "responses"` 仅支持（**无法指向 Anthropic 风格端点**） | Codex 配置文档 + 本机实测 |
+| Codex `-c` 的值先按 TOML 解析，**解析失败则按原始字符串**（并剥掉首尾引号）——所以 `-c key=https://x/v1` **不需要加引号** | openai/codex `codex-rs/utils/cli/src/config_override.rs`（`splitn(2,'=')` + raw-string 回退） |
+| Codex 内置 provider id（如 `openai`）**不可覆盖**；要换 base URL 必须用自定义 id | `config-reference` 文档 + 本机 `codex -c model_providers.openai.base_url=…` 实测报 `reserved built-in provider IDs` |
+| `codex --version` **完全不解析配置**（非法 TOML 也 exit 0）→ 探针不能用它；用只读不联网的 `codex mcp list` | 本机 0.150.1 实测（`-c 'mcp_servers=[['` + `--version` 仍 exit 0） |
+| Windows `.cmd/.bat` 链路上，含 `& ^ \|` 且**未被引号包裹**的参数会被 cmd 破坏（`A&B` → 报错、`A^B` → 变成 `AB`）；`%VAR%` 连引号内也会展开 | 本机经 `codex.cmd` 实测 |
+| Windows 上引号**不会**被 cmd 吃掉（`-c x="4"` 到达 Codex 的是带字面引号的字符串 `"4"`，POSIX 下同样的命令得到整数 `4`）→ 不能靠引号区分类型 | 本机实测（`-c mcp_servers=42` → integer，`-c mcp_servers="42"` → string） |
+| 本机 `where codex` 首选项是 `codex.exe`（不是 `.cmd`），仓库 `resolveOnPath` 的扩展名优先级也会先命中 `.exe`；只有纯 npm/bun 安装（仅 `codex.cmd`）才走 cmd 拼接路径 | 本机 `where codex` + `process.mjs:21-39` |
+| `CODEX_HOME` 重定向有效 | `packages/core/src/runtime/config.mjs:110` |
+| OpenCode 支持 `OPENCODE_CONFIG` / `OPENCODE_CONFIG_CONTENT` 注入，优先级高于项目 `opencode.json`；**没有**模型相关的环境变量（`{env:VAR}` 只能在配置值里做替换，未设置时替换为空串） | OpenCode `config.mdx` 优先级列表 + `packages/core/src/flag/flag.ts` 环境变量登记表 |
+| OpenCode **可以覆盖内置 provider 的 `options.baseURL` / `options.apiKey`**（官方文档示例就是内置 `anthropic`），provider 解析走 `mergeDeep(existing.options, provider.options)`、`resolveSDK` 里 `options.baseURL` 优先于 `model.api.url`、`options.apiKey` 优先于 auth.json/env；内置 anthropic 仍用 `@ai-sdk/anthropic` | anomalyco/opencode 文档 + `provider.ts`（mergeProvider/resolveSDK/BUNDLED_PROVIDERS） |
+| cc-switch 是"卡片列表 + 全屏编辑面板 + 预设磁贴 + 悬停操作行 + 模型映射表 + 健康探测"；**没有**粘贴 JSON 自动填充（本设计新增） | 上游仓库源码阅读 |
 
-**实现期必须实测的 3 条**（本机有 Claude Code / Codex，可 5 分钟内验证；失败则走 §11 的降级行）：
+### 3.2 仓库侧（本次修订读取的真实代码）
 
-1. Codex 的 `-c` 值在三种 shell（cmd / PowerShell / bash）下的引号穿透形态——决定插件集成终端用哪种传参方式（§5.2）；
-2. project 认证模式（`CLAUDE_CONFIG_DIR` 重定向）下，Claude Code 是否照常读取项目 `.claude/settings.local.json`（复用上次的隔离探针装置）；
-3. OpenCode 用 `provider.<内置 id>.options.baseURL` 覆盖内置 anthropic provider 是否生效（不生效则改为自定义 provider + `@ai-sdk/anthropic`）。
+| 结论 | 依据 |
+|---|---|
+| 机器级 Avenic 状态根**已存在**：`stateRoot(env)` = `AVENIC_STATE_DIR` → 否则 `XDG_CONFIG_HOME` → 否则 `~/.config`，加 `avenic`；已有 `catalog.json`/`catalogs.json`/`config.json`/`lock.json`/`catalog/` 同住于此 | `packages/core/src/skills/paths.mjs:43-100` |
+| 文件级事务原语**已存在**：`replaceStagedFiles(replacements, tempDirectory)` —— 先 `rename(target, backup)`、再 `rename(staged, target)`，任一步失败则回滚已完成的替换并抛出 | `packages/core/src/skills/vendor.mjs:26-57`（core 已导出） |
+| 同卷 rename 语义、备份/回滚目录模式可参照 `replaceDirectory` | `packages/core/src/runtime/sessions.mjs:67-101` |
+| 路径比较与哈希原语**已存在**：`samePath`（win32 大小写不敏感）、`hashContent`（sha256） | `sessions.mjs:18-27`、`:166-168` |
+| `writeJson` 是**普通** `writeFile`（无原子性），`readJson` 解析失败直接 `fail` | `packages/core/src/util/json.mjs:4-14` |
+| 插件侧 `MutationQueue` 只做**进程内**串行（promise 链），不跨窗口、不跨进程；无文件锁 | `packages/vscode/src/ui/mutation-queue.ts:1-23` |
+| 项目根解析：单根直接返回，**0 根或多根都返回 null**；多根走 `pickProjectRoot`（有效的"上次记住的根" → 否则 QuickPick），**从不静默取 `folders[0]`** | `packages/vscode/src/project.ts:12-16`、`src/ui/flows.ts:33-46` |
+| 插件**没有任何编辑器标签页 WebviewPanel**（现有 webview 只有侧边栏 Overview），且测试**没有 vscode stub** → 面板宿主类无法单测，数据组装必须放在 vscode-free 模块 | `src/dashboard/overview.ts:9-62`、`test/build-tests.mjs` |
+| 插件通过**已发布的** `@avenic/core`（当前 `^1.0.4`）调用 core，不使用 vendor 副本；`packages/cli/vendor/core-src` 只服务 CLI | `packages/vscode/package.json:404`、`scripts/sync-core.mjs` |
+| CLI 启动注入点：`environment` 构造与 `launchExecutable(executable, argumentsList, {cwd, environment})` | `packages/cli/src/cli/dispatcher.mjs:243-245`、`:295-297` |
+| Windows 下 npm 全局安装的 Agent CLI 是 `.cmd` shim，会被 `invocation()` 拼成 **shell 命令行**（`/[\s"]/` 时用双引号包裹），即 **argv 会在 cmd.exe 里被二次解析** | `packages/core/src/runtime/process.mjs:21-39` |
+| 全局作用域测试被明确禁止写真实用户目录；测试统一用 `testEnv()`（剥离 `AVENIC_*`、可注入 `AVENIC_STATE_DIR`） | `packages/vscode/test/helpers.ts:7-15`、`test/skills-commands.test.ts:72-74` |
 
-## 4. 数据模型：单一事实来源
+### 3.3 实测项（原 3 条，已结清 2 条）
 
-**`.agents/model.json`**（项目内，gitignored；CLI 与插件读写同一个文件，避免两套配置漂移）：
+1. ~~Codex `-c` 值在 Windows 的传递形态~~ → **已结清**（§3.1）：不加引号即可（raw-string 回退），但含 `& ^ |` 的值在 `.cmd` 链路上必须被引号包裹，`%` 无论如何都会展开。设计结论写进 §5.2 与 §12.6：值一律不加引号 + 通过白名单拒绝 `%`、引号、反引号与 cmd 元字符；同时**加固 `process.mjs` 的 cmd 行拼接**（把 `&|^<>()` 纳入"需要引号包裹"的触发条件），使带查询串的 URL（`?api-version=…&x=y`）在 `.cmd` 路径上安全。
+2. **project 认证模式（`CLAUDE_CONFIG_DIR` 重定向，`config.mjs:108`）下 Claude Code 是否仍读取项目 `.claude/settings.local.json`** —— 仍需实现期实测（这是本机隔离探针，无法从文档判定）。**降级**：§13。
+3. ~~OpenCode 覆盖内置 anthropic provider 是否生效~~ → **已结清**（§3.1）：官方支持，内置 anthropic 的 `options.baseURL`/`options.apiKey` 直接生效，因此 §5.3 首选"覆盖内置 provider"，"自定义 provider + `@ai-sdk/anthropic`"只作为兜底（社区报告该组合有丢 apiKey 的已知问题）。
+
+## 4. 数据模型：两层
+
+### 4.1 本机 profile 库（设备级 SSOT）
+
+**路径**：`modelsFile(environment) = path.join(stateRoot(environment), "models.json")`
+
+- 复用既有的 Avenic 机器级状态根（§3.2），因此**不是** `~/.avenic/models.json`：仓库已有 `~/.config/avenic`（Windows 为 `%USERPROFILE%\.config\avenic`）作为"avenic 自己拥有、CLI 与插件共用、不属于任何 Agent"的目录，并已支持 `AVENIC_STATE_DIR` 覆盖（测试隔离）与历史目录迁移。新增第二个根会制造两套事实来源。
+- 该路径落在 **CLI / VS Code Extension Host 实际运行的环境**（本地 Windows → Windows 家目录；WSL → WSL 家目录；Remote SSH → 远端家目录），彼此独立（§9.6）。
 
 ```jsonc
 {
   "schemaVersion": 1,
-  "active": "mimo-project",              // 激活的 profile id；null = 未激活
+  "revision": 7,                       // 每次写入 +1；并发写保护（§5.5）
   "profiles": {
-    "mimo-project": {
-      "name": "小米 MiMo（项目）",
-      "endpoint": { "baseUrl": "https://token-plan-cn.xiaomimimo.com/anthropic", "api": "anthropic",
-                    "authField": "ANTHROPIC_AUTH_TOKEN", "apiKey": "sk-…" },
-      "overrides": {                      // 可选：按 Agent 覆盖端点（同一提供商的两种协议入口）
-        "codex": { "baseUrl": "https://…/v1", "api": "openai-responses" }
-      },
-      "models": {                          // 主模型 + 五个角色（键名与 Claude 的映射键一一对应）
-        "main":     { "id": "mimo-v2.5-pro" },
-        "opus":     { "id": "mimo-v2.5-pro", "display": "mimo-v2.5-pro", "longContext": false },
-        "sonnet":   { "id": "mimo-v2.5-pro", "display": "mimo-v2.5-pro", "longContext": true },
-        "haiku":    { "id": "mimo-v2.5",     "display": "mimo-v2.5" },
-        "fable":    { "id": "mimo-v2.5-pro", "display": "mimo-v2.5-pro" },
+    "mimo": {
+      "id": "mimo",
+      "name": "小米 MiMo",
+      "endpoint": { "baseUrl": "https://token-plan-cn.xiaomimimo.com/anthropic", "api": "anthropic", "authField": "ANTHROPIC_AUTH_TOKEN", "apiKey": "sk-…" },
+      "overrides": { "codex": { "baseUrl": "https://…/v1", "api": "openai-responses" } },
+      "models": {
+        "main": { "id": "mimo-v2.5-pro" },
+        "opus": { "id": "mimo-v2.5-pro", "display": "mimo-v2.5-pro", "longContext": false },
+        "sonnet": { "id": "mimo-v2.5-pro", "display": "mimo-v2.5-pro", "longContext": true },
+        "haiku": { "id": "mimo-v2.5", "display": "mimo-v2.5" },
+        "fable": { "id": "mimo-v2.5-pro", "display": "mimo-v2.5-pro" },
         "subagent": { "id": "mimo-v2.5" }
       },
-      "toggles": { "teams": true, "toolSearch": true, "maxEffort": true,
-                   "noNonessentialTraffic": true, "noAutoUpdate": false, "hideAttribution": true },
-      "env": { "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "131072" },   // 自定义 env 键值（表单未覆盖的）
-      "claude": { "settings": { "theme": "dark", "enabledPlugins": { … } } },  // 顶层透传键
-      "codex":  { "providerId": "avenic_mimo_project", "envKey": "AVENIC_MODEL_KEY", "reasoningEffort": "high" },
-      "opencode": { "providerId": "mimo", "npmAdapter": "@ai-sdk/openai-compatible" },  // npmAdapter 可选，默认按 api 类型推导
-      "applied": { "claude": { "file": ".claude/settings.local.json", "created": false,
-                               "keys": ["ANTHROPIC_BASE_URL", "…"], "attribution": true } }
+      "toggles": { "teams": true, "toolSearch": true, "maxEffort": true, "noNonessentialTraffic": true, "noAutoUpdate": false, "hideAttribution": true },
+      "env": { "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "131072" },
+      "claude": { "settings": { "theme": "dark", "enabledPlugins": {} } },
+      "codex": { "providerId": "avenic_mimo", "envKey": "AVENIC_MODEL_KEY", "reasoningEffort": "high" },
+      "opencode": { "providerId": "mimo", "npmAdapter": "@ai-sdk/openai-compatible" },
+      "createdAt": "2026-09-10T00:00:00.000Z",
+      "updatedAt": "2026-09-10T00:00:00.000Z"
     }
   }
 }
 ```
 
-- `applied` 是**可逆投影的记账**：只记录"我们写过什么"，用于切换 / 清除时精确回滚（§5.4），绝不据此删除用户自己的键。
-- 文件权限：POSIX 下 `0o600`；Windows 依赖用户目录 ACL（不做额外处理，明写在文档里）。
-- 为什么不是直接以 `.claude/settings.local.json` 为准：CLI 也要读写、要服务三个 Agent、要存多套与激活态，而 settings.local.json 只有 Claude 认识；它在本设计中是**投影产物**，不是事实来源。
-- 为什么不用 VS Code 的 `globalState` / `SecretStorage` 存一份：会产生两套事实来源（CLI 读不到），明文文件反而是可解释、可备份、可手工编辑的。
+- **库不含任何项目信息**，也不含"当前激活"概念——激活是项目侧的。
+- 密钥只在这一个文件里（v1 明文的取舍见 §12）。
 
-## 5. 三个 Agent 的投影
+### 4.2 项目绑定（per-project）
 
-### 5.1 Claude Code → 写 `.claude/settings.local.json`（合并写）
+**路径**：`.agents/model.json`（项目内，gitignored；不含 profiles、不含 apiKey）
 
-映射表（表单字段 → 文件内容）：
+```jsonc
+{
+  "schemaVersion": 1,
+  "revision": 3,
+  "activeProfileId": "mimo",           // null = 本项目不使用 Avenic 模型配置
+  "overrides": {},                     // 可选：本项目对库中 profile 的字段级覆盖（如换模型 ID）
+  "projection": {                      // 投影记账（Claude 投影 = 项目内物化产物）
+    "claude": {
+      "file": ".claude/settings.local.json",
+      "fingerprint": "sha256:…",       // 生成该投影时的 profile 指纹（§5.4）
+      "created": false,                // 文件是否由本功能创建
+      "entries": [                      // 精确回滚账本（§6）
+        { "path": ["env", "ANTHROPIC_MODEL"], "before": { "exists": true, "value": "original-model" }, "written": "mimo-v2.5-pro" },
+        { "path": ["env", "ANTHROPIC_AUTH_TOKEN"], "before": { "exists": false }, "written": "sk-…" },
+        { "path": ["attribution"], "before": { "exists": true, "value": { "commit": "", "pr": "" } }, "written": { "commit": "", "pr": "" } }
+      ]
+    }
+  }
+}
+```
 
-| 表单 | 写入 |
+- Codex / OpenCode 是**启动时注入**，不写项目文件，因此没有 `projection` 条目（只有 Claude 需要记账）。
+- 该文件含 `before` 原值（可能包含用户此前手工写入的密钥）——这是精确回滚的必要代价，安全策略见 §12。
+
+## 5. 投影（apply）
+
+### 5.1 Claude Code → 写项目 `.claude/settings.local.json`（合并）
+
+| 表单/库字段 | 写入 |
 |---|---|
 | Base URL | `env.ANTHROPIC_BASE_URL` |
-| API Key | `env.ANTHROPIC_AUTH_TOKEN`（或 `env.ANTHROPIC_API_KEY`，随"认证字段"选择） |
+| API Key | `env.ANTHROPIC_AUTH_TOKEN`（或 `env.ANTHROPIC_API_KEY`，随 `authField`） |
 | 主模型 | `env.ANTHROPIC_MODEL` |
-| 角色模型（Opus/Sonnet/Haiku/Fable） | `env.ANTHROPIC_DEFAULT_<ROLE>_MODEL` + `env.ANTHROPIC_DEFAULT_<ROLE>_MODEL_NAME`（显示名留空则不写 `_NAME`） |
-| 角色模型 · Subagent | `env.CLAUDE_CODE_SUBAGENT_MODEL` |
-| 1M 勾选（仅 Opus/Sonnet，文档明确支持） | 该模型 ID 追加 `[1m]` 后缀 |
-| Teams 开关 | `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"` |
-| Tool Search | `env.ENABLE_TOOL_SEARCH = "true"` |
-| Max Effort | `env.CLAUDE_CODE_EFFORT_LEVEL = "max"` |
-| 禁用非必要流量 | `env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"` |
-| 禁用自动更新 | `env.DISABLE_AUTOUPDATER = "1"` |
-| 隐藏 AI 署名 | 顶层 `attribution = { "commit": "", "pr": "" }` |
-| 自定义 env 键值 | 逐条写入 `env` |
-| 顶层透传（`claude.settings`） | 原样写回（`theme`、`enabledPlugins`、`extraKnownMarketplaces`、`autoUpdatesChannel`…） |
+| Opus/Sonnet/Haiku/Fable | `env.ANTHROPIC_DEFAULT_<ROLE>_MODEL` +（display 非空时）`env.ANTHROPIC_DEFAULT_<ROLE>_MODEL_NAME` |
+| Subagent | `env.CLAUDE_CODE_SUBAGENT_MODEL` |
+| `longContext`（仅 Opus/Sonnet） | 模型 ID 追加 `[1m]` 后缀 |
+| toggles | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS="1"`、`ENABLE_TOOL_SEARCH="true"`、`CLAUDE_CODE_EFFORT_LEVEL="max"`、`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"`、`DISABLE_AUTOUPDATER="1"`、`attribution={"commit":"","pr":""}` |
+| `env`（自定义） | 逐条写入 `env` |
+| `claude.settings`（透传） | 原样写回（`theme`、`enabledPlugins`、`extraKnownMarketplaces`、`autoUpdatesChannel`…） |
 
-规则：
+- **合并写**：现有文件里不属于本次受管集合的键一律保留（含 `permissions`、`hooks`、`statusLine` 等本设计不认识的键）。
+- 已存在的 `includeCoAuthoredBy` **不删不改**，仅在面板提示一次"该字段已废弃，Claude Code 改用 `attribution`"。
+- 自定义 `env` 与受管键冲突 → 保存时拒绝并高亮（不静默覆盖）。
+- 所有值转字符串（Claude Code 只接受字符串）；写入前校验生成的 JSON 可解析。
+- 生成受管 entries 前，`env` 中每个受管键的**当前值**被记录为 `before`（§6）。
 
-- **合并写**：读取现有文件，只覆盖本 profile 的受管键与表单自有键；用户其他键一律保留（含 `permissions`、`hooks`、`statusLine` 等本设计不认识的键）。
-- 1M 勾选只给 Opus / Sonnet：`[1m]` 后缀的官方说明只覆盖这两个映射键。cc-switch 对 Fable / Subagent 也提供该开关，但依据不足，本设计**不提供**（宁缺勿错）。
-- 文件已存在 `includeCoAuthoredBy` 时**不删不改**，仅在面板给一次性提示"该字段已废弃，Claude Code 改用 `attribution`"。
-- 自定义 env 表中的键与表单受管键冲突 → 保存时拒绝并高亮冲突项（不静默覆盖）。
-- 写前把 `env` 中的值统一转成字符串（Claude Code 只接受字符串值）；写前校验 JSON 可解析（自写自读，防止手工编辑损坏后静默丢配置）。
-- 写前确保 `.gitignore` 含 `.claude/settings.local.json` 与 `.agents/model.json`（§10）。
-
-### 5.2 Codex → 启动时注入 argv + 环境变量（不落盘）
-
-项目 `.codex/config.toml` 不允许 provider 键（§3），因此只做启动注入：
+### 5.2 Codex → 启动注入（不落盘）
 
 ```
--c model_provider="<providerId>"
--c model_providers.<providerId>.name="<配置名>"
--c model_providers.<providerId>.base_url="<baseUrl>"
--c model_providers.<providerId>.env_key="<envKey>"
--c model_providers.<providerId>.wire_api="responses"
--m "<主模型 id>"
+-c model_provider=<providerId>
+-c model_providers.<providerId>.name=<name>
+-c model_providers.<providerId>.base_url=<baseUrl>
+-c model_providers.<providerId>.env_key=<envKey>
+-c model_providers.<providerId>.wire_api=responses
+-m <主模型>
 ```
 
-- 子进程环境追加 `[envKey] = apiKey`（默认名 `AVENIC_MODEL_KEY`，避免覆盖用户的 `OPENAI_API_KEY`）。
-- CLI 路径（`avenic codex`）：`spawn` 直接传 argv 数组，**不经 shell**，`-c` 的值连同 TOML 引号原样到达 Codex（实现期实测项 1 只需覆盖插件路径）。
-- 插件路径（集成终端）：优先 `createTerminal({ shellPath: <codex 可执行文件>, shellArgs: [...注入参数, ...用户参数], cwd, env })` 以 argv 直启，不拼命令行 → 无引号问题；实测项 1 若证明 shell 传参也稳定，才允许回退到 `sendText(command)` 形态。
-- 注入值先过字符白名单（§10），不合格的配置直接拒绝保存（而不是"存下来但启动失败"）。
-- 用户自己带了 `-m/--model` 或 `-c model_provider=…` 时**以用户为准**，本次启动不注入该参数。
+- 子进程环境追加 `envKey → apiKey`（默认 `AVENIC_MODEL_KEY`，避免覆盖用户的 `OPENAI_API_KEY`）。
+- CLI 路径：`dispatchAgent` 里构造 `launchArguments` / `launchEnvironment`，**只传给 `launchExecutable`**，不污染 `adapter.*` 用的 `environment`（后者只承载 `CLAUDE_CONFIG_DIR`/`CODEX_HOME`/`XDG_CONFIG_HOME` 等重定向）。
+- 值一律**不加引号**（Codex 对无法按 TOML 解析的值回退为原始字符串，加了引号反而在 Windows 上变成带引号的字面量、在 POSIX 上才有类型含义——两端语义不一致）。测试断言"生成的 argv 元素里不含 `"`"。
+- **同时加固 `process.mjs:33-37` 的 cmd 行拼接**：把 `& | ^ < > ( )` 一并纳入"需要双引号包裹"的触发条件（今天是 `/[\s"]/`），否则带 `&` 的 URL（`?api-version=…&x=y`）在仅装了 `codex.cmd` 的机器上会被 cmd 在 `&` 处切断。这是 core 里一个独立、可单测的小改动，随本设计一起发布；`%` 在 cmd 中无法转义（引号内也会展开变量），因此交由 §12.6 白名单拒绝。
+- 用户自带 `-m/--model` 或 `-c model_provider=` 时以用户为准，本次不注入相应参数。
+- 插件路径：优先 `createTerminal({ shellPath: <可执行文件>, shellArgs: [...注入参数, ...], cwd, env })` 以 argv 直启（无 shell 二次解析）；不可行时退回 `command` 字符串 + §13 的降级行。
 
-### 5.3 OpenCode → 启动时注入 `OPENCODE_CONFIG_CONTENT`
+### 5.3 OpenCode → 启动注入 `OPENCODE_CONFIG_CONTENT`
 
 注入 JSON（优先级高于项目 `opencode.json`）：
 
@@ -143,222 +192,249 @@
 {
   "model": "<providerId>/<主模型>",
   "small_model": "<providerId>/<haiku 行模型>",
-  "provider": {
-    "<providerId>": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "<配置名>",
-      "options": { "baseURL": "<baseUrl>", "apiKey": "<apiKey>" },
-      "models": { "<主模型>": {}, "<haiku 行模型>": {} }
-    }
-  }
+  "provider": { "<providerId>": { "npm": "<适配器>", "name": "<配置名>",
+    "options": { "baseURL": "<baseUrl>", "apiKey": "<apiKey>" },
+    "models": { "<主模型>": {}, "<haiku 行模型>": {} } } }
 }
 ```
 
-- `api: "openai-responses"` / `"openai-chat"` → 自定义 provider + `@ai-sdk/openai-compatible`；
-  `api: "anthropic"` → 覆盖内置 `anthropic` provider 的 `options.baseURL` / `apiKey`（实测项 3；不生效则退化为自定义 provider + `@ai-sdk/anthropic`，再不行则面板标"OpenCode 暂不支持该端点"）。
-- 密钥只存在于子进程环境变量中，不落盘。
+- `api: openai-responses` / `openai-chat` → 自定义 provider + `@ai-sdk/openai-compatible`（`/v1/responses` 用 `@ai-sdk/openai`）；`api: anthropic` → **覆盖内置 `anthropic` provider 的 `options.baseURL` / `options.apiKey`**（已实测支持，§3.1）。兜底：自定义 provider + `@ai-sdk/anthropic`（该组合有社区报告的丢 apiKey 问题，仅在覆盖内置 provider 不生效时使用）。
+- 模型 ID 走注入配置的 `"model": "<provider>/<模型>"`（OpenCode 没有模型相关环境变量，§3.1）；自定义 provider 时同时给出 `models` 条目，内置 provider 覆盖端点时不需要。
+- 密钥只在子进程环境变量里，不落盘。
 
-### 5.4 切换、清除与回滚
+### 5.4 投影刷新（库改了，项目如何跟上）
 
-| 操作 | 行为 |
+- **Codex / OpenCode**：每次启动都从库实时生成 → 改库即生效。
+- **Claude**：投影是项目内物化文件，启动与 `avenic model use|apply|show` 时比较 `projection.claude.fingerprint` 与库中当前 profile 的指纹；不一致 → 自动重新投影（事务写，§5.5）后继续。指纹 = `hashContent(JSON.stringify(用于投影的字段, 键排序))`（`hashContent` 已有，§3.2）。
+- 指纹一致 → 不做任何写入（避免每次启动都改文件时间戳）。
+
+### 5.5 事务与并发
+
+**写入必须走事务**（不允许两个裸 `writeFile`）：
+
+1. 读取现有 `~/.avenic/models.json`（不存在则空库）与 `.agents/model.json`、`.claude/settings.local.json`；
+2. 校验 + 生成两份新内容（库、项目文件/投影文件）；
+3. 生成内容再校验（JSON 可解析、受管键与 entries 一一对应）；
+4. 把新内容写到**与目标同目录**的临时文件（同卷才能 rename）：`<target>.tmp-<pid>-<ts>`；
+5. 用既有 `replaceStagedFiles(replacements, tempDirectory)` 完成"备份 → rename → 失败回滚"（§3.2）；备份目录用项目内 `.agents/tmp/model-<pid>-<ts>/`（已被 gitignore，deinit --purge 会清理）；
+6. 成功后 `revision += 1` 写回两边（revision 属于第 2 步生成的内容）。
+
+并发：
+
+- **进程内**：VS Code 侧复用现有 `MutationQueue`（§3.2）；
+- **跨进程 / 跨窗口**：采用 **原子替换 + revision 戳 + 重读重放**：写入前比对读到的 `revision` 与磁盘现值，不一致则重读并把同一变异重放（最多 3 次），仍失败则报错"配置被其他窗口或进程修改，请重试"。不引入新的文件锁：仓库现有的锁实现（`withLaunchLock`，`sessions.mjs:222-253`）是会话启动专用且未导出，抽出它会改动已测试的会话代码；对"整文件替换 + 版本戳"的配置场景，重读重放已能杜绝静默丢失更新。
+- 崩溃/断电：因为最终是 `rename` 覆盖，任何时刻磁盘上要么是旧内容要么是新内容，不会出现半截 JSON。
+
+## 6. 回滚记账（B3）
+
+`projection.claude.entries[]` 逐条记录 `{ path, before, written }`：
+
+- `before.exists === false` 表示该键此前不存在；`true` 则保存原值（深拷贝）。
+- 回滚（`clear`、切换 profile、dangling 清理）逐条执行：
+
+| 当前值 vs `written` | 动作 |
 |---|---|
-| 切换 profile（`use`） | 按新 profile 重新投影；先按旧 profile 的 `applied` 回滚受管键，再写新的 |
-| 未激活（`active: null`） | 启动时**不注入任何模型配置**；`.claude/settings.local.json` 中受管键已按 `applied` 移除 |
-| 清除（`clear`） | 移除受管键；若文件因此变空**且** `applied.claude.created` 为真（文件由本功能创建）→ 删除文件；否则保留空对象文件 |
-| 删除某 profile | 若它是激活项则先执行 `clear`；仅删该 profile 的数据 |
-| 回滚失败（文件被外部改坏） | 保留原文件不动，报错并给出"手工检查 `.claude/settings.local.json`"的提示；不改动 `.agents/model.json` |
+| 深相等 | `before.exists` → 写回原值；否则删除该键 |
+| 不相等 | **不动**，记为 `conflict` 并报告（键路径 + 掩码后的当前值），提示用户手工处理 |
 
-### 5.5 与 A（Skills 单副本）的启动补齐共存
+- 收尾：所有 entries 处理完后，若 `env` 变成空对象且 `created === false`，保留空 `env`（不删用户可能有意留下的结构）；若 `created === true` 且文件为空对象 → 删除该文件。
+- 顶层 `attribution`、`env.*` 全部走同一逻辑，不做特例。
+- 回滚同样走 §5.5 的事务；回滚完成后清空 `projection.claude`（保留 `file`/`created` 供诊断）并把 `activeProfileId` 置 `null`。
 
-两者都在 `dispatchAgent` 的默认分支与插件 `prepareAgentLaunch` 上挂载：A 挂 `ensureSkillLinks`，B 挂模型注入。**B 的注入发生在 A 之后**（先确保技能链接，再决定启动环境），互不依赖；实现时各自独立，不做耦合。
+## 7. dangling 引用（B4）
 
-## 6. CLI：`avenic model`
+`activeProfileId` 指向的 profile 在库中不存在时：
 
-| 命令 | 说明 |
+1. 触发点：任何 `avenic model …` 命令、`avenic <agent>` 启动前、插件面板加载/启动前、状态查询；
+2. 行为：按 §6 **安全回滚**旧投影（用户手改过的键不动）→ 清空 `projection.claude.entries`、把 `activeProfileId` 置 `null` → 本次启动不注入任何模型配置；
+3. 输出固定文案：`Profile "foo" no longer exists; Avenic configuration disabled for this project.`
+4. 幂等：清理后 `activeProfileId === null`，后续不再重复报错（不会每次启动都失败）。若回滚中发现 `conflict`，文案追加一行冲突键提示。
+
+## 8. CLI：`avenic model`
+
+| 命令 | 语义 |
 |---|---|
-| `avenic model` / `avenic model show` | 显示当前项目配置：文件路径、激活 profile、端点、掩码密钥、模型映射、三个 Agent 的投影状态 |
-| `avenic model list` | 列出所有 profile（`>` 标记激活项） |
-| `avenic model use <name\|id>` | 激活并投影；无参数且是终端 → clack 风格单选 picker（沿用 `hub select` 的交互件） |
-| `avenic model set [--name <n>] [--base-url <u>] [--api-key <k>] [--api <anthropic\|openai-chat\|openai-responses>] [--model <m>] [--json <file\|->]` | 新建或更新；`--json -` 从标准输入读整份配置（脚本可用） |
-| `avenic model remove <name\|id>` | 删除（激活项需二次确认） |
-| `avenic model test [name\|id]` | 最小真实请求（§9） |
-| `avenic model clear` | 取消激活并回滚投影 |
+| `avenic model` / `show` | 库路径、项目文件路径、当前项目绑定的 profile、掩码密钥、三 Agent 兼容性/投影状态；dangling 时按 §7 处理 |
+| `avenic model list` | 列出**本机库**的 profile，并标记当前项目用的是哪一个（无项目上下文时只列库） |
+| `avenic model add` / `set [--name <n>] …` | 管理**本机库**的 profile（`--base-url`/`--api-key`/`--api`/`--model`/`--json <file\|->`）；省略 `--name` 时更新项目当前绑定的 profile，没有绑定则要求显式 `--name` |
+| `avenic model edit <id>` | 打开编辑流程（终端交互，与 `add` 同一套字段） |
+| `avenic model use <id>` | 把库中 profile **绑定到当前项目**并投影（无参数且 TTY → clack 单选 picker，沿用 `hub select` 交互件） |
+| `avenic model clear` | 取消当前项目绑定并按 §6 安全回滚 |
+| `avenic model remove <id>` | 删除**本机库**中的 profile（提示会影响的项目无法枚举，按 §7 处理） |
+| `avenic model test <id>` | 最小真实请求（§11）；不指定 id 时测当前绑定 |
 
-- `set` 省略 `--name` 时更新**当前激活**的 profile；没有激活项则为用法错误（提示补 `--name` 新建），避免"以为改了 A、其实新建了 B"。
-- 所有输出**掩码密钥**（`sk-…f3a2`），`--json` 的原始内容只回显识别结果、不回显密钥。
-- `avenic model` 必须注册在 `packages/cli/src/cli/dispatcher.mjs:397-438` 的**兜底分支之前**（未知命令会落到 skills 分发器当 Pack id 处理）；`model` 与现有顶层命令、Agent 名均不冲突。
-- 退出码：0 成功；1 用法/校验错误；2 测试连接失败（与"配置本身非法"区分，供脚本判断）。
+- 所有输出掩码密钥；`--json` 只回显识别结果。
+- `model` 必须注册在 `dispatcher.mjs:397-439` 的**兜底分支之前**（未知命令会落到 skills 分发器当 Pack id 处理）；与现有顶层命令、Agent 名均不冲突。
+- 退出码：0 成功；1 用法/校验错误；2 测试连接失败。
+- 保留 `--scope`-less 语义：**没有 `-g/全局` 概念**——库永远是设备级，绑定永远是项目级。
 
-## 7. 插件界面
+## 9. 插件界面
 
-### 7.1 形态与入口
+### 9.1 形态与入口
 
-- 入口命令：`avenic.model.open`（标题「Avenic: 模型配置」）打开**编辑器标签页**（`WebviewPanel`，`ViewColumn.Active`，单例：重复打开聚焦已有标签页）；`avenic.model.switch`（标题「Avenic: 切换模型配置」）= 现有 profile 的 QuickPick + 立即激活，即"一键切换"。
-- 另在 Agents 视图标题栏与 Overview 面板各放一个入口（标题栏按钮 + Overview 卡片里的"模型配置"行）。
-- 资源与 CSP 约定沿用现有 Dashboard：静态资源放 `media/model/`（`view.html` 模板 + `main.js` + `style.css`），`{{nonce}}` / `{{cspSource}}` 占位符注入，`localResourceRoots` 指向 `media`，**无远程资源、不用 `innerHTML` 渲染用户数据、颜色走 `--vscode-*` 主题变量**；图标用内联 SVG（不引入 codicon 字体，因而不需要 `font-src`）。
+- `avenic.model.open`（「Avenic: 模型配置」）打开**编辑器标签页** `WebviewPanel`（`ViewColumn.Active`，单例，重复打开聚焦已有面板）；`avenic.model.switch`（「Avenic: 切换本项目模型配置」）= 库中 profile 的 QuickPick + 绑定当前项目（"一键切换"）。
+- 入口：命令面板 + Agents 视图标题按钮 + Overview 面板内的"模型配置"行。
 
-### 7.2 面板结构
-
-**列表态**（cc-switch 风格卡片列）：
+### 9.2 面板内容（两层）
 
 ```
-┌ ● 小米 MiMo（项目）              当前生效   [启用] [编辑] [复制] [测试] [删除] ┐
-│   https://token-plan-cn.xiaomimimo.com/anthropic                            │
-│   Claude ✓（已写入 settings.local.json）  Codex ✗（需 Responses API）  OpenCode ✓ │
-└──────────────────────────────────────────────────────────────────────────────┘
+本机配置库（~/.config/avenic/models.json）               [+ 新建] [粘贴导入] [刷新]
+┌ ● 小米 MiMo                            [用于当前项目] [编辑] [复制] [测试] [删除] ┐
+│   https://token-plan-cn.xiaomimimo.com/anthropic     密钥 sk-…f3a2                │
+│   主模型 mimo-v2.5-pro    Claude ✓   Codex ✗ (需 Responses API)   OpenCode ✓      │
+└──────────────────────────────────────────────────────────────────────────────────┘
+┌   项目 B 配置（Kimi）                   [用于当前项目] [编辑] [复制] [测试] [删除] ┐
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+当前项目：C:\work\proj-a
+   本项目使用：小米 MiMo      [取消本项目绑定]
+   投影：.claude/settings.local.json（14 个键，指纹一致）    Codex/OpenCode：启动时注入
 ```
 
-- 每张卡片：名称（可点击编辑）、端点、密钥掩码、当前生效徽标、三个 Agent 的可用性（✓ / ✗ + 一句话原因）、悬停操作行。
-- 顶部：[+ 新建配置] [粘贴导入] [刷新]；未激活时显示一行"当前项目未启用模型配置，`avenic claude` 使用全局配置"。
+- 卡片上的按钮是 **"用于当前项目"**（绑定），不是"启用/设为全局"——不修改任何 Agent 的全局配置。
+- 当前项目绑定的那张卡片显示 `当前项目` 徽标。
+- **没有 workspace 时**：库的增删改查照常可用，"用于当前项目"禁用并显示"未打开项目文件夹"（与现有 `resolveRoot() === null` 的处理一致，§3.2）。
 
-**编辑态**（占满标签页，分区块，底部固定 [保存] [取消]）：
+### 9.3 编辑面板
 
-| 区块 | 控件 |
-|---|---|
-| 预设 | 6 个磁贴（见下），点击预填端点与 API 类型 |
-| 基本信息 | 配置名称、API 类型（anthropic / openai-chat / openai-responses） |
-| 连接 | Base URL（含"将请求：`<解析后的测试地址>`"实时预览）、API Key（密码框 + 显示/隐藏 + 掩码回显）、认证字段（`ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY` / `Authorization: Bearer` / `x-api-key`，默认随 API 类型） |
-| 模型映射 | 6 行表格：主模型、Opus、Sonnet、Haiku、Fable、Subagent；每行"模型 ID + 显示名（Subagent 无）+ 1M 勾选（仅 Opus/Sonnet）"，四个角色行提供"同主模型"一键填充 |
-| 开关 | 6 个开关（Teams、Tool Search、Max Effort、禁用非必要流量、禁用自动更新、隐藏 AI 署名），每行下方显示实际写入的键名 |
-| 高级 · 自定义 env | 键值表（增删行、重复键校验） |
-| 高级 · 按 Agent 覆盖 | Claude / Codex / OpenCode 各自的 baseUrl + API 类型（默认继承） |
-| 高级 · 其他 | Claude 顶层透传键（只读 JSON 预览 + "在编辑器中打开"）、Codex（provider id / env 键名 / reasoning effort）、OpenCode（provider id / npm 适配器） |
-| 底部预览 | 「最终将写入 `.claude/settings.local.json`」的折叠 JSON 预览（密钥掩码；含"仅预览、实际写入以保存为准"说明） |
+分区块（占满标签页，底部固定 [保存] [取消]）：预设磁贴（6 个，只预填端点与 API 类型）→ 基本信息（名称、API 类型）→ 连接（Base URL + "将请求：`<解析后的测试地址>`"实时预览、API Key 密码框、认证字段）→ 模型映射表（主模型/Opus/Sonnet/Haiku/Fable/Subagent；模型 ID + 显示名 + 1M 勾选仅 Opus/Sonnet）→ 6 个开关（Teams/Tool Search/Max Effort/禁用非必要流量/禁用自动更新/隐藏 AI 署名，每行显示实际写入的键名）→ 高级（自定义 env 键值表；按 Agent 覆盖端点/API 类型；Codex provider id / env 键名 / reasoning effort；OpenCode provider id / npm 适配器；Claude 顶层透传键只读预览 + 「在编辑器中打开」）→ 底部"最终将写入 `.claude/settings.local.json`"的折叠 JSON 预览（掩码）。
 
-预设（仅预填端点和 API 类型；**不预填模型 ID**——服务商的模型 ID 变动频繁，写死会立刻过期）：
+- 预设端点 URL 实现时按各家文档核对；磁贴下方标注"预设只是起点，请以服务商文档为准"。
+- **不预填模型 ID**（服务商模型 ID 变动频繁，写死会立刻过期）。
 
-| 预设 | API 类型 | 备注 |
-|---|---|---|
-| Anthropic 官方 | anthropic | |
-| DeepSeek | openai-chat | |
-| Kimi / Moonshot | anthropic | 官方有 Anthropic 兼容入口 |
-| 智谱 GLM | anthropic | |
-| OpenRouter | openai-chat | |
-| 硅基流动 SiliconFlow | openai-chat | |
+### 9.4 粘贴区
 
-（端点 URL 在实现时按各家文档核对一遍再写进代码；磁贴下方标注"预设只是起点，请以服务商文档为准"。）
+**① JSON 粘贴**：接受 Claude settings 形态（`{"env":{…}}`）、扁平形态（`baseUrl`/`api_key`/`authToken`…大小写与下划线不敏感）、cc-switch 风格包装（`{"settingsConfig":{…}}`，实现时按真实导出样例对齐）；未识别键：Claude settings 形态落到 `claude.settings` 透传区，其他形态只在预览里逐条列出由用户勾选，**不写入**；解析失败 → 提示并引导到自由文本标签页。
 
-### 7.3 粘贴区（两种）
+**② 自由文本粘贴**：整段 env 块 / `export FOO=bar` / 聊天片段 → 「识别」→ 结果表（字段 / 掩码值 / 来源片段 / 勾选框）→ 「填入表单」。
+- 规则：首个 `https?://…` → 端点；键名命中 `ANTHROPIC_BASE_URL|BASE_URL|base_url|api_base` → 端点；`ANTHROPIC_AUTH_TOKEN|ANTHROPIC_API_KEY|api[_-]?key|auth[_-]?token|token` 或 `sk-[A-Za-z0-9_-]{8,}` → 密钥；`*_MODEL*|model|模型` 行按角色前缀落位（无前缀 → 主模型）。
+- 多候选全部列出，默认选第一个并标注"另有 N 个候选"，**不静默取第一个**；模型名只在出现明确模型键时才识别，否则留空并提示手工填写。
+- 粘贴永不自动保存，必须点 [保存]。
 
-面板顶部「粘贴导入」打开一个全屏抽屉，两个标签页：
+### 9.5 multi-root 与无 workspace（B6）
 
-**① JSON 粘贴**：把整份 JSON 丢进大文本框 → 立刻解析 → 表单字段自动补全。
-- 接受三种形态：Claude settings 形态（`{ "env": { … } }`）、扁平形态（`{ baseUrl, apiKey, model, … }`，键名大小写/下划线不敏感：`base_url` / `api_base` / `authToken` 等）、cc-switch 风格（`{ "settingsConfig": { … } }` 等包装字段，实现时按真实导出样例对齐）。
-- 未识别的键**原样保留**并落到 `claude.settings` 透传区（保存时写回），不丢信息。仅当粘贴内容是 Claude settings 形态时如此；其他形态（扁平 / 包装字段）的未识别键只在粘贴预览里逐条列出，由用户勾选是否保留——避免把别的工具的私有关键字误写进 Claude 配置。
-- 解析失败（不是 JSON）→ 提示并一键切到自由文本标签页。
+- 复用现有语义：单根 → 直接用；多根 → **优先 active editor 所属的 workspace folder**（本次新增：纯函数 `projectRootForActiveEditor(folders, activeUri)` 放进 `src/project.ts`，由 `extension.ts` 传入 `activeTextEditor?.document.uri`），否则沿用"上次记住的合法根" → 否则 QuickPick；**任何路径都不允许静默取 `folders[0]`**。
+- 库的管理不依赖 projectRoot；只有"用于当前项目 / 取消绑定 / 项目状态"需要，且为 null 时按钮禁用并给出提示。
 
-**② 自由文本粘贴**：把 env 块、`export FOO=bar` 行、别人发的聊天片段整段丢进去，点「识别」，展示识别结果表（字段 / 值（掩码）/ 来源片段 / 勾选框）→ 用户确认后点「填入表单」。
-- 识别规则（全部在 core 中实现、可单测）：URL 取首个 `https?://…`；键名行 `ANTHROPIC_BASE_URL|BASE_URL|base_url|api_base` → 端点；`ANTHROPIC_AUTH_TOKEN|ANTHROPIC_API_KEY|api[_-]?key|auth[_-]?token|token` → 密钥；`*_MODEL*|model|模型` 行 → 对应角色（带角色前缀时直接落位）；`sk-[A-Za-z0-9_-]{8,}` → 密钥候选。
-- 同一字段多个候选 → 全部列出，默认选中第一个并标注"另有 N 个候选"，**不静默取第一个**。
-- 模型名只在文本中出现明确的模型键时才识别；识别不到就留空并提示"未识别到模型名，请手工填写"（宁可少填，不可乱填）。
-- **粘贴不会自动保存**：一律先落到表单，再由用户点 [保存]。
+### 9.6 远程 / WSL（B7）
 
-### 7.4 交互反馈
+- 库文件落在 **CLI / Extension Host 实际运行的环境**（本地 Windows → Windows 家目录；WSL 窗口 → WSL home；Remote SSH → 远端 home），彼此独立。
+- 本版不做云同步 / 跨设备同步 / Windows↔WSL 同步 / Avenic 账号或服务端。
+- 面板在"当前项目"区显示库文件路径，便于用户确认自己在哪个环境。
 
-- 保存：走 core 的"校验 → 写 `.agents/model.json` → 投影"三步；成功后面板刷新、通知"已保存并生效"；失败按字段定位报错（端点非法 / 密钥为空 / 模型 ID 非法 / 自定义 env 冲突 / 目标文件不可写）。
-- 启用：写 `active` 并投影，列表与三个 Agent 的可用性立即刷新。
-- 测试：按钮进入 loading，结果以内联条展示（§9），不弹模态框。
-- 所有 mutation 复用现有 `MutationQueue`（避免与 Agent/Skills 操作并发写文件）。
+### 9.7 消息与资源约定
 
-### 7.5 插件侧零 fs 逻辑
+- 复用 Dashboard 约定：`media/model/{view.html,main.js,style.css}`，`{{nonce}}`/`{{cspSource}}` 注入、`localResourceRoots` 指向 `media`、无远程资源、不用 `innerHTML` 渲染用户数据、颜色走 `--vscode-*`；图标用内联 SVG（不引入 codicon 字体）。
+- 消息协议放 vscode-free 模块（`src/model/protocol.ts`，仿 `dashboard/protocol.ts` 的白名单校验），面板数据组装放 vscode-free 的 `src/model/state.ts`（因为测试没有 vscode stub，§3.2）。
+- **插件侧零业务逻辑**：解析、校验、归一化、投影、命令构造、测试请求全部在 `@avenic/core`；面板 JS 只做 DOM 与消息。
 
-面板 JS（`media/model/main.js`）只做 DOM 与消息；**解析、校验、归一化、投影拼装、命令构造全部在 `@avenic/core`**（`.mjs`，有单测）。插件侧仅调用 core 导出的函数与既有服务层。这条与 A（`ensureSkillLinks`）保持一致。
+## 10. 粘贴识别（core）
 
-## 8. 粘贴识别（core）
+`packages/core/src/model/parse.mjs`：`parseConfigJson(text)`、`parseConfigText(text)`、`recognizeEnvMap(env)` —— 纯函数、无 IO，供 CLI（`--json`）、插件、测试共用。
 
-新模块 `packages/core/src/model/parse.mjs`：
-
-- `parseConfigJson(text) → { profile, recognized: [...], unknown: {...} }`
-- `parseConfigText(text) → { candidates: [{ field, value, source, confident }], unknown: [...] }`
-- `recognizeEnvMap(env) → profile 字段`（安装/导出等场景复用）
-- 纯函数、无 IO、无副作用，供 CLI（`--json`）、插件、测试三方复用。
-
-## 9. 测试连接（最小真实请求）
-
-- 目标地址按 API 类型解析（表单实时显示解析结果）：
+## 11. 测试连接（最小真实请求）
 
 | API 类型 | 请求 |
 |---|---|
-| anthropic | `POST <baseUrl>/v1/messages`，头 `x-api-key`（或 `Authorization: Bearer`，随认证字段）+ `anthropic-version: 2023-06-01`，体 `{ "model": <主模型>, "max_tokens": 1, "messages": [{"role":"user","content":"ping"}] }` |
-| openai-chat | `POST <baseUrl>/v1/chat/completions`，头 `Authorization: Bearer`，体 `{ "model": …, "max_tokens": 1, "messages": […] }` |
-| openai-responses | `POST <baseUrl>/v1/responses`，头 `Authorization: Bearer`，体 `{ "model": …, "input": "ping", "max_output_tokens": 16 }`（部分服务商对下限有要求） |
+| anthropic | `POST <baseUrl>/v1/messages`，`x-api-key`（或 `Authorization: Bearer`）+ `anthropic-version: 2023-06-01`，体 `{model, max_tokens: 1, messages:[{role:"user",content:"ping"}]}` |
+| openai-chat | `POST <baseUrl>/v1/chat/completions`，`Authorization: Bearer`，体 `{model, max_tokens: 1, messages:[…]}` |
+| openai-responses | `POST <baseUrl>/v1/responses`，`Authorization: Bearer`，体 `{model, input: "ping", max_output_tokens: 16}` |
 
-- baseUrl 以 `/v1` 结尾时按"已含版本段"处理，不再拼一次（表单预览里能直接看到最终地址）。
-- 超时 15s；结果分类：`2xx` 成功（显示耗时、服务端返回的模型名、`usage` 若存在）；`401/403` 密钥无效或无权限；`404` 地址路径不对（提示检查 baseUrl 与 API 类型）；`429` 限流/配额；`5xx` 服务端错误；网络/DNS/TLS 失败 → 不可达（与"配置错误"区分）；超时 → 无响应。
-- 失败时**同时给出"已确认可用/不可确认"的边界说明**：连接失败 ≠ 密钥无效（例如 404 时不说"密钥错误"）。
-- 提示语必须写明：**测试会向该地址发送一次真实请求，消耗极少量额度**；密钥只发往用户填写的地址，avenic 自身没有任何服务端。
+- baseUrl 以 `/v1` 结尾时按"已含版本段"处理；表单实时显示解析后的最终地址。
+- 超时 15s；分类：2xx 成功（耗时 + 服务端返回模型名 + `usage`）、401/403 密钥无效或无权限、404 路径不对、429 限流/配额、5xx 服务端错误、网络/DNS/TLS 不可达、超时无响应。失败时说明"连接失败 ≠ 密钥无效"。
+- 提示语必须写明：会向该地址发送一次真实请求、消耗极少量额度；密钥只发往用户填写的地址；avenic 自身没有服务端。
 
-## 10. 安全与 Git
+## 12. 安全与 Git
 
-1. `.agents/model.json` 与 `.claude/settings.local.json` 含明文密钥。两者都加入项目 `.gitignore`：新增独立规则表 `MODEL_RULES`（`packages/core/src/model/gitignore.mjs`）与 `ensureModelGitignore(projectRoot)`，只在"保存模型配置"时调用（**不并入 `REQUIRED_RULES`**，避免改变 `init` 的既有输出与断言），并把 `.agents/model.json` 加入 `removeRuntimeGitignore` 的可移除集合 —— 但**仅在该文件不存在时**才移除规则（`gitignore.mjs:52-56` 的 guard），防止 deinit 后密钥文件变成"可提交"。
-2. 密钥显示一律掩码（前 3 后 4）；CLI 不回显明文；不写日志；错误信息里出现密钥时同样掩码。
-3. 注入值的字符白名单（保存时校验，不合格直接拒绝）：
-   - baseUrl：`^https?://[A-Za-z0-9._~:/?#\[\]@!+,;=()\-]+$`（排除空格、引号、反引号、`$`、`&`、`%` —— 既避免 shell 语义，也避免插件拼接问题）
-   - provider id：`^[a-z0-9_]{1,32}$`；envKey：`^[A-Z][A-Z0-9_]{0,63}$`；模型 ID：`^[A-Za-z0-9._:\-/]{1,128}$`
-4. `.claude/settings.local.json` 的写入**只增不删**：仅删除 `applied.claude.keys` 中记录过的键；其余键（含用户自行添加的同名键在 `applied` 之前就存在的场景）不动。
-5. 不写任何用户主目录下的全局配置（`~/.claude`、`~/.codex`、`~/.config/opencode` 一律不碰）。
+1. **库文件**（`stateRoot/models.json`）：POSIX `0600`；Windows 依赖用户目录 ACL（文档写明）。
+2. **项目文件**（`.agents/model.json`）：含 `before` 原值（可能包含用户此前手工写入的密钥）——精确回滚的必要代价；gitignored + 0600 + 所有输出掩码。**不接受**用"只存哈希"替代：那会在 `clear` 时丢失用户原值，违反 B3。
+3. **投影文件**（`.claude/settings.local.json`）：写入时确保项目 `.gitignore` 含该路径（新增独立规则表 `MODEL_RULES` + `ensureModelGitignore(projectRoot)`，只在保存模型配置时调用，**不并入 `REQUIRED_RULES`**，避免改变 `init` 的既有输出与断言）。
+4. 两条规则（`.agents/model.json`、`.claude/settings.local.json`）在 `removeRuntimeGitignore`（`gitignore.mjs:52-56`）的可移除集合内，但**仅当对应路径已不存在**才可移除——防止 deinit 之后密钥文件变成可提交。
+5. 密钥掩码（前 3 后 4）覆盖 CLI、通知、日志、错误信息；**不写日志**；不参与 Git；不上传；无 telemetry。
+6. 注入值白名单（保存即校验，不合格拒绝保存）：
+   - baseUrl：`^https?://[A-Za-z0-9._~:/?#\[\]@+,;=\-]+$` —— 允许 `? # [ ] @ + , ; =`（带查询串的网关地址可用），拒绝空白、`"` `'`、反引号、`$`、`%`，以及 cmd 元字符 `& ^ | < > ( ) !`。
+     - `%` 必须拒绝：cmd 里无法转义，引号内同样会展开变量（§5.2）。
+     - `&` 在 §5.2 的 `process.mjs` 加固后技术上可安全传递，但本版仍拒绝以缩小注入面，并提示"请使用不带 `&` 的地址"；若日后要放开，只需改这一行白名单。
+   - provider id `^[a-z0-9_]{1,32}$`；envKey `^[A-Z][A-Z0-9_]{0,63}$`；模型 ID `^[A-Za-z0-9._:\-/]{1,128}$`。
+7. **不使用 VS Code `SecretStorage` / `globalState` / extension globalStorage 作为 SSOT**：CLI 无法自然共享同一套数据，会产生两套事实来源。未来若做 OS keychain，另立 spec。
+8. 不写 `~/.claude`、`~/.codex`、`~/.config/opencode` 下任何文件；不修改三个 Agent 自身的全局配置。
 
-## 11. 降级与错误处理
+## 13. 降级与错误处理
 
 | 情况 | 处理 |
 |---|---|
-| Codex `-c` 引号穿透在插件终端不稳定（实测项 1） | 改用 `shellPath/shellArgs` argv 直启；两者都不可行才启用 `.agents/local/codex/config.toml` + `CODEX_HOME` 组合 home 的备选方案（不在 v1 实现，需另立 spec） |
-| Claude Code 在 `CLAUDE_CONFIG_DIR` 重定向下不读项目 `.claude/settings.local.json`（实测项 2） | 补一条启动时环境注入（仅 project 认证模式），并在面板标注该模式的差异 |
-| OpenCode 内置 anthropic provider 覆盖不生效（实测项 3） | 退化为自定义 provider + `@ai-sdk/anthropic`；仍不生效 → 面板标"OpenCode 暂不支持该端点"，其余两个 Agent 不受影响 |
-| 端点协议与 Agent 不兼容（最典型：Anthropic 风格端点 + Codex） | **不静默跳过**：配置列表与 `avenic model show` 明确标 ✗ 与原因，启动该 Agent 时打印一行"该配置不适用于 Codex，本次使用其全局配置" |
-| `.claude/settings.local.json` 不可写（只读/被占用） | 保存失败并保留原文件；`.agents/model.json` 也不写入（两次写要么都成功、要么都不动），提示改用"按 Agent 覆盖"或检查目录权限 |
-| `.agents/model.json` 被手工改坏 | `model` 命令报可读错误并指向行号；插件面板显示"配置损坏"卡片 + 「在编辑器中打开」，不做自动修复 |
-| 无 profile / 未激活 | 所有注入静默跳过；`avenic <agent>` 行为与今天完全一致 |
+| `.cmd` 链路上参数被 cmd 破坏（仅纯 npm/bun 安装的 Codex 会走到；`& ^ |` 已由 §5.2 的加固解决，`%` 由白名单拒绝） | ① 插件改用 `createTerminal({shellPath, shellArgs})` argv 直启（无 shell）；② 若插件终端也做不到，插件只注入 env、argv 由 CLI 承担（提示"请用 `avenic codex` 以获得项目模型"）；③ 最后备选：`.agents/local/codex/config.toml` + `CODEX_HOME` 组合 home（**不在本版实现**，需另立 spec） |
+| 实测项 2：project 认证下 Claude 不读项目 settings.local.json | 补一条启动 env 注入（仅 project 认证模式），并在面板标注差异 |
+| 覆盖内置 anthropic provider 的端点仍不生效（个别版本/端点） | 退化自定义 provider + `@ai-sdk/anthropic`；仍不生效 → 面板标"OpenCode 暂不支持该端点"（其余两个 Agent 不受影响） |
+| 端点协议与 Agent 不兼容（典型：Anthropic 端点 + Codex） | **不静默跳过**：卡片显示 ✗ + 原因；`avenic model show` 同样标注；启动该 Agent 时打印"该配置不适用于 Codex，本次使用其全局配置" |
+| 投影文件不可写 / 被占用 | 事务不做任何替换（两边都保持原样），报错并提示"按 Agent 覆盖"或检查权限 |
+| 库或项目文件被手工改坏 | 命令报可读错误并指向文件；面板显示"配置损坏"卡片 + 「在编辑器中打开」；不自动修复、不覆盖 |
+| 无绑定 / 库为空 | 所有注入静默跳过，`avenic <agent>` 行为与今天一致 |
+| 回滚时发现用户改过受管键 | 不动该键，报告 conflict（§6） |
 
-## 12. 影响面
+## 14. 一致性检查（machine library / project binding / projection / rollback / CLI / VS Code / launch injection / delete profile / dangling binding / remote / multi-root / security）
+
+| 关注点 | 单一语义 |
+|---|---|
+| 库是 SSOT | 只有 `stateRoot/models.json` 存 profile；项目文件只存绑定与记账；插件不存副本 |
+| 绑定是项目态 | 只有 `.agents/model.json.activeProfileId`；`null` = 不注入 |
+| 投影 | Claude 物化（带指纹与 entries）；Codex/OpenCode 启动注入（无记账） |
+| 回滚 | 一律走 §6 的 before/written 判定；冲突不覆盖 |
+| 删除 profile | 只动库；引用它的项目在下次触达时按 §7 清理并提示 |
+| dangling | 回滚 + 置 null + 固定文案 + 幂等 |
+| CLI / VS Code | 同一套 core 函数；插件零业务逻辑；两者写同一文件、同一事务、同一 revision 规则 |
+| 启动注入 | CLI 与插件都读库、都做 dangling 检查、都刷新 Claude 投影（指纹） |
+| remote / multi-root | 库随 Extension Host 环境；项目根用既有解析 + active editor 优先，不静默取 folders[0] |
+| 安全 | 明文密钥只在本机库 + 项目记账 + 项目投影三处，均不入 Git、均掩码 |
+
+## 15. 影响面
 
 | 位置 | 改动 |
 |---|---|
-| `packages/core/src/model/*.mjs` | **新增**：`schema.mjs`（校验/归一化）、`store.mjs`（读写 `.agents/model.json`）、`project-claude.mjs`（settings.local.json 合并/回滚）、`inject.mjs`（codex argv / opencode env / claude env）、`parse.mjs`（§8）、`presets.mjs`、`probe.mjs`（§9）、`gitignore.mjs`（§10.1） |
+| `packages/core/src/model/*.mjs` | **新增**：`paths.mjs`（`modelsFile`）、`schema.mjs`（校验/归一化/指纹）、`library.mjs`（库读写 + revision + 事务）、`binding.mjs`（项目文件读写 + dangling + clear）、`project-claude.mjs`（合并投影/回滚 entries）、`inject.mjs`（codex argv / opencode env / claude env）、`parse.mjs`、`presets.mjs`、`probe.mjs`、`gitignore.mjs`（MODEL_RULES） |
 | `packages/core/src/index.mjs` | 导出新模块 |
-| `packages/core/src/runtime/gitignore.mjs` | `removable` 集合加 `.agents/model.json` + "文件仍存在则不删规则" guard |
-| `packages/cli/src/cli/dispatcher.mjs` | `model` 顶层命令分发（必须在兜底分支前）；`dispatchAgent` 启动注入接入点（`:243-245` 环境、`:297` argv） |
-| `packages/cli/src/cli/model-cli.mjs` | **新增**：`model` 子命令实现与输出 |
-| `packages/cli/vendor/core-src/**` | `npm run sync-core` 同步（`test/sync.test.mjs` 守护） |
-| `packages/vscode/src/dashboard/model-panel.ts` | **新增**：`WebviewPanel` 薄壳（模板注入、消息白名单守卫、数据回传） |
-| `packages/vscode/src/services/model.ts` | **新增**：把 core 的读写/投影/测试包装成服务层 |
-| `packages/vscode/src/commands/model-commands.ts` | **新增**：`avenic.model.open` / `avenic.model.switch` |
-| `packages/vscode/src/services/agents.ts` | 启动注入（argv + env），与 A 的 `ensureSkillLinks` 相邻 |
-| `packages/vscode/media/model/{view.html,main.js,style.css}` | **新增**（Dashboard 同款 CSP/主题约定） |
-| `packages/vscode/package.json` | 2 个命令 + 视图标题按钮 + Overview 入口 |
+| `packages/core/src/runtime/process.mjs` | cmd 行拼接的引号触发条件加 `& \| ^ < > ( )`（§5.2 加固；独立小改动，随 core 一起发布） |
+| `packages/core/src/runtime/gitignore.mjs` | 可移除集合加两条规则 + "路径仍存在则不删"守卫 |
+| `packages/cli/src/cli/model-cli.mjs` | **新增**：`model` 子命令 |
+| `packages/cli/src/cli/dispatcher.mjs` | `model` 顶层分发（兜底分支前）；`dispatchAgent` 注入（`launchArguments`/`launchEnvironment`，`:295-297`） |
+| `packages/cli/vendor/core-src/**` | `npm run sync-core` |
+| `packages/vscode/src/model/{state.ts,protocol.ts}` | **新增**：vscode-free 数据组装 + 消息白名单 |
+| `packages/vscode/src/dashboard/model-panel.ts` | **新增**：`WebviewPanel` 薄壳（本仓库第一个编辑器标签页面板） |
+| `packages/vscode/src/project.ts`、`extension.ts` | `projectRootForActiveEditor` + 接入 `root()` |
+| `packages/vscode/src/services/model.ts`、`commands/model-commands.ts` | **新增**：服务层 + 两个命令 |
+| `packages/vscode/src/services/agents.ts` | 启动注入（argv/env）+ 投影指纹刷新 |
+| `packages/vscode/media/model/*` | **新增**面板资源 |
+| `packages/vscode/package.json` | 2 个命令 + 视图标题按钮 + `@avenic/core` 版本提升 |
 | 文档 | README×2、`docs/development.md`、`packages/vscode/CHANGELOG.md` |
 
-## 13. 测试
+## 16. 测试
 
-新增加：
+- core 单测：schema/白名单校验、库读写与 revision、**事务回滚**（注入第二次 rename 失败 → 两边都保持原值）、损坏文件、投影合并（保留未知键 / 只删受管键 / `created` 语义 / 空文件删除）、**回滚三态**（current===written 且 before 存在 → 恢复原值；before 不存在 → 删除键；current≠written → conflict 不动）、指纹一致时零写入、dangling 清理幂等、codex argv 构造（用户自带 `-m` 时让位、值不含 `"`）、opencode 注入 JSON、`parse.mjs` 三形态 + 自由文本（多候选、无模型名、非 JSON）、presets 白名单、`probe.mjs` 结果分类（本地 mock server 覆盖 200/401/403/404/429/500/超时/网络失败，**不发真实请求**）。
+- CLI：`model` 各子命令输出与退出码、掩码、`model` 不落 Pack 兜底分支、无绑定/空库时 `avenic <agent>` 行为不变。
+- 插件：媒体测试（无远程资源、无 `innerHTML`、CSP 占位符）、协议白名单拒绝未知消息、面板数据组装（vscode-free）、`projectRootForActiveEditor` 单测、命令注册、启动定义中的注入落地。
+- gitignore：保存后两条规则存在；`deinit --purge` 后（文件仍在）规则仍在。
+- 隔离要求：所有测试用 `testEnv()`（`AVENIC_STATE_DIR` 指向临时目录）+ 临时项目目录；**禁止写真实家目录**（沿用 `skills-commands.test.ts:72-74` 的约定）。
+- 端到端（本机、隔离目录）：`use` → 启动 mock Agent 捕获 env/argv → 断言注入值；`clear` → 断言受管键被恢复/删除且用户键保留。
 
-- core 单测：schema 校验（各字段白名单、冲突键、缺字段）、store 读写与损坏文件、settings.local.json 合并（保留未知键 / 只删受管键 / `created` 语义 / 空文件删除）、codex argv 构造（用户自带 `-m` 时让位）、opencode 注入 JSON、`parse.mjs` 三种 JSON 形态 + 自由文本识别（含多候选、无模型名、非 JSON 输入）、presets 合法性（URL 白名单）、probe 的结果分类（本地 mock server 覆盖 200/401/403/404/429/500/超时/网络失败，**不发真实请求**）。
-- CLI：`model` 各子命令输出与退出码、掩码、未激活时 `avenic <agent>` 行为不变、`model` 不落到 Pack 兜底分支。
-- 插件：面板 HTML/CSP 无远程资源与 `innerHTML`、消息白名单拒绝未知消息、命令注册与 QuickPick 切换、注入参数在启动定义中的落地。
-- gitignore：保存后两条规则存在；`deinit --purge` 后 `.agents/model.json` 仍在且规则仍在（文件存在的场景）。
-- 端到端（本机、隔离目录）：`use` → 启动 mock Agent 捕获 env/argv → 断言实际注入值；`clear` → 断言受管键被移除且用户键保留。
+## 17. 发布顺序
 
-需同步的既有断言：`packages/cli/test/cli-surface.test.mjs`（命令清单/帮助输出）、`packages/vscode/test/{manifest,views,agents-commands}.test.ts`（命令数、启动定义）、`packages/core/test/gitignore*.test.mjs`（可移除集合）。
+1. bump `packages/core` → 发布 `@avenic/core`（**USER CHECKPOINT**）；
+2. `npm run sync-core` → bump `packages/cli` → 发布 `avenic`（**USER CHECKPOINT**）；
+3. `packages/vscode` 提升 `@avenic/core` 依赖到新版本 → 实现插件侧 → 打包 VSIX（Marketplace 上传 **USER CHECKPOINT**；**0.1.10 已上传，不再重复上传**）。
 
-## 14. 发布顺序
+> 注意：插件依赖的是**已发布**的 `@avenic/core`（§3.2），因此插件侧实现/测试必须排在第 1 步发布之后。
 
-1. bump `packages/core`（新增导出 + gitignore guard 行为微调）→ 发布 `@avenic/core`；
-2. `npm run sync-core` → bump `packages/cli` → 发布 `avenic`；
-3. bump `packages/vscode`（依赖新 core + 新命令 + 面板）→ 打包 VSIX（Marketplace 上传按既有 USER CHECKPOINT 规则）。
+## 18. 明确不做
 
-与 A 的关系：A 先发（磁盘去重、改动面小、已被用户确认）；B 在其后独立发一版 core 次版本。两者对 `dispatchAgent` / `prepareAgentLaunch` 的改动相邻但独立，**不合并为一个 PR**，以便任一功能出问题时单独回滚。
+- 不做云同步 / 跨设备同步 / Windows↔WSL 同步 / Avenic 账号或服务端；
+- 不写 `~/.claude`、`~/.codex`、`~/.config/opencode`；不改 Agent 全局配置；
+- 不用 VS Code SecretStorage / globalState 作 SSOT；
+- 不引入新的文件锁实现（§5.5 说明理由）；
+- 不预填模型 ID；不做在线预设更新；
+- 不自动定期测活、不在启动时探测（避免每次启动都打真实请求）；
+- 不做 OS keychain 加密（另立 spec）；
+- 不把 profile 库放进项目、不做"团队共享 binding"（若要共享，需先把 `before` 记账拆出项目文件，另立 spec）。
 
-## 15. 明确不做
+## 19. 开放问题
 
-- 不做全局（跨项目）模型配置——全局配置是各 Agent 自己的全局设置，avenic 只碰项目；
-- 不写 `~/.claude`、`~/.codex`、`~/.config/opencode` 下的任何文件；
-- 不改 Codex 项目 `.codex/config.toml`（官方禁用 provider 键）；
-- 不做 `.agents/local/codex` 组合 home 方案（仅在 §11 作为最后备选记录）；
-- 不预填具体模型 ID（易过期）；不内置在线预设更新（不引入远程请求）；
-- 不自动定期测活 / 不在启动时探测（避免每次启动都打真实请求）；
-- 不做密钥的加密存储（本机明文文件 + 0600 + gitignore，与现有 `.agents/local/` 凭据策略一致）；
-- 不做跨设备同步 / 云同步。
-
-## 16. 开放问题
-
-无未决设计问题；§3 的三条"实现期必须实测"已各自绑定 §11 的降级行，不阻塞本 spec 定稿。
+无未决**设计**问题。§3.3 的三条实测项各自绑定 §13 的降级行；§12.2（项目文件保存 `before` 原值）与 §5.5（不引入文件锁）是本次修订中我做的两个取舍，已在文中写明理由，若用户有不同偏好可单独推翻。
