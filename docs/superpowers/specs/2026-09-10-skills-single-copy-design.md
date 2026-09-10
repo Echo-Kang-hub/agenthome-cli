@@ -221,7 +221,7 @@ async function sameTree(left, right) → boolean
 | 字段 | 含义 |
 |---|---|
 | `targets[].present` / `total` | 该 target 下"可用"的技能数（链接可用或真实副本可用都计入） |
-| `targets[].state` | shareFrom：`linked` / `fallback` / `missing` / `conflict`（多数决：只要有一个 conflict 即 `conflict`，否则全 linked 即 `linked`，否则有 fallback 即 `fallback`）；canonical：`canonical` |
+| `targets[].state` | shareFrom：`linked` / `fallback` / `missing` / `conflict`（按优先级取最严重者：只要有一个 conflict 即 `conflict`，否则有 `missing` 即 `missing`，否则有 `fallback` 即 `fallback`，否则全 linked 即 `linked`）；canonical：`canonical` |
 | `targets[].counts` | shareFrom 下 `{linked, fallback, missing, conflict, unmanaged}`；canonical 下 `{present, total}`。**`migrated` 只是安装期动作计数**（§5.1），状态查询不做 `sameTree` 内容比较（只读、廉价），因此"真实目录"在状态里一律记 `fallback`（可用但未共享）——内容是否一致由下一次安装判定（一致→迁移，不一致→conflict） |
 | `targets[].complete` | **operational**：canonical 完整，且 shareFrom 下每个受管技能都是 `linked` 或 `fallback`（即"能正常工作"） |
 | `operational` | 所有 target `complete` |
