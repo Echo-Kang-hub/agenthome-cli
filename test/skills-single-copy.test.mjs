@@ -241,6 +241,43 @@ test("keeps a divergent copy and reports conflict, while still updating the shar
   });
 });
 
+// A2（用户指定回归）：用户自己把 `.claude/skills/foo` 指向 `/some/user/path/foo`，
+// 安装既不得覆盖它、也不得解除它，只能报冲突（spec §9「绝不 unlink 外来链接」）。
+test("install keeps a user-owned share link pointing elsewhere and reports a conflict (A2)", async () => {
+  await withTempDirectory("avenic-userlink-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        assert.equal(runAgent(projectRoot, ["skills", "install", "common"], environment).status, 0);
+
+        // 用户拿回了这个位置：删掉 avenic 建的链接，换成指向自己技能目录的链接。
+        const shared = path.join(projectRoot, ".claude", "skills", "alpha");
+        await unlink(shared);
+        const userTarget = path.join(projectRoot, "user-skills", "alpha");
+        await mkdir(userTarget, { recursive: true });
+        await writeFile(path.join(userTarget, "SKILL.md"), "---\nname: alpha\n---\n# user owned\n");
+        await linkToUserSkill(userTarget, shared);
+        const linkBefore = readlinkSync(shared);
+
+        await publishFixtureUpdate(catalogRoot, "alpha", "---\nname: alpha\n---\n# alpha v3\n", "c".repeat(40));
+        const upgraded = runAgent(projectRoot, ["skills", "install"], environment);
+        assert.equal(upgraded.status, 0, upgraded.stderr);
+        assert.match(upgraded.stdout, /Conflict 1/, "外来链接在安装层被报告为冲突");
+        assert.match(upgraded.stdout, /⚠ alpha: a link points somewhere else — left untouched/);
+        assert.equal(await isLink(shared), true, "用户的链接绝不被 unlink");
+        assert.equal(readlinkSync(shared), linkBefore, "链接的 target 原样保留");
+        assert.equal(await readFile(path.join(userTarget, "SKILL.md"), "utf8"), "---\nname: alpha\n---\n# user owned\n");
+        assert.match(
+          await readFile(path.join(projectRoot, ".agents", "skills", "alpha", "SKILL.md"), "utf8"),
+          /alpha v3/,
+          "共享真身该更新还是更新",
+        );
+      });
+    });
+  });
+});
+
 test("a link failure on the preflight pass is settled against the NEW canonical (no stale fallback, no false conflict)", async () => {
   const v1 = "---\nname: alpha\n---\n# alpha v1\n";
   const v2 = "---\nname: alpha\n---\n# alpha v2\n";
