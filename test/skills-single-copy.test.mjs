@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -295,6 +295,202 @@ test("preflight covers stale names so a legacy copy cannot survive an uninstall"
         );
         assert.doesNotMatch(removed.stdout, /Conflict [1-9]/);
         assert.doesNotMatch(removed.stdout, /differs from the shared version/);
+      });
+    });
+  });
+});
+
+test("uninstall removes the shared copy and unlinks the claude target", async () => {
+  await withTempDirectory("avenic-uninstall-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        assert.equal(runAgent(projectRoot, ["skills", "install"], environment).status, 0);
+        const shared = path.join(projectRoot, ".claude", "skills", "alpha");
+        assert.equal(await isLink(shared), true);
+
+        const removed = runAgent(projectRoot, ["skills", "uninstall"], environment);
+        assert.equal(removed.status, 0, removed.stderr);
+        assert.equal(existsSync(shared), false, "link is gone");
+        assert.equal(existsSync(path.join(projectRoot, ".agents", "skills", "alpha")), false);
+        assert.equal(existsSync(path.join(projectRoot, ".claude", "skills", "alpha", "SKILL.md")), false);
+      });
+    });
+  });
+});
+
+test("a user-owned link to another path survives uninstall and is reported", async () => {
+  await withTempDirectory("avenic-foreign-uninstall-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        assert.equal(runAgent(projectRoot, ["skills", "install", "common"], environment).status, 0);
+
+        const shared = path.join(projectRoot, ".claude", "skills", "alpha");
+        await unlink(shared);
+        const userTarget = path.join(projectRoot, "user-skills", "alpha");
+        await mkdir(userTarget, { recursive: true });
+        await writeFile(path.join(userTarget, "SKILL.md"), "user owned\n");
+        if (process.platform === "win32") {
+          await symlink(userTarget, shared, "junction");
+        } else {
+          await symlink(path.relative(path.dirname(shared), userTarget), shared, "dir");
+        }
+
+        const removed = runAgent(projectRoot, ["skills", "uninstall"], environment);
+        assert.equal(removed.status, 0, removed.stderr);
+        assert.equal(await isLink(shared), true, "the user's link is never unlinked");
+        assert.equal(await readFile(path.join(userTarget, "SKILL.md"), "utf8"), "user owned\n");
+        assert.match(removed.stdout, /points somewhere else/);
+      });
+    });
+  });
+});
+
+// R2 钉死：按名删除以名字为授权 —— share 位置上的真实目录必须删除，绝不因内容不同而保留。
+// sameTree 闸门只属于自动安装的迁移路径（spec §5.2/§11）；把它加进卸载路径会让这条变红。
+test("uninstall removes a divergent real directory at a share target (name is the authorization)", async () => {
+  await withTempDirectory("avenic-divergent-share-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        assert.equal(runAgent(projectRoot, ["skills", "install"], environment).status, 0);
+
+        const shared = path.join(projectRoot, ".claude", "skills", "alpha");
+        await rm(shared, { recursive: true, force: true });
+        await mkdir(shared, { recursive: true });
+        await writeFile(path.join(shared, "SKILL.md"), "---\nname: alpha\n---\n# user divergent\n");
+        assert.equal(await isLink(shared), false, "现场是真实目录，不是链接");
+
+        const removed = runAgent(projectRoot, ["skills", "uninstall"], environment);
+        assert.equal(removed.status, 0, removed.stderr);
+        assert.equal(existsSync(shared), false, "share 侧真实目录按名删除");
+        assert.doesNotMatch(removed.stdout, /left untouched/, "显式按名删除不产生冲突");
+        assert.match(removed.stdout, /^Uninstalled all managed project Skills: 2$/m, "share 删除 + canonical 删除都要计数");
+      });
+    });
+  });
+});
+
+// R2 钉死（canonical 缺失分支）：canonical 里没有这个技能时，share 侧真实目录仍按名删除。
+test("uninstall removes a divergent real directory at a share target when canonical lacks the skill", async () => {
+  await withTempDirectory("avenic-divergent-no-canonical-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        assert.equal(runAgent(projectRoot, ["skills", "install"], environment).status, 0);
+
+        await rm(path.join(projectRoot, ".agents", "skills", "alpha"), { recursive: true, force: true });
+        const shared = path.join(projectRoot, ".claude", "skills", "alpha");
+        await rm(shared, { recursive: true, force: true });
+        await mkdir(shared, { recursive: true });
+        await writeFile(path.join(shared, "SKILL.md"), "---\nname: alpha\n---\n# user divergent\n");
+
+        const removed = runAgent(projectRoot, ["skills", "uninstall"], environment);
+        assert.equal(removed.status, 0, removed.stderr);
+        assert.equal(existsSync(shared), false, "canonical 缺失不影响按名删除 share 侧真实目录");
+        assert.doesNotMatch(removed.stdout, /left untouched/, "不得报冲突");
+        assert.match(removed.stdout, /^Uninstalled all managed project Skills: 1$/m, "只删了 share 侧这一份");
+      });
+    });
+  });
+});
+
+// R6 钉死：share 轮必须先于 canonical 轮。把 .claude/skills 本身做成指向 canonical 根的
+// 别名后，只有在删除真身之前判定，才会识别出 aliases-canonical 并拒绝动它；顺序反转后
+// 该冲突会静默消失（此时条目已随 canonical 一起不见，被当成 absent）。
+test("uninstall reports an aliased share root before the canonical pass deletes the copy", async () => {
+  await withTempDirectory("avenic-alias-root-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        assert.equal(runAgent(projectRoot, ["skills", "install"], environment).status, 0);
+
+        const shareRoot = path.join(projectRoot, ".claude", "skills");
+        const canonicalRoot = path.join(projectRoot, ".agents", "skills");
+        await rm(shareRoot, { recursive: true, force: true });
+        if (process.platform === "win32") {
+          await symlink(canonicalRoot, shareRoot, "junction");
+        } else {
+          await symlink(path.relative(path.dirname(shareRoot), canonicalRoot), shareRoot, "dir");
+        }
+
+        const removed = runAgent(projectRoot, ["skills", "uninstall"], environment);
+        assert.equal(removed.status, 0, removed.stderr);
+        assert.match(
+          removed.stdout,
+          /⚠ alpha: a folder link aliases the shared copy — left untouched/,
+          "别名现场必须在 canonical 轮之前被报告",
+        );
+        assert.equal(existsSync(path.join(canonicalRoot, "alpha")), false, "真身仍由 canonical 轮删除");
+        assert.equal(existsSync(shareRoot), false, "别名根随空目录清理移除");
+        assert.match(removed.stdout, /^Uninstalled all managed project Skills: 1$/m, "物理目录只删除一次");
+      });
+    });
+  });
+});
+
+// R3 钉死：removeLinkSafely === false 时不得计为已删除，且必须以既有 unremovable 文案报告
+// （POSIX-only：Windows 忽略这些权限位——测试照常运行但无意义，故跳过）。
+test(
+  "uninstall keeps an unremovable share link and reports it as a conflict (POSIX)",
+  { skip: process.platform === "win32" ? "POSIX permissions only" : false },
+  async () => {
+    await withTempDirectory("avenic-unremovable-uninstall-", async (projectRoot) => {
+      await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+        await withTempDirectory("avenic-state-", async (stateRoot) => {
+          await createCatalogFixture(catalogRoot);
+          const environment = catalogEnvironment(catalogRoot, stateRoot);
+          assert.equal(runAgent(projectRoot, ["skills", "install"], environment).status, 0);
+
+          const shareRoot = path.join(projectRoot, ".claude", "skills");
+          const shared = path.join(shareRoot, "alpha");
+          assert.equal(await isLink(shared), true);
+          try {
+            await chmod(shareRoot, 0o500); // 只读父目录：unlink 失败 → removeLinkSafely 返回 false
+            const removed = runAgent(projectRoot, ["skills", "uninstall"], environment);
+            assert.equal(removed.status, 0, removed.stderr);
+            assert.equal(await isLink(shared), true, "没删掉就必须保留链接");
+            assert.match(
+              removed.stdout,
+              /⚠ alpha: a broken link could not be removed — left untouched/,
+              "复用既有 logConflicts 文案",
+            );
+            assert.match(removed.stdout, /^Uninstalled all managed project Skills: 1$/m, "未删除的链接不得计入删除数");
+          } finally {
+            await chmod(shareRoot, 0o755);
+          }
+        });
+      });
+    });
+  },
+);
+
+// repair 钉死：卸载路径上"指向 canonical 的悬空链接"仍是我方条目，必须删除；
+// 把它当成需要保留的冲突会让这条变红（spec §5.2 表第一行含"悬空"）。
+test("uninstall removes a dangling link that points at the missing canonical copy", async () => {
+  await withTempDirectory("avenic-dangling-uninstall-", async (projectRoot) => {
+    await withTempDirectory("avenic-catalog-", async (catalogRoot) => {
+      await withTempDirectory("avenic-state-", async (stateRoot) => {
+        await createCatalogFixture(catalogRoot);
+        const environment = catalogEnvironment(catalogRoot, stateRoot);
+        assert.equal(runAgent(projectRoot, ["skills", "install"], environment).status, 0);
+
+        const shared = path.join(projectRoot, ".claude", "skills", "alpha");
+        assert.equal(await isLink(shared), true);
+        await rm(path.join(projectRoot, ".agents", "skills", "alpha"), { recursive: true, force: true });
+        assert.equal(await isLink(shared), true, "canonical 没了，链接悬空但仍存在");
+
+        const removed = runAgent(projectRoot, ["skills", "uninstall"], environment);
+        assert.equal(removed.status, 0, removed.stderr);
+        assert.equal(lstatSync(shared, { throwIfNoEntry: false }), undefined, "悬空链接已移除");
+        assert.doesNotMatch(removed.stdout, /left untouched/, "悬空链接是我方条目，不报冲突");
+        assert.match(removed.stdout, /^Uninstalled all managed project Skills: 1$/m, "悬空链接的删除计入总数");
       });
     });
   });

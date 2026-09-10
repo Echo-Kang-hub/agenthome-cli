@@ -10,6 +10,7 @@ import { ensureCatalog, loadDefaultCatalogSpec, parseCatalogSpec } from "./catal
 import { assertSafeId, assertSafeSkillName } from "./ids.mjs";
 import {
   canonicalTargets,
+  classifyShareEntry,
   ensureSkillLinks,
   formatLinkSummary,
   logConflicts,
@@ -283,11 +284,54 @@ export async function installCopies(context, resolvedPacks, io = console, option
   return linkResult;
 }
 
+// 卸载/按名删除时的 shareFrom 处理：先解链（含悬空链接），真实目录按今天的语义删除，
+// 指向别处的链接一律保留并报告（spec §5.2）。必须在 canonical 轮之前调用。
+async function removeShareEntries(context, names, io) {
+  let removed = 0;
+  const conflicts = [];
+  for (const targetConfig of shareTargets(context)) {
+    for (const name of names) {
+      assertSafeSkillName(name);
+      const linkPath = path.join(targetConfig.destination, name);
+      if (!isInside(targetConfig.destination, linkPath)) {
+        fail(`Uninstall path escaped its target: ${linkPath}`);
+      }
+      if (!existsSync(targetConfig.destination)) {
+        break;
+      }
+      const verdict = await classifyShareEntry(path.join(targetConfig.shareDestination, name), linkPath);
+      if (verdict.state === "absent") {
+        continue;
+      }
+      if (verdict.state === "conflict") {
+        conflicts.push({ name, targetId: targetConfig.id, reason: verdict.reason });
+        continue;
+      }
+      if (verdict.state === "linked" || verdict.state === "repair") {
+        if (await removeLinkSafely(linkPath)) {
+          removed += 1;
+        } else {
+          // 没删掉就不能算删除，否则计数撒谎；交给人处理。
+          conflicts.push({ name, targetId: targetConfig.id, reason: "unremovable" });
+        }
+        continue;
+      }
+      await rm(linkPath, { recursive: true, force: true }); // real-directory：按名显式删除，语义不变
+      removed += 1;
+    }
+  }
+  if (conflicts.length > 0) {
+    logConflicts(io, conflicts);
+  }
+  return removed;
+}
+
 export async function removeAllManagedSkills(context, managed, io = console) {
-  let total = 0;
-  for (const targetConfig of context.targets) {
+  const names = [...managed.keys()];
+  let total = await removeShareEntries(context, names, io);
+  for (const targetConfig of canonicalTargets(context)) {
     let removed = 0;
-    for (const skillName of managed.keys()) {
+    for (const skillName of names) {
       assertSafeSkillName(skillName);
       const target = path.join(targetConfig.destination, skillName);
       if (!isInside(targetConfig.destination, target)) {
@@ -298,16 +342,18 @@ export async function removeAllManagedSkills(context, managed, io = console) {
         removed += 1;
       }
     }
-    await removeEmptyDirectory(targetConfig.destination);
     total += removed;
     io.log(`${targetConfig.label}: Removed ${removed}`);
+  }
+  for (const targetConfig of context.targets) {
+    await removeEmptyDirectory(targetConfig.destination);
   }
   return total;
 }
 
 export async function removeSkillDirectories(context, skillNames, io = console) {
-  let total = 0;
-  for (const targetConfig of context.targets) {
+  let total = await removeShareEntries(context, skillNames, io);
+  for (const targetConfig of canonicalTargets(context)) {
     let removed = 0;
     for (const skillName of skillNames) {
       const target = path.join(targetConfig.destination, skillName);
