@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  CODEX_EFFORTS,
   MODEL_ROLES,
   canonicalJson,
   libraryFingerprint,
@@ -124,4 +125,17 @@ test("libraryFingerprint ignores identity/timestamps but tracks every projected 
   assert.notEqual(libraryFingerprint({ ...profile, toggles: {} }), base);
   assert.notEqual(libraryFingerprint({ ...profile, env: { FOO: "2" } }), base);
   assert.notEqual(libraryFingerprint({ ...profile, claude: { settings: {} } }), base);
+});
+
+// 面板把 reasoningEffort 渲染成下拉框，所以它必须拿到**与 core 完全一致**的取值表：
+// 列出表外的值不会报错，core 会静默把它改成 medium，界面显示与落盘结果就此分叉。
+test("CODEX_EFFORTS is exactly the set normalizeProfile accepts", () => {
+  const base = { id: "p", name: "P", endpoint: { baseUrl: "https://a.example", api: "anthropic" } };
+  assert.equal(new Set(CODEX_EFFORTS).size, CODEX_EFFORTS.length, "取值表不得重复");
+  for (const effort of CODEX_EFFORTS) {
+    assert.equal(normalizeProfile({ ...base, codex: { reasoningEffort: effort } }).codex.reasoningEffort, effort);
+  }
+  for (const other of ["none", "MINIMAL", "", "xhigh", undefined, 3]) {
+    assert.equal(normalizeProfile({ ...base, codex: { reasoningEffort: other } }).codex.reasoningEffort, "medium");
+  }
 });

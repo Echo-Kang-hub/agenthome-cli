@@ -5,6 +5,10 @@ import { LIBRARY_SCHEMA_VERSION } from "./paths.mjs";
 export const MODEL_ROLES = ["main", "opus", "sonnet", "haiku", "fable", "subagent"];
 export const API_TYPES = ["anthropic", "openai-chat", "openai-responses"];
 export const AUTH_FIELDS = ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"];
+// Codex 的 reasoningEffort 取值。导出理由同 TOGGLE_KEYS：面板要把它渲染成下拉框，而这里的
+// 兜底是「不在表内 → medium」——面板若自己维护第二份清单，一旦两者漂移，用户选中的值会被
+// core 静默改成 medium，界面上却看不出来。
+export const CODEX_EFFORTS = ["minimal", "low", "medium", "high"];
 // 导出给面板（§9.3「6 个开关」）与 project-claude.mjs 的 TOGGLE_ENTRIES 交叉校验：面板不
 // 自己维护第二份开关清单，两者必须一一对应（见 model-projection.test.mjs）。
 export const TOGGLE_KEYS = ["teams", "toolSearch", "maxEffort", "noNonessentialTraffic", "noAutoUpdate", "hideAttribution"];
@@ -127,9 +131,7 @@ export function normalizeProfile(input, options = {}) {
     codex: {
       providerId: validateProviderId(input.codex?.providerId ?? `avenic_${id}`),
       envKey: validateEnvKey(input.codex?.envKey ?? "AVENIC_MODEL_KEY"),
-      reasoningEffort: ["minimal", "low", "medium", "high"].includes(input.codex?.reasoningEffort)
-        ? input.codex.reasoningEffort
-        : "medium",
+      reasoningEffort: CODEX_EFFORTS.includes(input.codex?.reasoningEffort) ? input.codex.reasoningEffort : "medium",
     },
     opencode: {
       providerId: validateProviderId(input.opencode?.providerId ?? id),

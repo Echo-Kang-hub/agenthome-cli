@@ -62,6 +62,18 @@ export function registerModelCommands(context: vscode.ExtensionContext, deps: Mo
     await runMutation(deps.queue, () => withProgress("保存模型配置", () => model.saveProfile(profile)), deps.refresh);
   });
 
+  // 编辑区的实时预览：纯计算（不写盘、不碰 MutationQueue），返回值由面板回包渲染。
+  register("preview", (message) => {
+    const { profile } = message as { profile: ProfileDraft };
+    return model.preview(profile);
+  });
+
+  // §9.2 的 [复制]：常驻卡片操作，不弹确认（可撤销：删掉副本即可）。
+  register("duplicateProfile", async (message) => {
+    const { id } = message as { id: string };
+    await runMutation(deps.queue, () => model.duplicateProfile(id), deps.refresh);
+  });
+
   register("deleteProfile", async (message) => {
     const { id } = message as { id: string };
     const confirmed = await vscode.window.showWarningMessage(

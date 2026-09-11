@@ -69,19 +69,26 @@ export class ModelPanel {
     if (message.type === "openSettingsFile") return void vscode.commands.executeCommand("avenic.model.openSettingsFile");
     if (message.type === "parseJson") return void this.post({ type: "parsed", payload: { json: safeParse(() => parseJson(message.text)) } });
     if (message.type === "parseText") return void this.post({ type: "parsed", payload: { text: safeParse(() => parseText(message.text)) } });
-    // 其余（保存/删除/绑定/解绑/测试）都转发到命令层，保证 MutationQueue 串行与刷新一致
+    // 其余（保存/删除/复制/绑定/解绑/测试/预览）都转发到命令层，保证 MutationQueue 串行与刷新一致
     const forwarded: Record<string, string> = {
       saveProfile: "avenic.model.saveProfile",
       deleteProfile: "avenic.model.deleteProfile",
+      duplicateProfile: "avenic.model.duplicateProfile",
       bindProject: "avenic.model.bindProject",
       clearProject: "avenic.model.clearProject",
       testConnection: "avenic.model.testConnection",
+      preview: "avenic.model.preview",
     };
     const command = forwarded[message.type];
     if (!command) return;
     const result = await vscode.commands.executeCommand(command, message);
     if (message.type === "testConnection" && result !== undefined) {
       this.post({ type: "testResult", payload: result });
+    }
+    // 编辑区的实时预览：投影/请求地址/定位问题全部由 core 判定，面板只渲染回包（§9.7）。
+    if (message.type === "preview" && result !== undefined) {
+      // executeCommand 的返回类型是 {} | null，实际由 avenic.model.preview 决定。
+      this.post({ type: "projection", payload: result as import("../model/protocol.ts").DraftPreview });
     }
   }
 

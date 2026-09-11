@@ -12,7 +12,8 @@ import {
   upsertProfile,
   type ProcessEnvLike,
 } from "@avenic/core";
-import { buildModelPanelData } from "../model/state.ts";
+import { buildDraftPreview, buildModelPanelData } from "../model/state.ts";
+import { profileInputFromDraft } from "../model/draft.ts";
 import type { ProfileDraft } from "../model/protocol.ts";
 
 type Env = ProcessEnvLike;
@@ -26,39 +27,49 @@ export function profiles(env?: Env) {
   return listProfiles(environment(env));
 }
 
-// draft.apiKey === null → 保留库中现有密钥（面板只回显掩码，永远不把明文发回前端）
-//
-// ProfileDraft 只承载面板能编辑的字段（id/name/baseUrl/api/apiKey/mainModel）。core 的
-// normalizeProfile 是「白名单化」：没传的字段不留原值、而是取默认值——所以凡是草稿里没有的
-// 字段都必须逐项从 existing 带过来，否则在面板里改一次名字就会永久抹掉该配置的
-// Codex/OpenCode 端点覆盖与 provider 设置（不可撤销）。
+// 草稿 → core 入参的翻译与「定位到输入」的校验都在 model/draft.ts（vscode-free、可测）。
+// draft.apiKey === null → 保留库中现有密钥：面板只回显掩码，明文从不发回前端（§7）。
 export async function saveProfile(draft: ProfileDraft, env?: Env) {
   const env2 = environment(env);
   const existing = await getProfile(env2, draft.id);
-  const apiKey = draft.apiKey ?? existing?.endpoint.apiKey ?? "";
-  const profile = normalizeProfile(
-    {
-      id: draft.id,
-      name: draft.name,
-      // 草稿不带 authField（面板不暴露它）；改绑保留库中既有值，新建走 core 的同一默认。
-      endpoint: { baseUrl: draft.baseUrl, api: draft.api, authField: existing?.endpoint.authField ?? "ANTHROPIC_AUTH_TOKEN", apiKey },
-      // 以下全部是面板管不到的字段：原样带过，语义为「不修改」。
-      overrides: existing?.overrides,
-      models: draft.mainModel ? { ...(existing?.models ?? {}), main: { id: draft.mainModel } } : existing?.models,
-      toggles: existing?.toggles,
-      env: existing?.env,
-      claude: existing?.claude,
-      codex: existing?.codex,
-      opencode: existing?.opencode,
-    },
-    { existing },
-  );
+  const profile = normalizeProfile(profileInputFromDraft(draft, existing), { existing });
   await upsertProfile(env2, profile);
   return profile;
 }
 
+/** 面板编辑区的实时预览：投影条目 + 测试请求地址 + 可定位问题（全部由 core 判定）。 */
+export async function preview(draft: ProfileDraft, env?: Env) {
+  const env2 = environment(env);
+  return buildDraftPreview(draft, await getProfile(env2, draft.id));
+}
+
 export function deleteProfile(id: string, env?: Env) {
   return removeProfile(environment(env), id);
+}
+
+// §9.2 的 [复制]：整份复制（含端点/模型/开关/env/覆盖），只换 id 与名称。
+// id 必须满足 core 的 assertSafeId（^[a-z0-9_]{1,32}$），所以按 _copy / _copy2 … 顺序找空位。
+function copyId(sourceId: string, taken: Set<string>): string {
+  const base = `${sourceId}_copy`.slice(0, 32);
+  if (!taken.has(base)) return base;
+  for (let index = 2; index < 1000; index += 1) {
+    const suffix = String(index);
+    const candidate = `${base.slice(0, 32 - suffix.length)}${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return base;
+}
+
+export async function duplicateProfile(id: string, env?: Env) {
+  const env2 = environment(env);
+  const source = await getProfile(env2, id);
+  if (!source) return null;
+  const taken = new Set((await listProfiles(env2)).map((profile) => profile.id));
+  // 副本是**新**配置：不继承原配置的时间戳（normalizeProfile 会因此取当前时间）。
+  const { createdAt, updatedAt, ...rest } = source;
+  const copy = normalizeProfile({ ...rest, id: copyId(id, taken), name: `${source.name} 副本` });
+  await upsertProfile(env2, copy);
+  return copy;
 }
 
 export async function bind(projectRoot: string, id: string, env?: Env) {
