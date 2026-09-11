@@ -467,7 +467,7 @@ export interface TransactOptions<T> {
   rename?: (from: string, to: string) => Promise<unknown>;
   commit?: (replacements: Array<{ relativePath: string; staged?: string; target: string; remove?: boolean }>, directory: string) => Promise<void>;
 }
-export function transact<T>(options: TransactOptions<T>): Promise<{ changed: boolean; value: T }>;
+export function transact<T>(options: TransactOptions<T>): Promise<{ changed: boolean; value: T; revision: number }>;
 export function readLibrary(environment?: ProcessEnvLike): Promise<ModelLibrary>;
 export function listProfiles(environment?: ProcessEnvLike): Promise<ModelProfile[]>;
 export function getProfile(environment: ProcessEnvLike | undefined, id: string): Promise<ModelProfile | null>;

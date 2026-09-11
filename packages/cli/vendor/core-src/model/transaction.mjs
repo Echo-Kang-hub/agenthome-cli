@@ -7,8 +7,10 @@ import { fail } from "../util/fail.mjs";
 // 通用事务写：
 //   read()            → { revision, value }（磁盘现值 + 版本戳）
 //   build(current)    → 新值；返回 null 表示"无需写入"
-//   stage(next, dir)  → [{ relativePath, staged, target }]（staged 必须与 target 同卷）
-// 并发：替换前重读版本戳；不一致则丢弃本次结果重放（最多 attempts 次）。
+//   stage(next, dir)  → [{ relativePath, staged, target }]（staged 必须与 target 同卷）；
+//                       返回空数组 = 调用方声明"无实际写入"，此时 build 本应改为返回 null。
+//                       当前实现不特判空数组：仍报 changed:true / revision+1 而磁盘不动（测试钉住）。
+// 并发：替换前重读版本戳；不一致则丢弃本次结果重放。attempts = 最多尝试次数（默认 3，不是 3+1 次）。
 // 崩溃安全：最终是 rename 覆盖，磁盘上任何时刻要么旧内容要么新内容。
 // 两个根（库 / 项目）各自独立事务：不同卷的文件绝不放进同一次替换。
 export async function transact(options) {
@@ -17,7 +19,7 @@ export async function transact(options) {
   // 且必须保留 rename 注入（T2 的回滚测试整个建立在它之上）。
   const replace = commit ?? ((replacements, directory) => replaceStagedFiles(replacements, directory, rename ? { rename } : undefined));
   await mkdir(tempRoot, { recursive: true });
-  for (let attempt = 0; attempt <= attempts; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const current = await read();
     const next = await build(current);
     if (next === null) {

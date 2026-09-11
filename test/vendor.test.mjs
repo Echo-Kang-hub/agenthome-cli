@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -86,5 +87,30 @@ test("replaceStagedFiles restores both targets when the second staged→target r
     assert.equal(renames, 6);
     assert.equal(await readFile(path.join(targets, "a.json"), "utf8"), "old-a");
     assert.equal(await readFile(path.join(targets, "b.json"), "utf8"), "old-b");
+  });
+});
+
+test("a failing replacement with no previous target keeps the original error and never touches the target", async () => {
+  await withTempDirectory("avenic-vendor-fresh-", async (root) => {
+    const target = path.join(root, "targets", "new.json");
+    const staged = path.join(root, "temp", "staged", "new.json");
+    await mkdir(path.dirname(target), { recursive: true });
+    await mkdir(path.dirname(staged), { recursive: true });
+    await writeFile(staged, "new");
+    const sentinel = Object.assign(new Error("sentinel-boom"), { marker: "staged-to-target" });
+    const calls = [];
+    const injectedRename = async (from, to) => {
+      calls.push([from, to]);
+      if (from === staged && to === target) throw sentinel;
+      const { rename } = await import("node:fs/promises");
+      return rename(from, to);
+    };
+    await assert.rejects(
+      () => replaceStagedFiles([{ relativePath: "new.json", staged, target }], path.join(root, "temp"), { rename: injectedRename }),
+      (error) => error.marker === "staged-to-target",
+    );
+    // 没有旧 target 就没有可恢复的备份：不得多出一次 backup→target 尝试（那会以 ENOENT 掩盖原始错误）
+    assert.deepEqual(calls, [[staged, target]]);
+    assert.equal(existsSync(target), false);
   });
 });

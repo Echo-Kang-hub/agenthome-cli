@@ -19,6 +19,11 @@ export async function readLibrary(environment = process.env) {
   if (typeof raw !== "object" || raw === null || typeof raw.profiles !== "object" || raw.profiles === null) {
     fail(`Model library is malformed: ${file}`);
   }
+  for (const profile of Object.values(raw.profiles)) {
+    if (typeof profile !== "object" || profile === null || Array.isArray(profile)) {
+      fail(`Model library is malformed: ${file}`);
+    }
+  }
   return {
     schemaVersion: raw.schemaVersion ?? LIBRARY_SCHEMA_VERSION,
     revision: Number.isInteger(raw.revision) ? raw.revision : 0,
@@ -30,7 +35,8 @@ export async function readLibrary(environment = process.env) {
 
 export async function listProfiles(environment = process.env) {
   const library = await readLibrary(environment);
-  return Object.values(library.profiles).sort((left, right) => left.name.localeCompare(right.name));
+  return Object.values(library.profiles).sort((left, right) =>
+    String(left.name ?? left.id ?? "").localeCompare(String(right.name ?? right.id ?? "")));
 }
 
 export async function getProfile(environment, id) {
@@ -46,6 +52,12 @@ async function stageLibrary(environment, next, directory) {
   return [{ relativePath: "models.json", staged, target: modelsFile(environment) }];
 }
 
+// 落盘形状只有一个：{ schemaVersion, revision, profiles }。
+// next 来自 readLibrary 的读取视图，含 exists/file（本机绝对路径）——绝不展开进磁盘。
+function persistedLibrary(next, revision) {
+  return { schemaVersion: LIBRARY_SCHEMA_VERSION, revision, profiles: next.profiles };
+}
+
 async function mutateLibrary(environment, mutate, io = console) {
   let written = null;
   const result = await transact({
@@ -57,7 +69,7 @@ async function mutateLibrary(environment, mutate, io = console) {
     build: (current) => {
       const next = mutate(current.value);
       if (next === null) return null;
-      written = { ...next, schemaVersion: LIBRARY_SCHEMA_VERSION, revision: current.revision + 1 };
+      written = persistedLibrary(next, current.revision + 1);
       return written;
     },
     stage: (next, directory) => stageLibrary(environment, next, directory),

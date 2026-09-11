@@ -154,6 +154,134 @@ test("transact replays when the revision changed under it", async () => {
   });
 });
 
+test("the persisted library keeps only the schema keys and no machine-local data", async () => {
+  await withTempDirectory("avenic-lib-shape-", async (stateDir) => {
+    const environment = environmentFor(stateDir);
+    await upsertProfile(environment, { id: "a", name: "A", endpoint: { baseUrl: "https://a.example", api: "anthropic", apiKey: "k" } });
+    const raw = await readFile(modelsFile(environment), "utf8");
+    assert.deepEqual(Object.keys(JSON.parse(raw)).sort(), ["profiles", "revision", "schemaVersion"]);
+    assert.equal(raw.includes(String(process.pid)), false, "the pid must never be persisted");
+    assert.equal(/\d{10,}/.test(raw), false, "no timestamp- or pid-shaped digit run may be persisted");
+  });
+});
+
+test("a library polluted with read-view fields is healed by the next write", async () => {
+  await withTempDirectory("avenic-lib-heal-", async (stateDir) => {
+    const environment = environmentFor(stateDir);
+    const file = modelsFile(environment);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify({
+      schemaVersion: 1,
+      revision: 1,
+      profiles: { a: { id: "a", name: "A", endpoint: { baseUrl: "https://a.example", api: "anthropic", apiKey: "k" } } },
+      exists: false,
+      file,
+    }, null, 2));
+    await upsertProfile(environment, { id: "b", name: "B", endpoint: { baseUrl: "https://b.example", api: "anthropic", apiKey: "k" } });
+    const stored = JSON.parse(await readFile(file, "utf8"));
+    assert.deepEqual(Object.keys(stored).sort(), ["profiles", "revision", "schemaVersion"]);
+    assert.equal(stored.exists, undefined);
+    assert.equal(stored.file, undefined);
+    assert.equal(stored.revision, 2);
+  });
+});
+
+// 合法 JSON 但形状不对：绝不静默修复、绝不覆盖用户文件（spec §13）。
+const malformedLibraries = [
+  ["profiles is null", { schemaVersion: 1, revision: 1, profiles: null }],
+  ["profiles is missing", { schemaVersion: 1, revision: 1 }],
+  ["the document is an array", []],
+  ["a profile entry is null", { schemaVersion: 1, revision: 1, profiles: { a: null } }],
+  ["a profile entry is an array", { schemaVersion: 1, revision: 1, profiles: { a: ["x"] } }],
+];
+for (const [label, document] of malformedLibraries) {
+  test(`a library whose ${label} fails loudly and is never overwritten`, async () => {
+    await withTempDirectory("avenic-lib-malformed-", async (stateDir) => {
+      const environment = environmentFor(stateDir);
+      const file = modelsFile(environment);
+      await mkdir(path.dirname(file), { recursive: true });
+      const raw = JSON.stringify(document, null, 2);
+      await writeFile(file, raw);
+      await assert.rejects(() => readLibrary(environment), /malformed/);
+      await assert.rejects(() => listProfiles(environment), /malformed/);
+      await assert.rejects(
+        () => upsertProfile(environment, { id: "a", name: "A", endpoint: { baseUrl: "https://a.example", api: "anthropic", apiKey: "k" } }),
+        /malformed/,
+      );
+      assert.equal(await readFile(file, "utf8"), raw);
+    });
+  });
+}
+
+test("listProfiles sorts entries that have no name instead of throwing a TypeError", async () => {
+  await withTempDirectory("avenic-lib-noname-", async (stateDir) => {
+    const environment = environmentFor(stateDir);
+    const file = modelsFile(environment);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify({
+      schemaVersion: 1,
+      revision: 0,
+      profiles: { c: { id: "c" }, a: { id: "a" }, b: { id: "b" } },
+    }));
+    const profiles = await listProfiles(environment);
+    assert.deepEqual(profiles.map((profile) => profile.id), ["a", "b", "c"]);
+  });
+});
+
+test("transact fails loudly when every attempt loses the revision race", async () => {
+  await withTempDirectory("avenic-tx-exhausted-", async (root) => {
+    const target = path.join(root, "value.json");
+    await writeFile(target, "0");
+    let reads = 0;
+    let builds = 0;
+    await assert.rejects(
+      () => transact({
+        tempRoot: path.join(root, "tmp"),
+        read: async () => {
+          reads += 1;
+          // 版本戳每次读取都在增长：模拟另一个进程在每次替换前抢先写入
+          return { revision: reads, value: await readFile(target, "utf8") };
+        },
+        build: (current) => {
+          builds += 1;
+          return `${current.value}+`;
+        },
+        stage: async (next, directory) => {
+          const file = path.join(directory, "staged", "value.json");
+          await mkdir(path.dirname(file), { recursive: true });
+          await writeFile(file, next);
+          return [{ relativePath: "value.json", staged: file, target }];
+        },
+      }),
+      /retry/,
+    );
+    // attempts = 3 → build 恰好 3 次（旧实现允许 4 次）；每次尝试读 2 次（替换前 + 替换前的版本复查）
+    assert.equal(builds, 3);
+    assert.equal(reads, 6);
+    assert.equal(await readFile(target, "utf8"), "0", "a conflicting transaction must not touch the target");
+  });
+});
+
+test("transact reports a change even when stage declares no replacements", async () => {
+  await withTempDirectory("avenic-tx-empty-stage-", async (root) => {
+    const target = path.join(root, "value.json");
+    await writeFile(target, "old");
+    const tempRoot = path.join(root, "tmp");
+    const result = await transact({
+      tempRoot,
+      read: async () => ({ revision: 0, value: await readFile(target, "utf8") }),
+      build: () => "next",
+      stage: async () => [],
+    });
+    // 契约：stage 返回空数组 = 调用方声明"无实际写入"，build 本应改为返回 null；
+    // 当前实现仍报 changed:true / revision+1 而磁盘不动——此用例把该行为钉死。
+    assert.equal(result.changed, true);
+    assert.equal(result.revision, 1);
+    assert.equal(await readFile(target, "utf8"), "old");
+    assert.deepEqual(existsSync(tempRoot) ? await readdir(tempRoot) : [], []);
+  });
+});
+
 test("upserts leave no temporary directories behind and the file is 0600 on POSIX", async () => {
   await withTempDirectory("avenic-lib-clean-", async (stateDir) => {
     const environment = environmentFor(stateDir);
