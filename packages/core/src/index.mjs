@@ -210,3 +210,4 @@ export {
   codexInjection,
   opencodeInjection,
 } from "./model/inject.mjs";
+export { parseConfigJson, parseConfigText, recognizeEnvMap } from "./model/parse.mjs";

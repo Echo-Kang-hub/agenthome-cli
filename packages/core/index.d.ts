@@ -516,3 +516,15 @@ export function codexInjection(profile: ModelProfile, options: { argumentsList?:
 export function opencodeInjection(profile: ModelProfile, environment?: Record<string, string>): { environment: Record<string, string>; providerId: string; mode: "builtin-override" | "custom-provider" };
 export function claudeEnvironment(profile: ModelProfile): Record<string, string>;
 export function buildLaunchInjection(input: { agentId: string; profile: ModelProfile | null; argumentsList?: string[]; environment?: Record<string, string> }): { argumentsList: string[]; environment: Record<string, string>; note: string | null };
+
+// ---- model: paste recognition ----
+export interface RecognizedField { field: string; value: string; source?: string }
+export interface ParseResult {
+  form?: "claude-settings" | "flat" | "cc-switch" | "unknown";
+  recognized: RecognizedField[];
+  passthrough: Record<string, unknown>;
+  candidates: Record<string, string[]>;
+}
+export function parseConfigJson(text: string): ParseResult;
+export function parseConfigText(text: string): { recognized: RecognizedField[]; candidates: Record<string, string[]>; warnings: string[] };
+export function recognizeEnvMap(env: Record<string, string>): { recognized: RecognizedField[]; candidates: Record<string, string[]> };
