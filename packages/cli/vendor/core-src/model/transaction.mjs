@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -25,7 +26,9 @@ export async function transact(options) {
     if (next === null) {
       return { changed: false, value: current.value, revision: current.revision };
     }
-    const directory = path.join(tempRoot, `model-${process.pid}-${attempt}-${Date.now()}`);
+    // 目录名必须带非确定成分：同进程并发（同 pid、同 attempt、同毫秒）时
+    // pid+attempt+Date.now 会碰撞 → 两个事务共用一个目录、互相删掉对方 staged 文件。
+    const directory = path.join(tempRoot, `model-${process.pid}-${attempt}-${Date.now()}-${randomBytes(8).toString("hex")}`);
     await mkdir(directory, { recursive: true });
     try {
       const replacements = await stage(next, directory);

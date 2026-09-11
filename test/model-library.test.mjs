@@ -296,6 +296,41 @@ test("upserts leave no temporary directories behind and the file is 0600 on POSI
   });
 });
 
+// FAIL-1(a)：同进程并发事务的目录名必须唯一（旧实现 pid+attempt+Date.now 会碰撞，
+// 两个事务共用一个目录、互相删掉对方 staged 文件 → ENOENT / 内容损坏）。
+test("concurrent transactions use distinct directories and never delete each other's staged files", async () => {
+  await withTempDirectory("avenic-tx-unique-", async (root) => {
+    const tempRoot = path.join(root, "tmp");
+    const targets = [path.join(root, "a.json"), path.join(root, "b.json")];
+    const directories = [];
+    let ready = 0;
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const run = (index) => transact({
+      tempRoot,
+      read: async () => ({ revision: 0, value: String(index) }),
+      build: async (current) => {
+        ready += 1;
+        if (ready === 2) release();
+        await gate; // 屏障：两个事务在同一 tick 继续 → 旧实现拿到同一个目录名
+        return current.value;
+      },
+      stage: async (next, directory) => {
+        directories.push(directory);
+        const staged = path.join(directory, "staged", "value.json"); // 故意同名，逼出互删
+        await mkdir(path.dirname(staged), { recursive: true });
+        await writeFile(staged, next);
+        return [{ relativePath: "value.json", staged, target: targets[Number(next)] }];
+      },
+    });
+    await Promise.all([run(0), run(1)]);
+    assert.equal(new Set(directories).size, 2, "并发事务不得共用事务目录");
+    assert.equal(await readFile(targets[0], "utf8"), "0");
+    assert.equal(await readFile(targets[1], "utf8"), "1");
+    assert.deepEqual(existsSync(tempRoot) ? await readdir(tempRoot) : [], []);
+  });
+});
+
 test("a failed transact removes its temp directory too", async () => {
   await withTempDirectory("avenic-tx-clean-", async (root) => {
     const tempRoot = path.join(root, "tmp");

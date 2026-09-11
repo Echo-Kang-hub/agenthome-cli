@@ -1,11 +1,12 @@
 import { existsSync } from "node:fs";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { readJson } from "../util/json.mjs";
 import { fail } from "../util/fail.mjs";
 import { emptyLibrary, normalizeProfile } from "./schema.mjs";
 import { LIBRARY_SCHEMA_VERSION, modelsFile, modelsTempRoot } from "./paths.mjs";
+import { restrictPermissions } from "./permissions.mjs";
 import { transact } from "./transaction.mjs";
 
 // 库是唯一事实来源：读失败一律 fail（不自动修复、不覆盖用户文件），由调用方提示
@@ -75,18 +76,9 @@ async function mutateLibrary(environment, mutate, io = console) {
     stage: (next, directory) => stageLibrary(environment, next, directory),
   });
   if (result.changed) {
-    await protectLibraryFile(modelsFile(environment), io);
+    await restrictPermissions(modelsFile(environment), io);
   }
   return { ...result, value: result.changed ? written : result.value };
-}
-
-// POSIX 0600；Windows 依赖用户目录 ACL（chmod 在 win32 上是 no-op，不报错）。
-async function protectLibraryFile(file, io) {
-  try {
-    await chmod(file, 0o600);
-  } catch (error) {
-    io.warn?.(`Warning: could not restrict permissions on ${file} (${error.code ?? error.message})`);
-  }
 }
 
 export async function upsertProfile(environment, input, io = console) {
