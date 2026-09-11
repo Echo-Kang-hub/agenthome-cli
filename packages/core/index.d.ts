@@ -528,3 +528,22 @@ export interface ParseResult {
 export function parseConfigJson(text: string): ParseResult;
 export function parseConfigText(text: string): { recognized: RecognizedField[]; candidates: Record<string, string[]>; warnings: string[] };
 export function recognizeEnvMap(env: Record<string, string>): { recognized: RecognizedField[]; candidates: Record<string, string[]> };
+
+// ---- model: presets & probe ----
+export interface Preset { id: string; label: string; baseUrl: string; api: ApiType }
+export const PRESETS: readonly Preset[];
+export function applyPreset(id: string): Preset | null;
+export interface ProbeResult {
+  ok: boolean;
+  category: "2xx" | "auth" | "not-found" | "rate-limited" | "server-error" | "network" | "timeout";
+  status: number | null;
+  durationMs: number;
+  model: string | null;
+  usage: unknown;
+  message: string;
+  url: string | null;
+}
+export function testConnection(
+  profile: ModelProfile,
+  options?: { timeoutMs?: number; fetch?: typeof fetch; endpoint?: EndpointConfig; model?: string },
+): Promise<ProbeResult>;

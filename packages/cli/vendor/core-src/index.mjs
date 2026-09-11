@@ -211,3 +211,5 @@ export {
   opencodeInjection,
 } from "./model/inject.mjs";
 export { parseConfigJson, parseConfigText, recognizeEnvMap } from "./model/parse.mjs";
+export { PRESETS, applyPreset } from "./model/presets.mjs";
+export { testConnection } from "./model/probe.mjs";
