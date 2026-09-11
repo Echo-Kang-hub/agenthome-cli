@@ -10,10 +10,24 @@ function resolveUrl(baseUrl, path) {
   return base.endsWith("/v1") ? `${base}${path}` : `${base}/v1${path}`;
 }
 
+// API 类型 → 请求路径。**只有这一张表**：requestFor 与对外的 probeUrl 共用它，
+// 面板的「将请求：<地址>」预览因此不需要自己抄一份映射（设计 §9.3 / §9.7）。
+const REQUEST_PATHS = {
+  anthropic: "/messages",
+  "openai-responses": "/responses",
+  "openai-chat": "/chat/completions",
+};
+
+// 导出给面板做实时预览：给定端点的 Base URL 与 API 类型，返回测试连接真正请求的地址。
+// 与 probe 走同一条校验路径（无效 Base URL 会抛），调用方负责转成界面提示。
+export function probeUrl(baseUrl, api) {
+  return resolveUrl(baseUrl, REQUEST_PATHS[api] ?? REQUEST_PATHS["openai-chat"]);
+}
+
 function requestFor(api, baseUrl, model, apiKey, authField) {
   if (api === "anthropic") {
     return {
-      url: resolveUrl(baseUrl, "/messages"),
+      url: probeUrl(baseUrl, api),
       headers: {
         "content-type": "application/json",
         "anthropic-version": "2023-06-01",
@@ -24,13 +38,13 @@ function requestFor(api, baseUrl, model, apiKey, authField) {
   }
   if (api === "openai-responses") {
     return {
-      url: resolveUrl(baseUrl, "/responses"),
+      url: probeUrl(baseUrl, api),
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: { model, input: "ping", max_output_tokens: 16 },
     };
   }
   return {
-    url: resolveUrl(baseUrl, "/chat/completions"),
+    url: probeUrl(baseUrl, api),
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
     body: { model, max_tokens: 1, messages: [{ role: "user", content: "ping" }] },
   };
@@ -112,5 +126,3 @@ export async function testConnection(profile, options = {}) {
     clearTimeout(timer);
   }
 }
-
-export { resolveUrl as probeUrl };

@@ -43,7 +43,7 @@ test("core manifest is configured for public publishing", async () => {
   assert.equal(manifest.name, "@avenic/core");
   assert.equal(manifest.private, undefined);
   assert.equal(manifest.license, "MIT");
-  assert.equal(manifest.version, "1.2.0");
+  assert.equal(manifest.version, "1.2.1");
   assert.deepEqual(manifest.files, ["src/", "index.d.ts", "LICENSE"]);
   assert.equal(manifest.exports["."].types, "./index.d.ts");
   assert.equal(manifest.exports["."].import, "./src/index.mjs");
@@ -62,6 +62,10 @@ test("core type declarations cover the extension contract", async () => {
     "readDirectState", "loadKnownCatalogs", "setDefaultCatalogSpec", "loadDefaultCatalogSpec",
     "registerCatalog", "ensureCatalog", "buildCatalog", "loadPacks", "resolvePacks",
     "cloneHead", "detectSkillRoot", "discoverSourceSkills", "locateProjectRoot",
+    // 扩展面板直接依赖的三个导出：开关清单/开关落点表（面板显示「实际写入的键名」）与
+    // 测试请求地址解析（「将请求：<地址>」实时预览）。缺任何一个，面板就只能自己抄一份
+    // 业务逻辑，而设计 §9.7 禁止那样做。
+    "TOGGLE_KEYS", "TOGGLE_ENTRIES", "probeUrl",
   ]) {
     assert.match(dts, new RegExp(`\\b${name}\\b`), name);
   }

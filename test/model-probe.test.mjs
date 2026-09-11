@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import http from "node:http";
 import test from "node:test";
-import { PRESETS, applyPreset, normalizeProfile, testConnection } from "../packages/core/src/index.mjs";
+import { PRESETS, applyPreset, normalizeProfile, probeUrl, testConnection } from "../packages/core/src/index.mjs";
 
 const SECRET = "sk-test-1234567890";
 const NOW = "2026-09-10T00:00:00.000Z";
@@ -126,6 +126,39 @@ test("testConnection does not duplicate an existing /v1 segment", async () => {
     await testConnection(profileFor(`${baseUrl}/v1/`));
     assert.deepEqual(paths, ["/v1/messages", "/v1/messages", "/v1/messages", "/v1/messages"]);
   });
+});
+
+// 面板的「将请求：<地址>」实时预览必须由 core 算（设计 §9.3 / §9.7：插件侧零业务逻辑），
+// 所以 probeUrl 是公共 API。这里把它钉在**真实发出的请求**上：不是比对常量表，而是拿
+// mock server 实际收到的 path 反向校验，这样换路径表就再也骗不过测试。
+test("probeUrl predicts the URL the probe actually requests", async () => {
+  const seen = [];
+  await withServer((request, response) => {
+    seen.push(request.url);
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end("{}");
+  }, async (baseUrl) => {
+    for (const api of ["anthropic", "openai-chat", "openai-responses"]) {
+      await testConnection(profileFor(baseUrl, api));
+      assert.equal(probeUrl(baseUrl, api), `${baseUrl}${seen.at(-1)}`, `probeUrl 必须与 ${api} 真实请求一致`);
+    }
+    // 已含 /v1（含尾斜杠）时不重复追加，与 probe 的去重规则同源。
+    for (const suffix of ["/v1", "/v1/", "/"]) {
+      await testConnection(profileFor(`${baseUrl}${suffix}`));
+      assert.equal(probeUrl(`${baseUrl}${suffix}`, "anthropic"), `${baseUrl}${seen.at(-1)}`);
+    }
+    // 未知 API 类型退到 chat/completions，与 requestFor 的兜底分支一致。
+    await testConnection(profileFor(baseUrl, "openai-chat"));
+    assert.equal(probeUrl(baseUrl, "nope"), `${baseUrl}${seen.at(-1)}`);
+  });
+});
+
+test("probeUrl rejects the same invalid Base URLs the probe would", () => {
+  // 与 probe 共用 validateBaseUrl：面板拿到异常要转成界面提示，而不是把非法地址拿去请求。
+  for (const bad of ["", "ftp://x", "https://x/a b", "javascript:alert(1)"]) {
+    assert.throws(() => probeUrl(bad, "anthropic"), undefined, `${bad} 必须抛`);
+  }
+  assert.equal(probeUrl("https://api.anthropic.com", "anthropic"), "https://api.anthropic.com/v1/messages");
 });
 
 test("testConnection classifies failures", async () => {

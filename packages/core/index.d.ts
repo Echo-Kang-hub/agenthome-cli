@@ -555,3 +555,7 @@ export function testConnection(
   profile: ModelProfile,
   options?: { timeoutMs?: number; fetch?: typeof fetch; endpoint?: EndpointConfig; model?: string },
 ): Promise<ProbeResult>;
+// 解析测试连接真正请求的地址（`/v1` 去重逻辑只有这一份）。面板的「将请求：<地址>」实时
+// 预览用它，而不是在 media/main.js 里再写一遍 —— 设计 §9.7 禁止插件侧第二份业务逻辑。
+// 无效 Base URL 会抛（与 probe 同一条校验路径），调用方负责转成界面提示。
+export function probeUrl(baseUrl: string, api: ApiType): string;
