@@ -5,6 +5,8 @@ import {
   AGENTS,
   acquireSessionLease,
   agentExecutableAvailable,
+  bindProject,
+  buildLaunchInjection,
   clearLocalAuth,
   createInstallContext,
   deinitializeAgent,
@@ -19,6 +21,8 @@ import {
   logConflicts,
   managedSkillNames,
   projectAuthEnvironment,
+  projectModelStatus,
+  resolveProjectProfile,
   sessionLeasePath,
   sessionsGitIgnored,
   setLocalAuth,
@@ -27,6 +31,7 @@ import {
   validateAuthMode,
   validateSessionsMode,
 } from "#core";
+import { dispatchModel } from "./model-cli.mjs";
 import { dispatchHub, dispatchSkills } from "./skills-cli.mjs";
 import { updateAvenic } from "./self-update.mjs";
 import { spawnSessionWatchdog } from "./watchdog.mjs";
@@ -99,6 +104,17 @@ Hub:
                                       (run inside your Hub Git clone)
   Note: the deprecated verb 'catalog' still works, with a deprecation warning.
 
+Models:
+  avenic model                       Show library path, project binding and projection status
+  avenic model list                  List local profiles (marks the one bound to this project)
+  avenic model add --name <n> --base-url <u> --api-key <k> [--api <anthropic|openai-chat|openai-responses>] [--model <id>] [--id <id>]
+  avenic model set|edit <id> […]     Update a profile in the local library
+  avenic model use [id]              Bind a profile to this project (interactive picker on a terminal)
+  avenic model clear                 Unbind this project and restore the previous settings
+  avenic model remove <id>           Delete a profile from the local library
+  avenic model test [id]             Send one minimal real request (exit code 2 on failure)
+  avenic model presets               List built-in endpoint presets
+
 Update Avenic:
   avenic self-update
 `);
@@ -116,6 +132,25 @@ function printAgentStatus(agent, projectRoot, state) {
     console.log(`Sessions            ${config.sessions === "global" ? "Global (native)" : "Project (portable)"}`);
   }
   console.log(`Official CLI        ${agentExecutableAvailable(agent.id) ? "Available" : "Not found"}`);
+}
+
+// 启动前解析当前项目绑定的 profile：dangling 时先安全回滚并提示（幂等），
+// 然后按 agent 生成注入。任何异常都不阻断启动（配置问题不该让 Agent 打不开）。
+async function resolveActiveProfileForLaunch(projectRoot, environment) {
+  try {
+    const resolved = await resolveProjectProfile(projectRoot, environment, console);
+    if (resolved.message) console.log(resolved.message);
+    if (!resolved.profile) return null;
+    // Claude 的投影是项目内物化文件：指纹不一致时先刷新（事务写）
+    const status = await projectModelStatus(projectRoot, environment);
+    if (status.projection && !status.projection.fingerprintMatches) {
+      await bindProject(projectRoot, environment, resolved.profile.id);
+    }
+    return resolved.profile;
+  } catch (error) {
+    console.log(`Model configuration skipped: ${error.message}`);
+    return null;
+  }
 }
 
 async function dispatchAgent(agentId, argumentsList) {
@@ -314,9 +349,17 @@ async function dispatchAgent(agentId, argumentsList) {
   } catch (error) {
     console.warn(`⚠ Skills repair skipped: ${error.code ?? error.message}`);
   }
+  const launchProfile = await resolveActiveProfileForLaunch(projectRoot, environment);
+  const injection = buildLaunchInjection({
+    agentId,
+    profile: launchProfile,
+    argumentsList,
+    environment: { ...environment },
+  });
+  if (injection.note) console.log(injection.note);
   let status;
   try {
-    status = launchExecutable(agent.executable, argumentsList, { cwd: projectRoot, environment });
+    status = launchExecutable(agent.executable, injection.argumentsList, { cwd: projectRoot, environment: injection.environment });
   } finally {
     if (portableSessions) {
       try {
@@ -431,6 +474,13 @@ export async function runCli(options = {}) {
     // `catalog` 是弃用别名：继续可用，但警告（与 AGENTHOME_* 环境变量的弃用风格一致）
     if (command === "catalog") console.warn("warning: `avenic catalog` is deprecated; use `avenic hub`");
     return dispatchHub(remainingArguments, {
+      io: console,
+      cwd: process.cwd(),
+      environment: process.env,
+    });
+  }
+  if (command === "model") {
+    return dispatchModel(remainingArguments, {
       io: console,
       cwd: process.cwd(),
       environment: process.env,
