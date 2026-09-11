@@ -23,7 +23,8 @@ export async function removeTempDirectory(directory, io = console) {
   }
 }
 
-export async function replaceStagedFiles(replacements, tempDirectory) {
+export async function replaceStagedFiles(replacements, tempDirectory, options = {}) {
+  const renameFile = options.rename ?? rename;
   const completed = [];
   try {
     for (const replacement of replacements) {
@@ -31,15 +32,15 @@ export async function replaceStagedFiles(replacements, tempDirectory) {
       await mkdir(path.dirname(backup), { recursive: true });
       let hasBackup = false;
       if (existsSync(replacement.target)) {
-        await rename(replacement.target, backup);
+        await renameFile(replacement.target, backup);
         hasBackup = true;
       }
       await mkdir(path.dirname(replacement.target), { recursive: true });
       try {
-        await rename(replacement.staged, replacement.target);
+        await renameFile(replacement.staged, replacement.target);
       } catch (error) {
         if (hasBackup) {
-          await rename(backup, replacement.target);
+          await renameFile(backup, replacement.target);
         }
         throw error;
       }
@@ -49,7 +50,7 @@ export async function replaceStagedFiles(replacements, tempDirectory) {
     for (const replacement of completed.reverse()) {
       await rm(replacement.target, { recursive: true, force: true });
       if (existsSync(replacement.backup)) {
-        await rename(replacement.backup, replacement.target);
+        await renameFile(replacement.backup, replacement.target);
       }
     }
     throw error;

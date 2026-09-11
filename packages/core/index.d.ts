@@ -284,7 +284,11 @@ export function pruneCatalogSkills(catalogRoot: string, sourceConfig: SourcesCon
 
 export function createTempDirectory(catalogRoot: string): Promise<string>;
 export function removeTempDirectory(directory: string, io?: Io): Promise<unknown>;
-export function replaceStagedFiles(replacements: Array<{ relativePath: string; staged: string; target: string }>, tempDirectory: string): Promise<unknown>;
+export function replaceStagedFiles(
+  replacements: Array<{ relativePath: string; staged: string; target: string }>,
+  tempDirectory: string,
+  options?: { rename?: (from: string, to: string) => Promise<unknown> },
+): Promise<unknown>;
 
 export interface InstallContext {
   configFile: string;
@@ -451,3 +455,20 @@ export function validateModelId(value: string): string;
 export function maskSecret(value: unknown): string;
 export function canonicalJson(value: unknown): string;
 export function libraryFingerprint(profile: ModelProfile): string;
+
+// ---- model: transaction & library ----
+export interface ModelLibrary { schemaVersion: number; revision: number; profiles: Record<string, ModelProfile>; exists: boolean; file: string }
+export interface TransactOptions<T> {
+  read: () => Promise<{ revision: number; value: T }>;
+  build: (current: { revision: number; value: T }) => T | null;
+  stage: (next: T, directory: string) => Promise<Array<{ relativePath: string; staged: string; target: string }>>;
+  tempRoot: string;
+  attempts?: number;
+  rename?: (from: string, to: string) => Promise<unknown>;
+}
+export function transact<T>(options: TransactOptions<T>): Promise<{ changed: boolean; value: T }>;
+export function readLibrary(environment?: ProcessEnvLike): Promise<ModelLibrary>;
+export function listProfiles(environment?: ProcessEnvLike): Promise<ModelProfile[]>;
+export function getProfile(environment: ProcessEnvLike | undefined, id: string): Promise<ModelProfile | null>;
+export function upsertProfile(environment: ProcessEnvLike | undefined, input: Partial<ModelProfile> & { id: string }, io?: Io): Promise<{ changed: boolean; revision: number; value: unknown }>;
+export function removeProfile(environment: ProcessEnvLike | undefined, id: string, io?: Io): Promise<{ changed: boolean; revision: number; value: unknown }>;

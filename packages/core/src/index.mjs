@@ -185,3 +185,5 @@ export {
   projectModelFile,
   projectTempRoot,
 } from "./model/paths.mjs";
+export { transact } from "./model/transaction.mjs";
+export { getProfile, listProfiles, readLibrary, removeProfile, upsertProfile } from "./model/library.mjs";
