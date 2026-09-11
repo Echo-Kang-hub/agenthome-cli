@@ -45,7 +45,17 @@ class StubNode {
   value = "";
   private text = "";
 
-  constructor(readonly tagName: string, private readonly texts: string[]) {}
+  // 不用 TS 的「构造器参数属性」（constructor(readonly x: T)）：根目录的 `npm test`
+  // 会用 Node 的 strip-only 类型擦除直接执行本文件，而 strip-only 明确不支持该语法
+  // （ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX）。vscode 本地套件走 esbuild，能吞下它，
+  // 所以这条约束只有根套件看得见——保留显式字段声明与赋值。
+  readonly tagName: string;
+  private readonly texts: string[];
+
+  constructor(tagName: string, texts: string[]) {
+    this.tagName = tagName;
+    this.texts = texts;
+  }
 
   get textContent(): string {
     return this.text;

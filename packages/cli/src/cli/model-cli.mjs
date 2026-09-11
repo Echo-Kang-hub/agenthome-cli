@@ -30,6 +30,10 @@ function takeOption(argumentsList, option) {
   return value;
 }
 
+// normalizeProfile 是「白名单化」：没传的字段不留原值、而是取默认值。所以凡是 flags
+// 表达不了的字段都必须从 existing 逐项带过（语义＝不修改）——否则 `model edit <id> --name X`
+// 会顺手清掉 overrides/codex/opencode/env/toggles/claude，并把 endpoint.authField 悄悄换回默认。
+// 新增 field 时同步加到这里：漏一个就是又一次静默丢失（vscode 侧 services/model.ts 同理）。
 function profileInputFrom(flags, existing = null) {
   return normalizeProfile(
     {
@@ -38,9 +42,16 @@ function profileInputFrom(flags, existing = null) {
       endpoint: {
         baseUrl: flags.baseUrl ?? existing?.endpoint.baseUrl,
         api: flags.api ?? existing?.endpoint.api,
+        authField: existing?.endpoint.authField,
         apiKey: flags.apiKey ?? existing?.endpoint.apiKey,
       },
+      overrides: existing?.overrides,
       models: flags.model ? { ...(existing?.models ?? {}), main: { id: flags.model } } : existing?.models,
+      toggles: existing?.toggles,
+      env: existing?.env,
+      claude: existing?.claude,
+      codex: existing?.codex,
+      opencode: existing?.opencode,
     },
     { existing },
   );

@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { upsertProfile } from "../packages/core/src/index.mjs";
+import { getProfile, upsertProfile } from "../packages/core/src/index.mjs";
 import { dispatchModel } from "../packages/cli/src/cli/model-cli.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -225,5 +225,44 @@ test("model use never prints the full key", async () => {
     const used = runAgent(projectRoot, ["model", "use", "mimo"], environment);
     assert.equal(used.status, 0, used.stderr);
     assert.doesNotMatch(used.stdout, /sk-aaaabbbbccccdddd/);
+  });
+});
+
+// ---- edit/set 不得静默抹掉自己管不到的字段 ----
+
+// profileInputFrom 只从 flags 与 existing 拼出 id/name/endpoint/models 五个字段，
+// 而 core 的 normalizeProfile 是「白名单化」：没传的字段不留原值、而是取默认值。
+// 于是 `avenic model edit <id> --name X` 会顺手把 overrides / codex / opencode / env /
+// toggles / claude 全部清掉，并把 endpoint.authField 悄悄换回默认——都不可撤销。
+// CLI 没有任何覆盖这些字段的 flag，所以唯一正确的语义就是「原样带过」。
+test("model edit keeps every field the flags cannot express", async () => {
+  await withProject(async ({ projectRoot, environment }) => {
+    await upsertProfile(environment, {
+      id: "rich",
+      name: "Rich",
+      endpoint: { baseUrl: "https://a.example/anthropic", api: "anthropic", apiKey: "sk-keepme-123456", authField: "ANTHROPIC_API_KEY" },
+      overrides: {
+        codex: { baseUrl: "https://api.openai.com/v1", api: "openai-responses", authField: "ANTHROPIC_API_KEY", apiKey: "sk-codex-999999", providerId: "richcodex" },
+      },
+      models: { main: { id: "m" }, opus: { id: "o", display: "Opus", longContext: true } },
+      toggles: { teams: true, maxEffort: true },
+      env: { AVENIC_CUSTOM_FLAG: "1" },
+      claude: { settings: { someKey: true } },
+      codex: { providerId: "richcodex", envKey: "RICH_KEY", reasoningEffort: "high" },
+      opencode: { providerId: "richoc", npmAdapter: "@ai-sdk/openai-compatible" },
+    });
+    const before = await getProfile(environment, "rich");
+
+    const status = await dispatchModel(["edit", "rich", "--name", "Rich 改名"], { cwd: projectRoot, environment, io: silentIo });
+    assert.equal(status, 0);
+    const after = await getProfile(environment, "rich");
+
+    assert.equal(after.name, "Rich 改名", "flag 指定的字段当然要生效");
+    // 逐字段比对会随 core 加字段而失效；整体比对（只挖掉「本来就该变」的 updatedAt 与 name）
+    // 是**金丝雀**：core 将来新增任何字段、而 profileInputFrom 忘了带过，这里立刻变红。
+    const untouched = ({ updatedAt, name, ...rest }) => rest;
+    assert.deepEqual(untouched(after), untouched(before), "除 updatedAt 与本次改名外，库中字段必须逐字保留");
+    assert.deepEqual(after.overrides, before.overrides, "Codex/OpenCode 端点覆盖不得被抹掉");
+    assert.deepEqual(after.endpoint, before.endpoint, "未被编辑的 endpoint（含 authField 与密钥）必须逐字保留");
   });
 });

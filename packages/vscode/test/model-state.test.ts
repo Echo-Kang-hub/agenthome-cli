@@ -107,3 +107,44 @@ test("saveProfile with a new apiKey replaces the stored key", async () => {
     assert.equal(after?.endpoint.baseUrl, "https://b.example/anthropic");
   });
 });
+
+// 草稿（ProfileDraft）只承载面板能编辑的字段：id/name/baseUrl/api/apiKey/mainModel。
+// 其余全部字段面板根本不发，所以 saveProfile 必须从库中现有配置整体带过来。
+// 反例（修复前的真实行为）：normalizeProfile 是「白名单化」——没传的字段不留原值而是取默认值，
+// 且 overrides/codex/opencode 在草稿里完全缺席 → 在面板里改一次名字就会永久抹掉该配置的
+// Codex/OpenCode 端点覆盖与 provider 设置，且不可撤销。
+test("saveProfile preserves every library field the panel draft does not carry", async () => {
+  await withStateEnv(async ({ environment }) => {
+    await upsertProfile(environment, {
+      id: "rich",
+      name: "Rich",
+      endpoint: { baseUrl: "https://a.example/anthropic", api: "anthropic", apiKey: "sk-keepme-123456", authField: "ANTHROPIC_API_KEY" },
+      overrides: {
+        codex: { baseUrl: "https://api.openai.com/v1", api: "openai-responses", authField: "ANTHROPIC_API_KEY", apiKey: "sk-codex-999999", providerId: "richcodex" },
+      },
+      models: { main: { id: "m" }, opus: { id: "o", display: "Opus", longContext: true } },
+      toggles: { teams: true, maxEffort: true },
+      env: { AVENIC_CUSTOM_FLAG: "1" },
+      claude: { settings: { someKey: true } },
+      codex: { providerId: "richcodex", envKey: "RICH_KEY", reasoningEffort: "high" },
+      opencode: { providerId: "richoc", npmAdapter: "@ai-sdk/openai-compatible" },
+    });
+    const before = await getProfile(environment, "rich");
+
+    // 只改名字——面板的一次最普通保存
+    await saveProfile({ id: "rich", name: "Rich 改名", baseUrl: "https://a.example/anthropic", api: "anthropic", apiKey: null }, environment);
+    const after = await getProfile(environment, "rich");
+
+    assert.equal(after?.name, "Rich 改名", "草稿里的字段当然要生效");
+    // 逐字段比对会随 core 加字段而失效；整体比对（只挖掉「本来就该变」的 updatedAt 与 name）
+    // 是**金丝雀**：core 将来新增任何字段、而 saveProfile 忘了带过，这里立刻变红，
+    // 不必等有人想起来补断言。
+    const untouched = (profile: unknown) => {
+      const { updatedAt, name, ...rest } = profile as Record<string, unknown>;
+      return rest;
+    };
+    assert.deepEqual(untouched(after), untouched(before), "除 updatedAt 与本次改名外，库中字段必须逐字保留");
+    assert.deepEqual(after?.overrides, before?.overrides, "Codex/OpenCode 端点覆盖不得被抹掉");
+    assert.deepEqual(after?.endpoint, before?.endpoint, "未被编辑的 endpoint（含 authField 与密钥）必须逐字保留");
+  });
+});
