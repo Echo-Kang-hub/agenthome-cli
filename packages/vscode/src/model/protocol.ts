@@ -137,6 +137,33 @@ export interface ModelPanelData {
   message: string | null;
 }
 
+/**
+ * 面板消息 → 命令 id 的转发表。面板宿主只照表执行，不自己判断消息该去哪。
+ */
+export const FORWARDED_COMMANDS: Readonly<Record<string, string>> = {
+  saveProfile: "avenic.model.saveProfile",
+  deleteProfile: "avenic.model.deleteProfile",
+  duplicateProfile: "avenic.model.duplicateProfile",
+  bindProject: "avenic.model.bindProject",
+  clearProject: "avenic.model.clearProject",
+  testConnection: "avenic.model.testConnection",
+  preview: "avenic.model.preview",
+};
+
+/**
+ * 转发里**会改库或改绑定**的那些：做完必须让面板自己重新取数。
+ * extension 的 refresh() 只刷新三个树视图与 Overview，编辑器标签页不在其中——漏掉任何一个，
+ * 用户点完保存/删除/复制/绑定看到的都还是旧界面。
+ * `preview`（每次按键都跑、不写盘）与 `testConnection`（只读探测）故意不在表里。
+ */
+export const MUTATING_MESSAGES: ReadonlySet<string> = new Set([
+  "saveProfile",
+  "deleteProfile",
+  "duplicateProfile",
+  "bindProject",
+  "clearProject",
+]);
+
 export type ModelSenderMessage =
   | { type: "data"; payload: ModelPanelData }
   | { type: "parsed"; payload: unknown }

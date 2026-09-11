@@ -31,7 +31,6 @@ export function registerModelCommands(context: vscode.ExtensionContext, deps: Mo
     const panel = ModelPanel.show(context.extensionUri, {
       projectRoot: deps.root,
       resolveRoot: deps.resolveRoot,
-      onMutation: deps.refresh,
     });
     panel.refresh();
   });

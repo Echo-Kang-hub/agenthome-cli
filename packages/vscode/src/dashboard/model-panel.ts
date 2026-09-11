@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as vscode from "vscode";
-import { isModelViewMessage, type ModelSenderMessage } from "../model/protocol.ts";
+import { FORWARDED_COMMANDS, MUTATING_MESSAGES, isModelViewMessage, type ModelSenderMessage } from "../model/protocol.ts";
 import { panelData, parseJson, parseText } from "../services/model.ts";
 
 export interface ModelPanelDeps {
   projectRoot: () => string | null;
   resolveRoot: () => Promise<string | null>;
-  onMutation: () => void;
 }
 
 // 模板缺失/面板销毁时的降级：无脚本、无远程内容（照 dashboard/overview.ts 的静态提示）。
@@ -70,18 +69,11 @@ export class ModelPanel {
     if (message.type === "parseJson") return void this.post({ type: "parsed", payload: { json: safeParse(() => parseJson(message.text)) } });
     if (message.type === "parseText") return void this.post({ type: "parsed", payload: { text: safeParse(() => parseText(message.text)) } });
     // 其余（保存/删除/复制/绑定/解绑/测试/预览）都转发到命令层，保证 MutationQueue 串行与刷新一致
-    const forwarded: Record<string, string> = {
-      saveProfile: "avenic.model.saveProfile",
-      deleteProfile: "avenic.model.deleteProfile",
-      duplicateProfile: "avenic.model.duplicateProfile",
-      bindProject: "avenic.model.bindProject",
-      clearProject: "avenic.model.clearProject",
-      testConnection: "avenic.model.testConnection",
-      preview: "avenic.model.preview",
-    };
-    const command = forwarded[message.type];
+    const command = FORWARDED_COMMANDS[message.type];
     if (!command) return;
     const result = await vscode.commands.executeCommand(command, message);
+    // 改过库/绑定的：自己重新取数（extension 的 refresh 不管编辑器标签页，见 MUTATING_MESSAGES）。
+    if (MUTATING_MESSAGES.has(message.type)) await this.sendData();
     if (message.type === "testConnection" && result !== undefined) {
       this.post({ type: "testResult", payload: result });
     }

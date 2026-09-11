@@ -1,6 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isModelViewMessage } from "../src/model/protocol.ts";
+import { FORWARDED_COMMANDS, MUTATING_MESSAGES, isModelViewMessage } from "../src/model/protocol.ts";
+
+// 宿主照表转发消息；改库/改绑定的那些做完必须让面板自己重新取数（extension 的 refresh() 只
+// 刷新树视图与 Overview，编辑器标签页不在其中）。这两张表一旦对不上，用户点完保存/删除/复制/
+// 绑定看到的还是旧界面——这个缺陷此前真实存在（MUTATING_MESSAGES 整个缺失）。
+test("forwarded commands and mutating messages stay consistent", () => {
+  for (const type of MUTATING_MESSAGES) {
+    assert.ok(FORWARDED_COMMANDS[type] !== undefined, `${type} 会改库，却没有对应的转发命令`);
+  }
+  // 两个只读的消息故意不算 mutation：preview 每次按键都跑，testConnection 只发一次探测请求。
+  assert.equal(MUTATING_MESSAGES.has("preview"), false, "预览不写盘，不该触发整份重取");
+  assert.equal(MUTATING_MESSAGES.has("testConnection"), false, "测试连接不改状态");
+  for (const type of ["preview", "testConnection"]) {
+    assert.ok(FORWARDED_COMMANDS[type] !== undefined, `${type} 必须仍然被转发`);
+  }
+  // 每条转发消息都必须是"要么改库、要么已明确豁免"二者之一，不能有一条谁都不管的。
+  assert.equal(
+    Object.keys(FORWARDED_COMMANDS).length,
+    MUTATING_MESSAGES.size + 2,
+    "新增转发命令时，必须决定它是不是 mutation",
+  );
+  // 命令 id 一律 avenic.model.*，与 commands/model-commands.ts 的注册前缀一致。
+  for (const [type, id] of Object.entries(FORWARDED_COMMANDS)) {
+    assert.match(id, /^avenic\.model\.[A-Za-z]+$/, `${type} 的命令 id 形状不对`);
+  }
+});
 
 /** 一份合法的完整草稿；各条测试只覆盖自己关心的字段。 */
 function draft(patch: Record<string, unknown> = {}): Record<string, unknown> {
