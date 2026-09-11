@@ -4,6 +4,7 @@ import {
   CODEX_EFFORTS,
   MODEL_ROLES,
   PRESETS,
+  ROLE_KEYS,
   TOGGLE_ENTRIES,
   TOGGLE_KEYS,
   agentCompatibility,
@@ -78,6 +79,7 @@ export function panelOptions(): PanelOptions {
     toggles: TOGGLE_ENTRIES.map(([id, path]) => ({ id, label: TOGGLE_LABELS[id] ?? id, writes: path.join(".") })),
     presets: PRESETS.map((preset) => ({ id: preset.id, label: preset.label, baseUrl: preset.baseUrl, api: preset.api })),
     longContextRoles: [...LONG_CONTEXT_ROLES],
+    displayRoles: Object.keys(ROLE_KEYS),
     agents: Object.keys(AGENT_LABELS).map((id) => ({ id, label: AGENT_LABELS[id] })),
     codexEffort: [...CODEX_EFFORTS],
     newProfile: newProfileDefaults(),
@@ -116,6 +118,9 @@ export function profileToDraft(profile: ModelProfile): ProfileDraft {
     overrides,
     codex: { ...profile.codex },
     opencode: { ...profile.opencode },
+    // 库里的 Claude 顶层键（粘贴 claude-settings 形态带进来的那些）原样带进草稿：编辑区要
+    // 只读展示它们，否则界面显示"无"、而保存时 profileInputFromDraft 又会把它们并回去。
+    ...(Object.keys(profile.claude?.settings ?? {}).length > 0 ? { passthrough: profile.claude.settings } : {}),
   };
 }
 

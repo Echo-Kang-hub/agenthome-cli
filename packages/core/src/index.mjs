@@ -190,6 +190,7 @@ export {
 export { transact } from "./model/transaction.mjs";
 export { getProfile, listProfiles, readLibrary, removeProfile, upsertProfile } from "./model/library.mjs";
 export {
+  ROLE_KEYS,
   TOGGLE_ENTRIES,
   buildClaudeEntries,
   deletePath,

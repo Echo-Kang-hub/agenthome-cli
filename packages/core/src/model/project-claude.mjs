@@ -29,7 +29,12 @@ function assertNoConflictingPaths(entries, source) {
   }
 }
 
-const ROLE_KEYS = { opus: "OPUS", sonnet: "SONNET", haiku: "HAIKU", fable: "FABLE" };
+// 有 `ANTHROPIC_DEFAULT_<SUFFIX>_MODEL` 别名的角色（main 写 ANTHROPIC_MODEL，subagent 写
+// CLAUDE_CODE_SUBAGENT_MODEL，两者都没有别名）。**导出是给面板用的**：设计 §9.3 的「display
+// name（where applicable）」的分界线就是这张表——只有这里列出的角色，display 才会被投影成
+// `ANTHROPIC_DEFAULT_<SUFFIX>_MODEL_NAME`。面板若自己维护一份「哪几行有显示名输入框」，
+// core 往表里加一个角色时界面会静默漏掉它（§9.7 禁止插件侧第二份业务逻辑）。
+export const ROLE_KEYS = { opus: "OPUS", sonnet: "SONNET", haiku: "HAIKU", fable: "FABLE" };
 
 // 开关 → 它实际写入的路径与值。**导出是给面板用的**：设计 §9.3 要求每个开关显示「实际写入的
 // 键名」，而 §9.7 禁止插件维护第二份业务逻辑——所以这张表必须是唯一事实来源，由 core 导出，

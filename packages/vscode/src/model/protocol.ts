@@ -113,7 +113,11 @@ export interface PanelOptions {
   roles: Array<{ id: string; label: string }>;
   toggles: Array<{ id: string; label: string; writes: string }>;
   presets: Array<{ id: string; label: string; baseUrl: string; api: string }>;
+  // 只有这些角色会得到「1M 上下文」勾选框（设计 §9.3 限定 Opus / Sonnet）。
   longContextRoles: string[];
+  // 只有这些角色的 display 会被 core 投影成 `ANTHROPIC_DEFAULT_<SUFFIX>_MODEL_NAME`（core 的
+  // ROLE_KEYS）：显示名输入框只出现在这几行，避免给出一个存得下、却什么都不写的输入框。
+  displayRoles: string[];
   agents: Array<{ id: string; label: string }>;
   codexEffort: string[];
   // 「+ 新建」表单的起点，默认值由 core 生成（见 state.ts）。

@@ -425,6 +425,9 @@ export const AUTH_FIELDS: readonly string[];
 // Codex reasoningEffort 的合法取值（面板下拉框的唯一来源；不在表内 core 会静默落到 medium）。
 export const CODEX_EFFORTS: readonly string[];
 export const TOGGLE_KEYS: readonly (keyof ProfileToggles)[];
+// 有 `ANTHROPIC_DEFAULT_<SUFFIX>_MODEL` 别名的角色 → 别名后缀。面板据此决定哪几行提供
+// 「显示名」输入框（display 只会被投影成这几个角色的 `_MODEL_NAME`），以及每行实际写哪个键。
+export const ROLE_KEYS: Readonly<Record<string, string>>;
 export type ApiType = "anthropic" | "openai-chat" | "openai-responses";
 export type ModelRole = "main" | "opus" | "sonnet" | "haiku" | "fable" | "subagent";
 export interface ModelRow { id: string; display?: string; longContext?: boolean }
