@@ -102,15 +102,16 @@ function previewPaste(spec, io) {
   const text = readPaste(spec);
   let parsed;
   let form;
-  let warnings = [];
   try {
     parsed = parseConfigJson(text);
     form = parsed.form;
   } catch {
     parsed = parseConfigText(text);
     form = "text";
-    warnings = parsed.warnings ?? [];
   }
+  // 两条分支都会给出 warnings（如"这个值看起来是掩码，已忽略"）：只打印文本分支的会
+  // 让 JSON 粘贴的说明静默丢失。
+  const warnings = parsed.warnings ?? [];
   io.log("Pasted configuration (preview — nothing was saved)\n");
   io.log(`Form  ${form}`);
   io.log("\nRecognized");

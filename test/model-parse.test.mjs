@@ -140,3 +140,33 @@ test("parseConfigText does not mistake a bare URL for a model name", () => {
   assert.equal(result.recognized.some((entry) => entry.field.endsWith("Model")), false);
   assert.equal(result.warnings.some((warning) => /model/i.test(warning)), true);
 });
+
+// §7：面板与 CLI 都会把识别结果交给用户"填入表单"，所以掩码绝不能作为密钥被识别出来。
+// 一条真实的失败路径：用户把 Avenic 卡片上的 `密钥 sk-…f3a2`（或别处的 `sk-***abcd`）
+// 粘回来，识别成 apiKey → 保存 → 库里、投影里、启动注入的全是这个掩码。
+test("recognizeEnvMap refuses mask-shaped secrets instead of storing them as keys", () => {
+  for (const masked of ["sk-…f3a2", "sk-***abcd", "••••"]) {
+    const result = recognizeEnvMap({ ANTHROPIC_AUTH_TOKEN: masked });
+    assert.equal(result.recognized.some((entry) => entry.field === "apiKey"), false, `${masked} 不是密钥`);
+    assert.deepEqual(result.candidates.apiKey, []);
+    assert.equal(result.warnings.length, 1, "必须说明为什么没识别到");
+    assert.match(result.warnings[0], /掩码/);
+  }
+  // 真密钥照旧（掩码规则不能误伤 [A-Za-z0-9._-] 的密钥）。
+  const real = recognizeEnvMap({ ANTHROPIC_AUTH_TOKEN: "sk-aaaabbbbccccdddd" });
+  assert.deepEqual(real.candidates.apiKey, ["sk-aaaabbbbccccdddd"]);
+  assert.deepEqual(real.warnings, []);
+});
+
+test("both paste parsers carry the mask warning through to the caller", () => {
+  const json = parseConfigJson(JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: "sk-…f3a2", ANTHROPIC_BASE_URL: "https://a.example" } }));
+  assert.equal(json.recognized.some((entry) => entry.field === "apiKey"), false);
+  assert.equal(json.warnings.length, 1);
+  assert.equal(json.recognized.some((entry) => entry.field === "baseUrl"), true, "掩码的密钥不影响同一个 env 块里的地址");
+
+  const text = parseConfigText("export ANTHROPIC_AUTH_TOKEN=sk-…f3a2\nmodel m1");
+  assert.equal(text.recognized.some((entry) => entry.field === "apiKey"), false);
+  assert.equal(text.warnings.some((warning) => /掩码/.test(warning)), true);
+  // 自由文本的模型名告警没有被掩码告警挤掉。
+  assert.equal(text.recognized.some((entry) => entry.field === "mainModel"), true);
+});

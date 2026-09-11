@@ -553,10 +553,12 @@ export interface ParseResult {
   recognized: RecognizedField[];
   passthrough: Record<string, unknown>;
   candidates: Record<string, string[]>;
+  // 识别过程中的非致命说明（如"这个值看起来是掩码，已忽略"）。不是错误：结果仍然可用。
+  warnings: string[];
 }
 export function parseConfigJson(text: string): ParseResult;
 export function parseConfigText(text: string): { recognized: RecognizedField[]; candidates: Record<string, string[]>; warnings: string[] };
-export function recognizeEnvMap(env: Record<string, string>): { recognized: RecognizedField[]; candidates: Record<string, string[]> };
+export function recognizeEnvMap(env: Record<string, string>): { recognized: RecognizedField[]; candidates: Record<string, string[]>; warnings: string[] };
 
 // ---- model: presets & probe ----
 export interface Preset { id: string; label: string; baseUrl: string; api: ApiType }

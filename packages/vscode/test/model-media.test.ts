@@ -698,6 +698,33 @@ test("paste import routes each recognized role to its own row", async () => {
   assert.match(allText(rendered), /将写入新密钥/);
 });
 
+// §7：core 把掩码形态的"密钥"从识别结果里剔掉了，面板要把这条说明显示出来——
+// 否则用户只会看到"没识别到密钥"而不知道原因。填入表单后草稿里的 apiKey 仍是 null
+// （= 保留库里已有的），绝不会把掩码当新密钥写进去。
+test("a mask-shaped pasted secret is reported and never filled into the draft", async () => {
+  const source = await readFile(path.join(mediaRoot, "main.js"), "utf8");
+  const rendered = renderDataMessage(panelData("/repo/proj-a"), source);
+  rendered.send({
+    type: "parsed",
+    payload: {
+      json: {
+        form: "claude-settings",
+        recognized: [{ field: "baseUrl", value: "https://pasted.example/anthropic" }],
+        passthrough: {},
+        candidates: { apiKey: [] },
+        warnings: ["ANTHROPIC_AUTH_TOKEN 的值看起来是掩码（sk-…f3a2），不是完整密钥：已忽略，请粘贴完整密钥或留空后手工填写"],
+      },
+    },
+  });
+  assert.match(allText(rendered), /已忽略，请粘贴完整密钥/);
+
+  fire(rendered.byId.get("fill") as StubNode);
+  const preview = lastDraft(rendered, "preview");
+  assert.equal(preview.apiKey, null, "没被识别的密钥 = 保留库里的，不是把掩码写进去");
+  assert.equal(preview.baseUrl, "https://pasted.example/anthropic");
+  assert.match(allText(rendered), /将保留配置库里已有的密钥/);
+});
+
 // §9.2 的 [复制]：常驻卡片操作。
 test("cards expose the duplicate action", async () => {
   const source = await readFile(path.join(mediaRoot, "main.js"), "utf8");

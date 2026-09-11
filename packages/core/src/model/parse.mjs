@@ -13,6 +13,10 @@ const ROLE_PREFIX = [
 ];
 const FREE_KEY = /sk-[A-Za-z0-9_-]{8,}/;
 const FREE_URL = /https?:\/\/[^\s"'`<>]+/;
+// 掩码形态：core 的 maskSecret 是「前 3 + … + 后 4」（过短是 ••••），另外用户还会从别处
+// 粘来 `sk-***abcd` 这种。真实密钥只会是 [A-Za-z0-9._-]，命中这里的一定不是密钥。
+// 把它当密钥存下来 = 从此每次请求都拿掩码当凭据（spec §7「不要把掩码当成表单值」）。
+const MASKED_VALUE = /[…•]|\*{3}/;
 
 function roleFor(key) {
   for (const [role, pattern] of ROLE_PREFIX) {
@@ -24,6 +28,7 @@ function roleFor(key) {
 export function recognizeEnvMap(env) {
   const candidates = { baseUrl: [], apiKey: [] };
   const models = {};
+  const warnings = [];
   for (const [key, raw] of Object.entries(env)) {
     const value = String(raw).trim().replace(/^["']|["']$/g, "");
     if (!value) continue;
@@ -32,6 +37,11 @@ export function recognizeEnvMap(env) {
       continue;
     }
     if (API_KEY_KEY.test(key)) {
+      // 掩码不是密钥：剔除并说明，别让用户以为"识别到了但没生效"。
+      if (MASKED_VALUE.test(value)) {
+        warnings.push(`${key} 的值看起来是掩码（${value}），不是完整密钥：已忽略，请粘贴完整密钥或留空后手工填写`);
+        continue;
+      }
       candidates.apiKey.push(value);
       continue;
     }
@@ -46,7 +56,7 @@ export function recognizeEnvMap(env) {
   for (const [role, values] of Object.entries(models)) {
     recognized.push({ field: `${role}Model`, value: values[0] });
   }
-  return { recognized, candidates: { ...candidates, ...models } };
+  return { recognized, candidates: { ...candidates, ...models }, warnings };
 }
 
 function flatLookup(source) {
@@ -66,21 +76,22 @@ export function parseConfigJson(text) {
   }
   let recognized = [];
   let candidates = {};
+  let warnings = [];
   let passthrough = {};
   let form = "unknown";
   const settings = raw?.env && typeof raw.env === "object" ? raw : raw?.settingsConfig?.env ? raw.settingsConfig : null;
   if (settings) {
     form = raw === settings ? "claude-settings" : "cc-switch";
-    ({ recognized, candidates } = recognizeEnvMap(settings.env));
+    ({ recognized, candidates, warnings } = recognizeEnvMap(settings.env));
     passthrough = Object.fromEntries(Object.entries(settings).filter(([key]) => key !== "env"));
-    return { form, recognized, passthrough, candidates };
+    return { form, recognized, passthrough, candidates, warnings };
   }
   if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
     form = "flat";
-    ({ recognized, candidates } = recognizeEnvMap(flatLookup(raw)));
-    return { form, recognized, passthrough, candidates };
+    ({ recognized, candidates, warnings } = recognizeEnvMap(flatLookup(raw)));
+    return { form, recognized, passthrough, candidates, warnings };
   }
-  return { form, recognized, passthrough, candidates };
+  return { form, recognized, passthrough, candidates, warnings };
 }
 
 export function parseConfigText(text) {
@@ -106,8 +117,7 @@ export function parseConfigText(text) {
     const key = source.match(FREE_KEY);
     if (key) env.API_KEY = key[0];
   }
-  const { recognized, candidates } = recognizeEnvMap(env);
-  const warnings = [];
+  const { recognized, candidates, warnings } = recognizeEnvMap(env);
   if (!recognized.some((entry) => entry.field.endsWith("Model"))) {
     warnings.push("未识别到模型名（model），请在表单中手工填写");
   }

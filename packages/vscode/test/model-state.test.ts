@@ -5,9 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import { bindProject, getProfile, maskSecret, modelsFile, upsertProfile } from "@avenic/core";
 import type { ModelProfile } from "@avenic/core";
-import { API_TYPES, AUTH_FIELDS, CODEX_EFFORTS, MODEL_ROLES, PRESETS, TOGGLE_KEYS } from "@avenic/core";
+import { AGENTS, API_TYPES, AUTH_FIELDS, CODEX_EFFORTS, MODEL_ROLES, PRESETS, ROLE_KEYS, TOGGLE_KEYS } from "@avenic/core";
 import { buildDraftPreview, buildModelPanelData, panelOptions, profileToDraft } from "../src/model/state.ts";
-import { duplicateProfile, saveProfile } from "../src/services/model.ts";
+import { duplicateProfile, parseJson, parseText, saveProfile } from "../src/services/model.ts";
 import type { ProfileDraft } from "../src/model/protocol.ts";
 import { testEnv } from "./helpers.ts";
 
@@ -118,6 +118,9 @@ test("panel options derive their membership from core", () => {
   assert.deepEqual(options.authFields, [...AUTH_FIELDS]);
   assert.deepEqual(options.presets.map((preset) => preset.id), PRESETS.map((preset) => preset.id));
   assert.deepEqual(options.codexEffort, [...CODEX_EFFORTS]);
+  // Agent 的成员同样来自 core（AGENTS 注册表 = agentCompatibility 返回的那三个键）：
+  // 卡片上的兼容性行与「Agent 覆盖」两行都由它决定，插件不得另有一份清单。
+  assert.deepEqual(options.agents.map((agent) => agent.id), Object.keys(AGENTS));
   // 每个开关都必须带着"实际写入的键名"（§9.3），空标签会让那一行没法显示落点。
   for (const toggle of options.toggles) {
     assert.equal(toggle.writes.length > 0, true, `${toggle.id} 必须声明实际写入的键名`);
@@ -125,6 +128,13 @@ test("panel options derive their membership from core", () => {
   }
   // 1M 只允许 Opus / Sonnet（§9.3）。
   assert.deepEqual(options.longContextRoles, ["opus", "sonnet"]);
+  // 而且只能出现在 core 真的会写 `[1m]` 的角色上：buildClaudeEntries 只对 ROLE_KEYS 里的角色
+  // 应用 longContext（main/subagent 会被静默忽略）。给出一个存得下、却什么都不写的勾选框，
+  // 和「显示名输入框只出现在 displayRoles 上」是同一个错误。
+  for (const role of options.longContextRoles) {
+    assert.ok(Object.keys(ROLE_KEYS).includes(role), `${role} 的 1M 勾选框不会被 core 写入投影`);
+  }
+  assert.ok(!options.longContextRoles.includes("main"));
 });
 
 // 安全语义：草稿 apiKey === null 时保留库中现有密钥（面板只回显掩码，绝不清空用户已存的密钥）。
@@ -382,4 +392,22 @@ test("duplicateProfile copies the whole profile with a fresh id", async () => {
     assert.ok(second);
     assert.notEqual(second.id, first.id);
   });
+});
+
+// §7 / §9.3：「掩码永远不能作为 apiKey 落库」。面板的粘贴通道走的就是这两个函数，
+// 所以回归钉在扩展真正调用的边界上（services/model.ts 是 model-panel.ts 唯一用的那两个）。
+test("a masked pasted secret never reaches the draft as an apiKey", () => {
+  // 用户把面板卡片上的「密钥 sk-…f3a2」粘回来——这是最容易真实发生的一种粘贴。
+  const json = parseJson(JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: "sk-…f3a2", ANTHROPIC_BASE_URL: "https://a.example" } }));
+  assert.equal(json.recognized.some((entry) => entry.field === "apiKey"), false);
+  assert.equal(json.warnings.length, 1);
+
+  const text = parseText("ANTHROPIC_AUTH_TOKEN=sk-***abcd\nANTHROPIC_BASE_URL=https://a.example");
+  assert.equal(text.recognized.some((entry) => entry.field === "apiKey"), false);
+  assert.equal(text.warnings.some((warning) => /掩码/.test(warning)), true);
+
+  // 真密钥照旧进候选（修复不能把正常粘贴一起挡掉）。
+  const real = parseJson(JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: "sk-live-abcdefghijklmnop" } }));
+  assert.equal(real.recognized.find((entry) => entry.field === "apiKey")?.value, "sk-live-abcdefghijklmnop");
+  assert.deepEqual(real.warnings, []);
 });
