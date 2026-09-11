@@ -87,6 +87,42 @@ avenic sessions git on|off|status # 项目会话记录的 Git 同步开关
 
 > 项目会话可能包含提示词、源码、命令输出、路径与密钥；仅在可信仓库中提交会话。
 
+## Models（模型配置）
+
+模型配置分两层：**本机配置库是唯一事实来源，项目只存绑定与回滚账本**。
+
+- 本机配置库：默认 `~/.config/avenic/models.json`（状态根受 `AVENIC_STATE_DIR`、`XDG_CONFIG_HOME` 影响），CLI 与 VS Code 插件读同一份。
+- 项目绑定：`.agents/model.json`，记录当前项目的 profile 与 Claude 投影账本（写入了哪些键、写入前的原值）；profile 本身不复制进项目。
+
+### 命令
+
+| 命令 | 说明 |
+|---|---|
+| `avenic model` | 显示库路径、项目绑定与投影状态（等同 `avenic model show`） |
+| `avenic model list` | 列出本机 profile（`>` 标记当前项目绑定） |
+| `avenic model add --name <n> --base-url <u> --api-key <k> [--api <anthropic\|openai-chat\|openai-responses>] [--model <id>] [--id <id>]` | 新建 profile；`--id` 缺省时优先使用当前绑定 id，否则由名称生成 |
+| `avenic model set\|edit <id> […]` | 更新库中 profile（`set` 要求 profile 已存在）；接受与 `add` 相同的 flag |
+| `avenic model use [id]` | 绑定到当前项目；不带 id 时在终端上交互选择 |
+| `avenic model clear` | 解绑并恢复绑定前的设置；用户手改过的键保持不动并逐条提示 |
+| `avenic model remove <id>` | 从本机库删除 profile；绑定它的项目在下次启动时回退到 Agent 默认配置 |
+| `avenic model test [id]` | 向端点发一次最小真实请求测试连接；失败退出码 2 |
+| `avenic model presets` | 列出内置端点预设 |
+
+`avenic model add|set|edit … --json <文件|->` 只做粘贴识别预览：读取 JSON 或自由文本，打印识别到的字段与候选值（密钥类字段只显示掩码），**不写库**；`-` 表示从 stdin 读取。正式写入仍需显式 flag。
+
+### 三个 Agent 的生效方式
+
+绑定只作用于当前项目，模型配置不写 Agent 全局配置：
+
+- **Claude Code**：绑定与启动时把 profile 投影写入项目 `.claude/settings.local.json`——逐键记账，指纹一致时零写入；解绑按账本精确还原，用户手改过的键保持不动。启动时另注入进程环境变量兜底（`ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_MODEL` 及角色模型变量等）。
+- **Codex**：只在本次启动的 argv 注入——`-c model_provider=…`、`model_providers.<id>.*`（`wire_api=responses`）与 `-m <model>`；用户已自带 `-m`/`model_provider=` 时对应项跳过。Codex 需要 Responses API 端点；profile 不具备时启动不改配置，按 Codex 全局配置继续。
+- **OpenCode**：只在本次启动注入 `OPENCODE_CONFIG_CONTENT`——Anthropic 端点覆盖内置 provider，其他端点定义自定义 provider。
+
+### 密钥与 Git
+
+- CLI 输出与插件面板只显示掩码（`maskSecret`，前 3 后 4 位，过短全掩）；**底层仍是明文 JSON 存储**，库文件与项目投影中的密钥不做任何加密或混淆，请按凭据对待。
+- 绑定时 Avenic 自动在项目 `.gitignore` 补齐以下规则（缺少 `# Agent Runtime` 分节时一并写入分节头）：`.agents/model.json`、`.claude/settings.local.json`、`.agents/model.lock`、`.agents/tmp/`。**不要提交这些文件**（绑定文件含投影账本，可能包含用户原值）；本机配置库 `~/.config/avenic/models.json` 含明文密钥，同样不要提交。
+
 ## Skills
 
 ### Hub

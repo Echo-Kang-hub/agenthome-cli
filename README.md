@@ -87,6 +87,40 @@ avenic sessions git on|off|status # 项目会话记录的 Git 同步开关
 
 > 项目会话可能包含提示词、源码、命令输出、路径与密钥；仅在可信仓库中提交会话。
 
+## Models（模型配置）
+
+Avenic 用两层结构管理模型配置：**本机配置库是唯一事实来源，项目只存绑定与回滚账本**。
+
+- **本机配置库**：默认 `~/.config/avenic/models.json`（状态根受 `AVENIC_STATE_DIR`、`XDG_CONFIG_HOME` 影响），保存 profile——端点、API 类型、密钥、模型与开关。库是设备级的，不随项目迁移。
+- **项目绑定**：`.agents/model.json`，记录当前项目用的是哪个 profile，以及 Claude 投影的账本（写入了哪些键、写入前的原值）；profile 本身只存在于库里。
+
+```bash
+avenic model                    # 查看库路径、项目绑定与投影状态
+avenic model list               # 列出本机 profile（> 标记当前项目绑定）
+avenic model add --name <名称> --base-url <URL> --api-key <密钥> [--model <id>]
+avenic model use <id>           # 绑定到当前项目；不带 id 时在终端上选择
+avenic model test <id>          # 发一次最小真实请求（失败退出码 2）
+avenic model clear              # 解绑并恢复绑定前的项目设置
+```
+
+完整子命令与参数表见 [packages/cli/README.md](packages/cli/README.md)，或运行 `avenic --help`。
+
+### 三个 Agent 的生效方式
+
+绑定只作用于**本项目**；模型配置不写 Agent 的全局配置（如 `~/.claude/settings.json`、`~/.codex/config.toml`）：
+
+| Agent | 生效方式 |
+|---|---|
+| Claude Code | 绑定与启动时把 profile 投影进项目 `.claude/settings.local.json`（逐键记账，指纹一致时零写入；解绑按账本还原，用户手改过的键保持不动）；启动时同时注入进程环境变量兜底（`ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_MODEL` 及角色模型变量）。 |
+| Codex | 只注入本次启动的 argv：`-c model_provider=…`、`model_providers.<id>.*`（`wire_api=responses`）与 `-m <model>`；用户自带 `-m`/`model_provider=` 时对应项跳过。Codex 需要 Responses API 端点；profile 不具备时启动不改配置，按 Codex 全局配置继续。 |
+| OpenCode | 只注入本次启动的 `OPENCODE_CONFIG_CONTENT`：Anthropic 端点覆盖内置 provider，其他端点定义自定义 provider。 |
+
+### 密钥与 Git
+
+- CLI 与插件面板只显示掩码（前 3 后 4 位）；**底层仍是明文 JSON 存储**——库文件与项目投影里的密钥不加密，请按凭据对待。
+- 绑定时 Avenic 自动在项目 `.gitignore` 补齐以下规则（缺少 `# Agent Runtime` 分节时一并写入分节头）：`.agents/model.json`、`.claude/settings.local.json`、`.agents/model.lock`、`.agents/tmp/`。**不要提交这些文件**（绑定文件含投影账本，可能包含用户原值），本机配置库同样不要提交。
+- `avenic model test` 会向配置的端点发送一次真实请求，消耗极少量额度。
+
 ## Skills
 
 ### Hub

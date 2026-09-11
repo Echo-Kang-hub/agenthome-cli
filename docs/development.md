@@ -43,6 +43,7 @@ cd packages/cli && npm publish
 - registry 包 `private` 保持 `false`。
 - 发布物是 `packages/cli`（包名 `avenic`）与 `packages/core`（包名 `@avenic/core`）。
 - 发布顺序：core 变更 → bump 并发布 core → `npm run sync-core` → bump 并发布 CLI。提交与 tag 里的 `vendor/core-src` 必须与 core 同步（`test/sync.test.mjs` 守护一致性）；pack/publish 时 `prepack` 会自动执行 `sync-core`，所以 tarball 里的镜像总是新的。
+- 顺序约束：core 变更后必须先 `npm run sync-core` 再发布 CLI；插件（`packages/vscode`）依赖**已发布**的 `@avenic/core`（`devDependencies` 指向 npm registry），插件改动排在 core 发布之后。
 
 ## core 发布纪律
 

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.12
+
+- **本机模型配置库 + 项目绑定**：新增模型配置面板与命令，profile 统一存放于本机库
+  `~/.config/avenic/models.json`（库是唯一事实来源），项目只写 `.agents/model.json`
+  绑定与回滚账本；绑定把 profile 投影进项目 `.claude/settings.local.json` 并逐键记账，
+  解绑按账本精确还原（用户手改过的键保持不动并提示），库字段变化后启动前自动刷新投影。
+  绑定时自动补齐项目 `.gitignore` 的模型规则（`.agents/model.json`、
+  `.claude/settings.local.json`、`.agents/model.lock`、`.agents/tmp/`）；界面只显示
+  掩码，底层仍是明文 JSON 存储。依赖 `@avenic/core` 1.2.0（配套发布 core 新版本）。
+- **编辑器标签页面板**：新增「Avenic: 模型配置」（`avenic.model.open`，Avenic 视图标题栏
+  settings-gear 入口），以编辑器标签页打开。面板含卡片列表（「用于当前项目」「编辑」
+  「测试」「删除」）、当前项目区（绑定状态、投影文件与指纹、取消绑定、打开配置库文件、
+  打开项目配置文件）与顶部「+ 新建 / 粘贴导入 / 刷新」；卡片按 Claude / Codex / OpenCode
+  标记兼容性（✗ 悬停给出原因），未打开项目文件夹时项目相关操作禁用。
+- **粘贴识别**：面板支持粘贴 JSON 或自由文本分析（`parseJson` / `parseText`），识别结果
+  逐字段列出、可勾选后「填入表单」；预览永不自动保存，密钥类字段只显示掩码。
+- **测试连接**：卡片「测试」发送一次真实请求并显示耗时与返回模型；失败按类别提示，
+  并注明「连接失败 ≠ 密钥无效」。
+- **切换命令**：「Avenic: 切换本项目模型配置」（`avenic.model.switch`）在命令面板直接
+  选择 profile 绑定当前项目；启动 Agent 时同样按 core 的注入规则生效（Claude 投影 +
+  env 兜底、Codex argv、OpenCode `OPENCODE_CONFIG_CONTENT`），不写 Agent 全局配置。
+
 ## 0.1.11
 
 - **Skills 单副本共享**：同一作用域内每个 Skill 只保留一份物理文件——`.agents/skills/<name>`
