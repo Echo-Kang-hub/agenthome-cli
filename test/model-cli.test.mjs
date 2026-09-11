@@ -76,6 +76,10 @@ test("model add/list/show/use/clear round-trip with masked output", async () => 
     const listed = runAgent(projectRoot, ["model", "list"], environment);
     assert.equal(listed.status, 0, listed.stderr);
     assert.match(listed.stdout, /MiMo/);
+    // list 也走掩码（与 add/show 同一契约）。缺了这两条断言时，"list 打印完整 key" 的变异
+    // 能在整个套件里存活——而 list 恰恰是最常被跑、最容易被贴进 issue 的那条命令。
+    assert.doesNotMatch(listed.stdout, /sk-aaaabbbbccccdddd/, "list 也不得打印完整密钥");
+    assert.match(listed.stdout, /sk-…dddd/);
 
     const used = runAgent(projectRoot, ["model", "use", "mimo"], environment);
     assert.equal(used.status, 0, used.stderr);
@@ -225,6 +229,37 @@ test("model use never prints the full key", async () => {
     const used = runAgent(projectRoot, ["model", "use", "mimo"], environment);
     assert.equal(used.status, 0, used.stderr);
     assert.doesNotMatch(used.stdout, /sk-aaaabbbbccccdddd/);
+  });
+});
+
+// ---- clear 的「用户手改过」冲突分支 ----
+
+// 该分支此前零覆盖：把整段冲突报告删掉、或改用 maskSecret 把值掩成 ••••（信息全丢），
+// 套件都是全绿。但它正是用户唯一的回滚证据来源，必须逐字钉住。
+test("model clear reports hand-edited keys verbatim and leaves them alone", async () => {
+  await withProject(async ({ projectRoot, environment }) => {
+    await upsertProfile(environment, {
+      id: "conflict",
+      name: "Conflict",
+      endpoint: { baseUrl: "https://a.example/anthropic", api: "anthropic", apiKey: "sk-conflict-123456" },
+      models: { main: { id: "injected-model" } },
+    });
+    const used = runAgent(projectRoot, ["model", "use", "conflict"], environment);
+    assert.equal(used.status, 0, used.stderr);
+
+    // 用户手改投影：把 Avenic 写进去的键换成自己的值
+    const settingsPath = path.join(projectRoot, ".claude", "settings.local.json");
+    const settings = JSON.parse(await readFile(settingsPath, "utf8"));
+    assert.equal(settings.env.ANTHROPIC_MODEL, "injected-model", "前置条件：Avenic 确实写入了这个键");
+    settings.env.ANTHROPIC_MODEL = "hand-edited-model";
+    await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+
+    const cleared = runAgent(projectRoot, ["model", "clear"], environment);
+    assert.equal(cleared.status, 0, cleared.stderr);
+    // 值必须原样出现（不是掩码、不是省略号），路径必须点名到具体键
+    assert.match(cleared.stdout, /env\.ANTHROPIC_MODEL was edited by hand — left untouched: hand-edited-model/);
+    const after = JSON.parse(await readFile(settingsPath, "utf8"));
+    assert.equal(after.env.ANTHROPIC_MODEL, "hand-edited-model", "手改过的键必须原样保留");
   });
 });
 
