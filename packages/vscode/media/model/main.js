@@ -29,9 +29,6 @@ const tabTextButton = document.getElementById("tab-text");
 const recognizeButton = document.getElementById("recognize");
 const fillButton = document.getElementById("fill");
 
-const API_OPTIONS = ["anthropic", "openai-chat", "openai-responses"];
-const AGENT_LABELS = { claude: "Claude", codex: "Codex", opencode: "OpenCode" };
-
 let data = null; // 最近一条 data 消息的 payload
 let notice = null; // 顶部提示（测试结果 / 错误）
 let editing = null; // 编辑区状态 { id, isNew, profile }；null 表示编辑区关闭
@@ -65,6 +62,12 @@ function options() {
   return data.options;
 }
 
+/** Agent 的成员与标签都来自 host 的 options（§9.7：面板不维护第二份 Agent 清单）。 */
+function agentLabel(agentId) {
+  const found = options().agents.find((entry) => entry.id === agentId);
+  return found === undefined ? agentId : found.label;
+}
+
 // ---- 问题定位（§5.5「由 core 判定并在 UI 定位显示」） ----
 // host 回的 field 是草稿里的点分路径（name / baseUrl / models.opus.id / env.3.key / …）。
 // 这里只做两件事：给出人话标签，以及把有问题的控件标红。
@@ -78,9 +81,9 @@ function fieldLabel(field) {
   const env = /^env\.(\d+)\.(key|value)$/.exec(field);
   if (env) return `环境变量第 ${Number(env[1]) + 1} 行`;
   const override = /^overrides\.([^.]+)\.baseUrl$/.exec(field);
-  if (override) return `${AGENT_LABELS[override[1]] ?? override[1]} 覆盖 Base URL`;
+  if (override) return `${agentLabel(override[1])} 覆盖 Base URL`;
   const provider = /^([^.]+)\.providerId$/.exec(field);
-  if (provider) return `${AGENT_LABELS[provider[1]] ?? provider[1]} providerId`;
+  if (provider) return `${agentLabel(provider[1])} providerId`;
   return field;
 }
 
@@ -108,10 +111,12 @@ function renderCard(card) {
   node.append(endpoint);
   const compat = document.createElement("p");
   compat.className = "compat";
-  for (const [agentId, label] of Object.entries(AGENT_LABELS)) {
+  // 行的成员来自 options().agents（core 的 AGENTS 注册表），行的内容来自 core 的
+  // agentCompatibility：面板既不决定有哪几个 Agent，也不判断谁兼容。
+  for (const agent of options().agents) {
     const mark = document.createElement("span");
-    const state = card.compatibility[agentId];
-    mark.textContent = `${label} ${state.ok ? "✓" : "✗"}`;
+    const state = card.compatibility[agent.id];
+    mark.textContent = `${agent.label} ${state.ok ? "✓" : "✗"}`;
     if (!state.ok) mark.title = state.reason ?? "";
     compat.append(mark);
   }
@@ -554,7 +559,7 @@ function renderAdvanced() {
   for (const agentId of ["codex", "opencode"]) {
     const override = profile().overrides[agentId] ?? {};
     const row = el("div", undefined, "override-row");
-    row.append(el("span", AGENT_LABELS[agentId] ?? agentId, "model-role"));
+    row.append(el("span", agentLabel(agentId), "model-role"));
     const baseUrl = document.createElement("input");
     baseUrl.value = override.baseUrl ?? "";
     baseUrl.placeholder = "Base URL（留空 = 跟随主端点）";

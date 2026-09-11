@@ -1,4 +1,5 @@
 import {
+  AGENTS,
   API_TYPES,
   AUTH_FIELDS,
   CODEX_EFFORTS,
@@ -45,6 +46,7 @@ const TOGGLE_LABELS: Record<string, string> = {
   hideAttribution: "隐藏 AI 署名",
 };
 
+// 只有标签：成员永远取 core 的 AGENTS（见 panelOptions）。
 const AGENT_LABELS: Record<string, string> = { claude: "Claude", codex: "Codex", opencode: "OpenCode" };
 
 // 1M 上下文勾选框只在 Opus / Sonnet 上提供（设计 §9.3）。**故意不放进 core**：core 的
@@ -80,7 +82,9 @@ export function panelOptions(): PanelOptions {
     presets: PRESETS.map((preset) => ({ id: preset.id, label: preset.label, baseUrl: preset.baseUrl, api: preset.api })),
     longContextRoles: [...LONG_CONTEXT_ROLES],
     displayRoles: Object.keys(ROLE_KEYS),
-    agents: Object.keys(AGENT_LABELS).map((id) => ({ id, label: AGENT_LABELS[id] })),
+    // 成员来自 core 的 AGENTS 注册表（agentCompatibility 返回的就是这三个键），标签留扩展侧
+    // ——core 的 displayName 是 "Claude Code"，而设计 §9.2 的卡片画的是 "Claude"。
+    agents: Object.keys(AGENTS).map((id) => ({ id, label: AGENT_LABELS[id] ?? id })),
     codexEffort: [...CODEX_EFFORTS],
     newProfile: newProfileDefaults(),
   };
