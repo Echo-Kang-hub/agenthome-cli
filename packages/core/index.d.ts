@@ -472,3 +472,12 @@ export function listProfiles(environment?: ProcessEnvLike): Promise<ModelProfile
 export function getProfile(environment: ProcessEnvLike | undefined, id: string): Promise<ModelProfile | null>;
 export function upsertProfile(environment: ProcessEnvLike | undefined, input: Partial<ModelProfile> & { id: string }, io?: Io): Promise<{ changed: boolean; revision: number; value: unknown }>;
 export function removeProfile(environment: ProcessEnvLike | undefined, id: string, io?: Io): Promise<{ changed: boolean; revision: number; value: unknown }>;
+
+export interface LedgerEntry { path: string[]; before: { exists: boolean; value?: unknown }; written: unknown }
+export interface RollbackConflict { path: string[]; current: unknown }
+export function buildClaudeEntries(profile: ModelProfile): Array<{ path: string[]; value: unknown }>;
+export function readPath(object: unknown, path: string[]): { exists: boolean; value?: unknown };
+export function writePath(object: Record<string, unknown>, path: string[], value: unknown): void;
+export function deletePath(object: Record<string, unknown>, path: string[]): void;
+export function mergeClaudeSettings(existing: Record<string, unknown> | null, entries: Array<{ path: string[]; value: unknown }>): { content: Record<string, unknown>; ledger: LedgerEntry[]; created: boolean };
+export function rollbackClaudeSettings(existing: Record<string, unknown> | null, ledger: LedgerEntry[]): { content: Record<string, unknown>; conflicts: RollbackConflict[] };

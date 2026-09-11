@@ -187,3 +187,11 @@ export {
 } from "./model/paths.mjs";
 export { transact } from "./model/transaction.mjs";
 export { getProfile, listProfiles, readLibrary, removeProfile, upsertProfile } from "./model/library.mjs";
+export {
+  buildClaudeEntries,
+  deletePath,
+  mergeClaudeSettings,
+  readPath,
+  rollbackClaudeSettings,
+  writePath,
+} from "./model/project-claude.mjs";
