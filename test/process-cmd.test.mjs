@@ -1,0 +1,105 @@
+import assert from "node:assert/strict";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import process from "node:process";
+import test from "node:test";
+
+import { spawnExecutableSync } from "../packages/core/src/index.mjs";
+
+const windows = process.platform === "win32";
+
+// .cmd/.bat 经 cmd.exe 透传（见 runtime/process.mjs 的 invocation）：参数里的 & | ^ < > ( )
+// 会被 cmd 二次解析，必须整体加引号。下面用 `echo %*` 桩把真实到达批处理的参数回显出来。
+async function withCmdStub(run) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "avenic-cmd-"));
+  try {
+    const stub = path.join(dir, "avenic-args.cmd");
+    await writeFile(stub, "@echo off\r\necho %*\r\n");
+    return await run(stub);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+function run(executable, argumentsList) {
+  return spawnExecutableSync(executable, argumentsList, {
+    env: process.env,
+    stdio: "pipe",
+    encoding: "utf8",
+    windowsHide: true,
+  });
+}
+
+test("cmd shim arguments containing & are quoted before reaching the shell", { skip: !windows }, async () => {
+  await withCmdStub((stub) => {
+    const result = run(stub, ["https://x.example/v1?a=1&b=2"]);
+    assert.equal(result.status, 0);
+    const lines = result.stdout.split(/\r?\n/);
+    assert.ok(
+      lines.some((line) => line.includes("a=1&b=2")),
+      `"&" must not split the argument, got: ${JSON.stringify(result.stdout)}`,
+    );
+  });
+});
+
+test("cmd shim arguments containing ^ and parentheses are quoted before reaching the shell", { skip: !windows }, async () => {
+  await withCmdStub((stub) => {
+    const result = run(stub, ["a^b", "(x)"]);
+    assert.equal(result.status, 0);
+    assert.ok(result.stdout.includes("a^b"), `"^" must survive cmd parsing, got: ${JSON.stringify(result.stdout)}`);
+    assert.ok(result.stdout.includes("(x)"), `"(" must survive cmd parsing, got: ${JSON.stringify(result.stdout)}`);
+  });
+});
+
+// 计划注明 % 与 ! 不在加固集合内（% 在 cmd 引号内也会展开），由 model/schema.mjs 的
+// validateBaseUrl 白名单在源头拒绝。这里钉住边界：含 % 的参数不会被本层加引号。
+test("cmd shim leaves percent signs unquoted (rejected upstream by the whitelist)", { skip: !windows }, async () => {
+  await withCmdStub((stub) => {
+    const result = run(stub, ["50%"]);
+    assert.equal(result.status, 0);
+    assert.ok(result.stdout.includes("50%"), `"%" must pass through, got: ${JSON.stringify(result.stdout)}`);
+    assert.ok(!result.stdout.includes('"50%"'), `"%" must stay unquoted, got: ${JSON.stringify(result.stdout)}`);
+  });
+});
+
+// 临时目录含空格（%TEMP% 可被用户改到含空格的路径）：整个命令串由 shell:true 的
+// cmd /d /s /c "..." 包裹，桩路径自身必须带引号才能被找到。
+test("cmd shim resolves when its directory path contains spaces", { skip: !windows }, async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "avenic cmd space "));
+  try {
+    const stub = path.join(dir, "avenic-args.cmd");
+    await writeFile(stub, "@echo off\r\necho %*\r\n");
+    const result = run(stub, ["https://x.example/v1?a=1&b=2"]);
+    assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+    assert.ok(
+      result.stdout.split(/\r?\n/).some((line) => line.includes("a=1&b=2")),
+      `argument must survive, got: ${JSON.stringify(result.stdout)}`,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// 跨平台：.exe/原生命令不走 cmd 拼接，参数原样到达（两平台一致，Linux 下真实执行）。
+test("plain executable arguments reach the process untouched", () => {
+  const argument = "a&b|c^d(e)";
+  const result = run(process.execPath, ["-e", "process.stdout.write(process.argv[1])", argument]);
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, argument);
+});
+
+// POSIX 直启：非 shell 路径不应被引号包裹（win32 下无法直启 .sh，skip）。
+test("POSIX executables receive arguments unmodified", { skip: windows }, async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "avenic-sh-"));
+  try {
+    const stub = path.join(dir, "avenic-args.sh");
+    await writeFile(stub, "#!/bin/sh\nprintf '%s\\n' \"$1\"\n");
+    await chmod(stub, 0o755);
+    const result = run(stub, ["a&b|c^d(e)"]);
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout.trim(), "a&b|c^d(e)");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

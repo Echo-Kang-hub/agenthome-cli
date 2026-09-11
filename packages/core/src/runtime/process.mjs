@@ -31,8 +31,12 @@ function invocation(executable, argumentsList, environment) {
   // （如 opencode.cmd）经 shell（cmd）运行。注意：node 20.16+ 对 args 数组会做
   // CreateProcess 引号转义（\"），cmd 无法还原——必须整体作为 shell 命令透传。
   if (process.platform === "win32" && /\.(?:cmd|bat)$/i.test(resolved)) {
-    const quoted = argumentsList.map((argument) => (/[\s"]/.test(argument) ? `"${argument}"` : argument));
-    const line = [resolved, ...quoted].map((part) => (/[\s"]/.test(part) ? `"${part}"` : part)).join(" ");
+    // cmd.exe 会把 & | ^ < > ( ) 当作元字符二次解析——即使它们在参数中间。
+    // 白名单（model/schema.mjs 的 validateBaseUrl）已经拒绝这些字符，但用户自带参数
+    // （如 `avenic codex --cd "a&b"`）仍会经过这里，因此拼接层必须同样加固。
+    const needsQuotes = /[\s"&|^<>()]/;
+    const quote = (part) => (needsQuotes.test(part) ? `"${part}"` : part);
+    const line = [quote(resolved), ...argumentsList.map(quote)].join(" ");
     return { command: line, argumentsList: [], shell: true };
   }
   return { command: resolved, argumentsList };
