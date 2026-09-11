@@ -160,3 +160,28 @@ export {
   sameTree,
   shareTargets,
 } from "./skills/links.mjs";
+export {
+  API_TYPES,
+  AUTH_FIELDS,
+  MODEL_ROLES,
+  canonicalJson,
+  emptyLibrary,
+  libraryFingerprint,
+  maskSecret,
+  normalizeProfile,
+  validateBaseUrl,
+  validateEnvKey,
+  validateModelId,
+  validateProviderId,
+} from "./model/schema.mjs";
+export {
+  CLAUDE_SETTINGS_FILE,
+  LIBRARY_SCHEMA_VERSION,
+  PROJECT_MODEL_FILE,
+  PROJECT_SCHEMA_VERSION,
+  claudeSettingsFile,
+  modelsFile,
+  modelsTempRoot,
+  projectModelFile,
+  projectTempRoot,
+} from "./model/paths.mjs";

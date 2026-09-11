@@ -408,3 +408,46 @@ export function writeDirectState(context: InstallContext, state: DirectSourceSta
 export function addDirectSkills(context: InstallContext, sourceReference: string, skillNames: string[], options?: { io?: Io }): Promise<{ names: string[]; sourceId: string; revision: string; alreadyInstalled?: boolean }>;
 export function removeDirectSkills(context: InstallContext, skillNames: string[]): Promise<string[]>;
 export function removeExternalSkills(context: InstallContext, skillNames: string[], options?: { io?: Io }): Promise<{ directRemoved: string[]; removedDirectories: number }>;
+
+// ---- model: paths & schema ----
+export const PROJECT_MODEL_FILE: string;
+export const CLAUDE_SETTINGS_FILE: string;
+export const LIBRARY_SCHEMA_VERSION: number;
+export const PROJECT_SCHEMA_VERSION: number;
+export const MODEL_ROLES: readonly string[];
+export const API_TYPES: readonly string[];
+export const AUTH_FIELDS: readonly string[];
+export type ApiType = "anthropic" | "openai-chat" | "openai-responses";
+export type ModelRole = "main" | "opus" | "sonnet" | "haiku" | "fable" | "subagent";
+export interface ModelRow { id: string; display?: string; longContext?: boolean }
+export interface EndpointConfig { baseUrl: string; api: ApiType; authField: string; apiKey: string }
+export interface ProfileOverrides { codex?: EndpointConfig & { providerId?: string }; opencode?: EndpointConfig & { providerId?: string } }
+export interface ProfileToggles { teams?: boolean; toolSearch?: boolean; maxEffort?: boolean; noNonessentialTraffic?: boolean; noAutoUpdate?: boolean; hideAttribution?: boolean }
+export interface ModelProfile {
+  id: string;
+  name: string;
+  endpoint: EndpointConfig;
+  overrides: ProfileOverrides;
+  models: Partial<Record<ModelRole, ModelRow>>;
+  toggles: ProfileToggles;
+  env: Record<string, string>;
+  claude: { settings: Record<string, unknown> };
+  codex: { providerId: string; envKey: string; reasoningEffort: "minimal" | "low" | "medium" | "high" };
+  opencode: { providerId: string; npmAdapter: string };
+  createdAt: string;
+  updatedAt: string;
+}
+export function modelsFile(environment?: ProcessEnvLike): string;
+export function modelsTempRoot(environment?: ProcessEnvLike): string;
+export function projectModelFile(projectRoot: string): string;
+export function projectTempRoot(projectRoot: string): string;
+export function claudeSettingsFile(projectRoot: string): string;
+export function emptyLibrary(): { schemaVersion: number; revision: number; profiles: Record<string, ModelProfile> };
+export function normalizeProfile(input: Partial<ModelProfile> & { id: string }, options?: { now?: string; existing?: ModelProfile | null }): ModelProfile;
+export function validateBaseUrl(value: string): string;
+export function validateProviderId(value: string): string;
+export function validateEnvKey(value: string): string;
+export function validateModelId(value: string): string;
+export function maskSecret(value: unknown): string;
+export function canonicalJson(value: unknown): string;
+export function libraryFingerprint(profile: ModelProfile): string;
