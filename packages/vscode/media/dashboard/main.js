@@ -17,6 +17,8 @@ const ACTIONS = [
   { command: "skills.addDirect", label: "添加直装 Skill", iconName: "plus" },
   { command: "agents.init", label: "初始化 Agent", iconName: "robot" },
   { command: "agents.sessionsImport", label: "导入会话", iconName: "import" },
+  // 模型配置（设计 §9.1 的第三个入口）：本机配置库是设备级的，未打开项目也能进。
+  { command: "model.open", label: "模型配置", iconName: "settings-gear" },
 ];
 // 依赖项目上下文的操作：未打开项目时置灰，避免点了才报错。
 const PROJECT_SCOPED = new Set([

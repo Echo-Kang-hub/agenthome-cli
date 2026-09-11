@@ -200,7 +200,7 @@ test("skillsHealth renders every share state with its own copy and ok flag", asy
 test("protocol guard accepts valid webview messages", () => {
   assert.ok(isWebviewMessage({ type: "ready" }));
   assert.ok(isWebviewMessage({ type: "refresh" }));
-  for (const command of ["catalog.sync", "skills.installPacks", "skills.addDirect", "agents.init", "agents.sessionsImport"]) {
+  for (const command of ["catalog.sync", "skills.installPacks", "skills.addDirect", "agents.init", "agents.sessionsImport", "model.open"]) {
     assert.ok(isWebviewMessage({ type: "command", command }));
   }
   assert.ok(!isWebviewMessage({ type: "report", message: "all good" })); // report 类型已删除：一律拒绝

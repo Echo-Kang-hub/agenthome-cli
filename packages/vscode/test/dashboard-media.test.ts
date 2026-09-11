@@ -3,6 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { ALLOWED_COMMANDS, isWebviewMessage } from "../src/dashboard/protocol.ts";
 
 const media = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "media", "dashboard");
 
@@ -63,6 +64,28 @@ test("compressed dashboard keeps agent identity via inline SVG marks", async () 
       "agent 形态隐藏只能在 @container 中，不得挂回视口 @media",
     );
   }
+});
+
+test("quick actions and the host command allowlist cannot drift apart", async () => {
+  const js = await readFile(path.join(media, "main.js"), "utf8");
+  const declared = [...js.matchAll(/command: "([A-Za-z][A-Za-z0-9.]*)", label: "/g)].map((m) => m[1]!);
+  assert.ok(declared.length > 0);
+  // 点击只会发 { type: "command", command }：按钮不在白名单里就是死的（host 静默丢弃）。
+  for (const command of declared) {
+    assert.ok(isWebviewMessage({ type: "command", command }), `快捷操作 ${command} 不在转发白名单里`);
+  }
+  // 反向：白名单里的命令必须有按钮，否则是只有协议没有入口的死条目。
+  for (const command of ALLOWED_COMMANDS) {
+    assert.ok(declared.includes(command), `白名单命令 ${command} 没有对应的快捷操作按钮`);
+  }
+});
+
+test("model config entry is project-independent (device-level library)", async () => {
+  const js = await readFile(path.join(media, "main.js"), "utf8");
+  // 模型库是设备级的：未打开项目文件夹时「模型配置」也必须可点，不得进 PROJECT_SCOPED。
+  const scoped = js.match(/const PROJECT_SCOPED = new Set\(\[([\s\S]*?)\]\)/)![1]!;
+  assert.ok(!scoped.includes("model.open"), "模型配置不得依赖项目上下文");
+  assert.ok(scoped.includes("agents.init")); // 解析本身没跑偏：确实读到了那个集合
 });
 
 test("every icon name used by main.js has a style.css glyph mapping", async () => {

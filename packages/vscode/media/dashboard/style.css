@@ -56,6 +56,7 @@ p { margin: 0; }
 .icon[data-icon="robot"]::before          { content: "\ec20"; }
 .icon[data-icon="import"]::before         { content: "\ec74"; } /* codicon download：导入（入箱）语义 */
 .icon[data-icon="folder-opened"]::before  { content: "\eaf7"; }
+.icon[data-icon="settings-gear"]::before  { content: "\eb51"; } /* 与 package.json 里 avenic.model.open 的 $(settings-gear) 同形 */
 .icon[data-icon="repo"]::before           { content: "\ea62"; }
 .icon[data-icon="check"]::before          { content: "\eab2"; }
 .icon[data-icon="error"]::before          { content: "\ea87"; }
