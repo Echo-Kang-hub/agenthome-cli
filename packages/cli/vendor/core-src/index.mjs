@@ -164,6 +164,7 @@ export {
   API_TYPES,
   AUTH_FIELDS,
   MODEL_ROLES,
+  TOGGLE_KEYS,
   canonicalJson,
   emptyLibrary,
   libraryFingerprint,
@@ -188,6 +189,7 @@ export {
 export { transact } from "./model/transaction.mjs";
 export { getProfile, listProfiles, readLibrary, removeProfile, upsertProfile } from "./model/library.mjs";
 export {
+  TOGGLE_ENTRIES,
   buildClaudeEntries,
   deletePath,
   mergeClaudeSettings,

@@ -421,6 +421,7 @@ export const PROJECT_SCHEMA_VERSION: number;
 export const MODEL_ROLES: readonly string[];
 export const API_TYPES: readonly string[];
 export const AUTH_FIELDS: readonly string[];
+export const TOGGLE_KEYS: readonly string[];
 export type ApiType = "anthropic" | "openai-chat" | "openai-responses";
 export type ModelRole = "main" | "opus" | "sonnet" | "haiku" | "fable" | "subagent";
 export interface ModelRow { id: string; display?: string; longContext?: boolean }
@@ -476,6 +477,9 @@ export function removeProfile(environment: ProcessEnvLike | undefined, id: strin
 
 export interface LedgerEntry { path: string[]; before: { exists: boolean; value?: unknown }; written: unknown }
 export interface RollbackConflict { path: string[]; current: unknown }
+// [开关 id, 实际写入的路径, 写入值]——面板据此显示「实际写入的键名」（设计 §9.3），
+// 不在插件里维护第二份表（§9.7）。
+export const TOGGLE_ENTRIES: ReadonlyArray<readonly [string, string[], unknown]>;
 export function buildClaudeEntries(profile: ModelProfile): Array<{ path: string[]; value: unknown }>;
 export function readPath(object: unknown, path: string[]): { exists: boolean; value?: unknown };
 export function writePath(object: Record<string, unknown>, path: string[], value: unknown): void;

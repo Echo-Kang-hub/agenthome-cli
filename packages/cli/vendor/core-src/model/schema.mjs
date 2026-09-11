@@ -5,7 +5,9 @@ import { LIBRARY_SCHEMA_VERSION } from "./paths.mjs";
 export const MODEL_ROLES = ["main", "opus", "sonnet", "haiku", "fable", "subagent"];
 export const API_TYPES = ["anthropic", "openai-chat", "openai-responses"];
 export const AUTH_FIELDS = ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"];
-const TOGGLE_KEYS = ["teams", "toolSearch", "maxEffort", "noNonessentialTraffic", "noAutoUpdate", "hideAttribution"];
+// 导出给面板（§9.3「6 个开关」）与 project-claude.mjs 的 TOGGLE_ENTRIES 交叉校验：面板不
+// 自己维护第二份开关清单，两者必须一一对应（见 model-projection.test.mjs）。
+export const TOGGLE_KEYS = ["teams", "toolSearch", "maxEffort", "noNonessentialTraffic", "noAutoUpdate", "hideAttribution"];
 
 // cmd.exe 无法转义这些字符（引号内也会展开 %VAR%），且 .cmd 链路上 & | ^ < > ( ) 会被二次解析。
 const FORBIDDEN_IN_VALUE = /[%"'`$&|^<>()!]/;

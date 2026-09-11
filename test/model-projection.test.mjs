@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  TOGGLE_ENTRIES,
+  TOGGLE_KEYS,
   buildClaudeEntries,
   mergeClaudeSettings,
   normalizeProfile,
@@ -322,4 +324,33 @@ test("merge and rollback isolate ledger values and caller inputs", () => {
   ]);
   rolled.content.env.ANTHROPIC_MODEL = "HACKED";
   assert.equal(existing.env.ANTHROPIC_MODEL, "original-model", "回滚不得改写调用方传入的对象");
+});
+
+// 设计 §9.3 要求面板为 6 个开关逐行显示「实际写入的键名」。面板不能自己维护第二份表
+// （§9.7「插件侧零业务逻辑」），所以这张表必须由 core 导出；而它一旦导出就成了公开契约，
+// 必须与 schema 的 TOGGLE_KEYS 一一对应——少一行是面板静默少一个开关，多一行是面板显示一个
+// 根本写不进去的开关。
+test("the exported toggle table covers exactly the schema toggle keys", () => {
+  assert.deepEqual(TOGGLE_ENTRIES.map(([id]) => id), [...TOGGLE_KEYS]);
+});
+
+// 比"张数对得上"更强的一条：逐行拿单开关 profile 真跑一遍投影，断言产出路径就是表里声明的那条。
+// 这样表的路径不是"另一份记忆"，而是被实现本身钉住的唯一事实来源。
+test("each toggle's declared path is the path buildClaudeEntries actually writes", () => {
+  for (const [id, declaredPath] of TOGGLE_ENTRIES) {
+    const profile = normalizeProfile({
+      id: "toggle_probe",
+      name: "Toggle Probe",
+      endpoint: { baseUrl: "https://x.example/anthropic", api: "anthropic" },
+      toggles: { [id]: true },
+    });
+    const entries = buildClaudeEntries(profile).map((entry) => entry.path.join("."));
+    // 端点之外只允许有一条：开关自己那条。写成集合比较，既能抓住"路径不对"，也能抓住
+    // "顺手多写了一个键"（那会让面板显示 6 行、实际写 7 处）。
+    assert.deepEqual(
+      entries.sort(),
+      ["env.ANTHROPIC_BASE_URL", declaredPath.join(".")].sort(),
+      `开关 ${id} 必须只产出自己那一条投影，且路径与声明一致`,
+    );
+  }
 });

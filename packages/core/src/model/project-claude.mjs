@@ -30,13 +30,25 @@ function assertNoConflictingPaths(entries, source) {
 }
 
 const ROLE_KEYS = { opus: "OPUS", sonnet: "SONNET", haiku: "HAIKU", fable: "FABLE" };
-const TOGGLE_ENTRIES = [
+
+// 开关 → 它实际写入的路径与值。**导出是给面板用的**：设计 §9.3 要求每个开关显示「实际写入的
+// 键名」，而 §9.7 禁止插件维护第二份业务逻辑——所以这张表必须是唯一事实来源，由 core 导出，
+// 面板只做 `path.join(".")`。表与 schema 的 TOGGLE_KEYS 一一对应，由 model-projection.test.mjs
+// 逐行真跑投影钉住（不是靠人眼比对）。
+export const TOGGLE_ENTRIES = [
   ["teams", ["env", "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"], "1"],
   ["toolSearch", ["env", "ENABLE_TOOL_SEARCH"], "true"],
   ["maxEffort", ["env", "CLAUDE_CODE_EFFORT_LEVEL"], "max"],
   ["noNonessentialTraffic", ["env", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"], "1"],
   ["noAutoUpdate", ["env", "DISABLE_AUTOUPDATER"], "1"],
+  // hideAttribution 写的是顶层对象而非 env 键，所以它以前是循环外的特例。并入表内后行为不变
+  // （它本来就是最后一个被 push 的），换来的是「6 个开关」在面板与实现眼里是同一张表。
+  ["hideAttribution", ["attribution"], { commit: "", pr: "" }],
 ];
+
+// 表里的值可能被多处共享（hideAttribution 是对象），而消费方会把它写进 content 或账本——
+// 共享同一个对象实例迟早会被原地改掉，所以非标量一律先克隆再交出去。
+const cloneValue = (value) => (value !== null && typeof value === "object" ? structuredClone(value) : value);
 
 export function buildClaudeEntries(profile) {
   const entries = [];
@@ -58,9 +70,8 @@ export function buildClaudeEntries(profile) {
   if (models.subagent) env("CLAUDE_CODE_SUBAGENT_MODEL", models.subagent.id);
 
   for (const [toggle, path, value] of TOGGLE_ENTRIES) {
-    if (profile.toggles?.[toggle] === true) push(path, value);
+    if (profile.toggles?.[toggle] === true) push(path, cloneValue(value));
   }
-  if (profile.toggles?.hideAttribution === true) push(["attribution"], { commit: "", pr: "" });
 
   for (const [key, value] of Object.entries(profile.env ?? {})) env(key, String(value));
   for (const [key, value] of Object.entries(profile.claude?.settings ?? {})) push([key], value);
