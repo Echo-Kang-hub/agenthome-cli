@@ -18,6 +18,7 @@ import {
   upsertProfile,
 } from "../packages/core/src/index.mjs";
 import { commitProject } from "../packages/core/src/model/binding.mjs";
+import { lockFile } from "../packages/core/src/model/lock.mjs";
 
 async function withTempDirectory(prefix, run) {
   const directory = await mkdtemp(path.join(os.tmpdir(), prefix));
@@ -164,6 +165,33 @@ test("a deleted profile is cleaned up once and then stays quiet (idempotent dang
     const second = await resolveProjectProfile(projectRoot, environment);
     assert.equal(second.cleaned, false, "nothing left to clean");
     assert.equal(second.message, null, "no repeated warning");
+  });
+});
+
+// WARN-3（复审变异体 R-all 存活）：只有"拿不到锁"才允许降级为 cleaned:false。
+// 清理事务内部的非锁错误（这里：投影文件损坏，读阶段就失败）必须原样抛出，
+// 否则真实的写失败/损坏会被伪装成"本次未清理"的 dangling 警告，用户与日志都看不见。
+test("resolveProjectProfile rethrows non-lock cleanup failures instead of reporting cleaned:false", async () => {
+  await withProject(async ({ projectRoot, environment }) => {
+    await upsertProfile(environment, PROFILE_INPUT);
+    await bindProject(projectRoot, environment, "mimo");
+    await removeProfile(environment, "mimo");
+    const settings = path.join(projectRoot, ".claude", "settings.local.json");
+    await writeFile(settings, "{ not json\n"); // 损坏投影：清理事务的 read 阶段失败，写盘从未开始
+    const bindingBefore = await readFile(projectModelFile(projectRoot));
+
+    await assert.rejects(
+      () => resolveProjectProfile(projectRoot, environment),
+      /Cannot parse JSON file/,
+    );
+
+    assert.equal((await readFile(projectModelFile(projectRoot))).equals(bindingBefore), true, "失败路径不得改写绑定");
+    assert.equal(existsSync(lockFile(projectRoot)), false, "失败路径也必须释放锁");
+    assert.deepEqual(
+      existsSync(projectTempRoot(projectRoot)) ? await readdir(projectTempRoot(projectRoot)) : [],
+      [],
+      "事务目录不得残留",
+    );
   });
 });
 

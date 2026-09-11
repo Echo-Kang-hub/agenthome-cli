@@ -259,7 +259,7 @@ export async function bindProject(projectRoot, environment, profileId, io = cons
     }, io);
     await protectProjectFiles(projectRoot, io);
     return result;
-  }, { timeoutMs: 5000 }); // 显式用户动作：超时响亮失败（模型绑定含明文 token，不能等太久）
+  }, { timeoutMs: 5000, io }); // 显式用户动作：超时响亮失败（模型绑定含明文 token，不能等太久）
   return {
     changed: result.changed && changed,
     binding: result.value.binding,
@@ -273,6 +273,8 @@ export async function bindProject(projectRoot, environment, profileId, io = cons
 
 // 取消绑定：按账本安全回滚（用户改过的键不动），清空 entries，activeProfileId 置 null。
 // 必须在项目写锁内执行：readBinding → transactProject.read 之间不允许别的写者插入。
+// 本函数是**未加锁的内部实现**：withProjectLock 不可重入（同进程 per-project 串行队列，
+// 嵌套调用会排队等自己），锁内的嵌套写路径只能调这里，不得再进 withProjectLock。
 async function clearBindingLocked(projectRoot, environment, io) {
   const current = await readBinding(projectRoot);
   const projection = current.value.projection?.claude ?? null;
@@ -313,7 +315,7 @@ export async function clearProjectBinding(projectRoot, environment, io = console
   const result = await withProjectLock(
     projectRoot,
     () => clearBindingLocked(projectRoot, environment, io),
-    { timeoutMs: 5000 }, // 显式用户动作：拿不到锁响亮失败，交还用户重试
+    { timeoutMs: 5000, io }, // 显式用户动作：拿不到锁响亮失败，交还用户重试
   );
   await protectProjectFiles(projectRoot, io);
   return result;
@@ -360,7 +362,7 @@ export async function resolveProjectProfile(projectRoot, environment, io = conso
     cleared = await withProjectLock(
       projectRoot,
       () => clearBindingLocked(projectRoot, environment, io),
-      { timeoutMs: 0 },
+      { timeoutMs: 0, io },
     );
   } catch (error) {
     if (error?.code !== LOCK_TIMEOUT_CODE) throw error;
