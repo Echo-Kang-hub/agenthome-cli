@@ -71,7 +71,7 @@
 ### 3.3 实测项（原 3 条，已结清 2 条）
 
 1. ~~Codex `-c` 值在 Windows 的传递形态~~ → **已结清**（§3.1）：不加引号即可（raw-string 回退），但含 `& ^ |` 的值在 `.cmd` 链路上必须被引号包裹，`%` 无论如何都会展开。设计结论写进 §5.2 与 §12.6：值一律不加引号 + 通过白名单拒绝 `%`、引号、反引号与 cmd 元字符；同时**加固 `process.mjs` 的 cmd 行拼接**（把 `&|^<>()` 纳入"需要引号包裹"的触发条件），使带查询串的 URL（`?api-version=…&x=y`）在 `.cmd` 路径上安全。
-2. **project 认证模式（`CLAUDE_CONFIG_DIR` 重定向，`config.mjs:108`）下 Claude Code 是否仍读取项目 `.claude/settings.local.json`** —— 仍需实现期实测（这是本机隔离探针，无法从文档判定）。**降级**：§13。2026-09-11 探针尝试：隔离临时目录 + `CLAUDE_CONFIG_DIR` 重定向 + 占位 token，`claude -p "hi" --output-format json` 在 90s 硬超时内 stdout/stderr 全空（ETIMEDOUT/SIGTERM），未取得可判定证据，该条仍未结清（列入残留风险）。
+2. ~~project 认证模式（`CLAUDE_CONFIG_DIR` 重定向，`config.mjs:108`）下 Claude Code 是否仍读取项目 `.claude/settings.local.json`~~ → **已结清（2026-09-11 本机隔离探针）：读取并应用**。方法：隔离临时项目 cwd + 临时 `CLAUDE_CONFIG_DIR`（剥离继承的全部 `ANTHROPIC_*`/`CLAUDE*`）+ 占位 token；项目 `.claude/settings.local.json` 的 `env.ANTHROPIC_MODEL` 写入**本次唯一**标记 → `claude -p "hi" --output-format json` 的 stderr 逐字回报 `[claude-code:unrecognized_model] {"model":"<该标记>","query_source":"sdk"}`；更换标记复跑，报错同步变化 —— 该模型名只可能来自项目 settings，且被用于模型解析。**局限（如实记录）**：CLI 在隔离 config 下于发起请求前挂起（60s 无输出、本地监听端口 0 请求），故"HTTP 请求级"确认未观测；结论覆盖范围 = "读取并应用项目 settings 的 `env` 块"。**`claudeEnvironment` 保留**（无项目 settings 可读时它是唯一生效路径）。探针脚本：`.superpowers/sdd/2026-09-10-project-model-config-plan/probe-claude-settings-e2e.mjs`。
 3. ~~OpenCode 覆盖内置 anthropic provider 是否生效~~ → **已结清**（§3.1）：官方支持，内置 anthropic 的 `options.baseURL`/`options.apiKey` 直接生效，因此 §5.3 首选"覆盖内置 provider"，"自定义 provider + `@ai-sdk/anthropic`"只作为兜底（社区报告该组合有丢 apiKey 的已知问题）。
 
 ## 4. 数据模型：两层
