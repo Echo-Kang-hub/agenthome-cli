@@ -198,4 +198,20 @@ export function registerSkillsCommands(context: vscode.ExtensionContext, deps: S
     const result = await runMutation(deps.queue, () => withProgress("重装 Pack", async (report) => { report(`重装 Pack「${packId}」…`); return skills.installPacks(scope, [packId], cwd); }), () => deps.refresh());
     await vscode.window.showInformationMessage(`已重装 Pack「${packId}」：${result.resolvedPacks?.names.length ?? 0} 个 Skill`);
   });
+
+  // 共享链接修复：与安装/启动同一套 core 逻辑，插件只负责作用域选择与提示。
+  register("avenic.skills.repairLinks", async () => {
+    if (busy()) return;
+    const scope = await pickScope();
+    if (scope === null) return;
+    const cwd = await scopeCwd(scope, deps.resolveRoot);
+    if (cwd === null) return;
+    const result = await runMutation(deps.queue, () => withProgress("修复 Skills 链接", async () => skills.repairLinks(scope, cwd)), () => deps.refresh());
+    const { counts, conflicts } = result;
+    await vscode.window.showInformationMessage(
+      counts.linked + counts.repaired + counts.migrated === 0
+        ? "Skills 链接已是最新"
+        : `链接 ${counts.linked} · 迁移 ${counts.migrated} · 降级 ${counts.fallback} · 冲突 ${conflicts.length}`,
+    );
+  });
 }

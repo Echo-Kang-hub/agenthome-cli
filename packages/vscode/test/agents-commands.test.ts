@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { existsSync, lstatSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { agentStatus, deinitialize, initialize, prepareAgentLaunch, setAuthMode, setSessionsMode } from "../src/services/agents.ts";
+import { select } from "../src/services/catalog.ts";
+import { installPacks, repairLinks } from "../src/services/skills.ts";
+import { makeCatalogFixture, testEnv } from "./helpers.ts";
 
 test("init → auth switch → sessions switch → deinit round-trip on real core", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
@@ -54,5 +58,56 @@ test("prepareAgentLaunch returns avenic runtime environment and scoped sessions"
     await prepared.finishRun(); // 幂等：第二次 no-op
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// 启动补齐共享链接（尽力而为）：安装后链接被删 → 启动前自动重建，用户无感。
+test("prepareAgentLaunch repairs missing shared skill links before launch", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-launch-links-"));
+  try {
+    const catalogDir = path.join(root, "catalog");
+    const dir = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(dir, { recursive: true });
+    await makeCatalogFixture(catalogDir);
+    await select(catalogDir, env);
+    await initialize(dir, "claude", "project", "project");
+    await installPacks("project", ["common"], dir, env);
+    const shared = path.join(dir, ".claude", "skills", "alpha");
+    assert.equal(lstatSync(shared).isSymbolicLink(), true, "安装后共享目标是链接");
+    await rm(shared, { recursive: true, force: true });
+    assert.equal(existsSync(shared), false, "共享链接已删除");
+    const prepared = await prepareAgentLaunch(dir, "claude");
+    assert.equal(lstatSync(shared).isSymbolicLink(), true, "启动前补齐共享链接");
+    await prepared.finishRun();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// 反例（先实测构造确实让 repairLinks 抛错，见 assert.rejects）：补齐失败必须被吞掉，
+// prepareAgentLaunch 仍然 resolve——启动绝不因链接修复而阻断。
+test("prepareAgentLaunch resolves even when repairLinks throws", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-launch-repair-fail-"));
+  try {
+    const catalogDir = path.join(root, "catalog");
+    const dir = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(dir, { recursive: true });
+    await makeCatalogFixture(catalogDir);
+    await select(catalogDir, env);
+    await initialize(dir, "claude", "project", "project");
+    await installPacks("project", ["common"], dir, env);
+    await writeFile(path.join(dir, ".avenic.lock.json"), "{ not json "); // 锁文件损坏 → managedSkillNames 必然抛
+    await assert.rejects(
+      () => repairLinks("project", dir, env),
+      /Cannot parse JSON/,
+      "构造必须真的让 repairLinks 抛错，否则本用例失去区分力",
+    );
+    const prepared = await prepareAgentLaunch(dir, "claude");
+    assert.equal(prepared.definition.cwd, dir);
+    await prepared.finishRun();
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

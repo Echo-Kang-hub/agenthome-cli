@@ -96,7 +96,7 @@ test("skillsHealth reports untracked on-disk skills when no install metadata", a
   }
 });
 
-test("skillsHealth splits shared targets into four equal per-agent rows", async () => {
+test("skillsHealth splits shared targets into four per-agent rows with sharing state", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
   try {
     const catalogDir = path.join(root, "catalog");
@@ -110,7 +110,27 @@ test("skillsHealth splits shared targets into four equal per-agent rows", async 
     // Claude Code 与 Codex / OpenCode / universal agents 平级分行，不再合并成两行
     assert.deepEqual(data.skillsHealth.map((r) => r.label), ["Claude Code", "Codex", "OpenCode", "universal agents"]);
     assert.ok(data.skillsHealth.every((r) => r.ok));
-    assert.ok(data.skillsHealth.every((r) => r.details === "1/1"));
+    // 共享语义：claude 是 share 目标（state=linked）→ "shared"；canonical 目标按 present/total
+    assert.deepEqual(data.skillsHealth.map((r) => r.details), ["shared", "1/1", "1/1", "1/1"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("skillsHealth reports missing shared links per state, not a fixed string", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-ext-"));
+  try {
+    const catalogDir = path.join(root, "catalog");
+    const project = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(project, { recursive: true });
+    await makeCatalogFixture(catalogDir);
+    await select(catalogDir, env);
+    await installPacks("project", ["common"], project, env);
+    await rm(path.join(project, ".claude", "skills", "alpha"), { recursive: true, force: true }); // share 目标缺失
+    const data = await buildDashboardData(project, env);
+    assert.deepEqual(data.skillsHealth.map((r) => r.details), ["links missing", "1/1", "1/1", "1/1"]);
+    assert.deepEqual(data.skillsHealth.map((r) => r.ok), [false, true, true, true], "share 目标缺失 → 该行不 ok");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

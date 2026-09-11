@@ -3,7 +3,7 @@
   "displayName": "Avenic Agent Manager",
   "description": "管理 Avenic Agent 运行时与 Skills 的图形界面",
   "publisher": "EchoKang",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "license": "MIT",
   "icon": "media/icon.png",
@@ -170,6 +170,12 @@
         "title": "Avenic: 重装 Pack",
         "category": "Avenic",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "avenic.skills.repairLinks",
+        "title": "Avenic: 修复 Skills 链接",
+        "category": "Avenic",
+        "icon": "$(link)"
       },
       {
         "command": "avenic.catalog.installPack",
@@ -376,6 +382,10 @@
         {
           "command": "avenic.skills.addDirect",
           "when": "view == avenic.skills"
+        },
+        {
+          "command": "avenic.skills.repairLinks",
+          "when": "view == avenic.skills"
         }
       ],
       "commandPalette": [
@@ -401,7 +411,7 @@
     "package": "npm run build && vsce package --out dist/avenic-agent-manager.vsix"
   },
   "devDependencies": {
-    "@avenic/core": "^1.0.4",
+    "@avenic/core": "^1.1.0",
     "@types/node": "^18.19.0",
     "@types/vscode": "^1.90.0",
     "@vscode/codicons": "^0.0.46-24",

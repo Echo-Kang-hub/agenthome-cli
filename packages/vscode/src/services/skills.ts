@@ -4,9 +4,11 @@ import {
   adoptSkills as coreAdoptSkills,
   createInstallContext,
   detectedSkillNames as coreDetectedSkillNames,
+  ensureSkillLinks as coreEnsureSkillLinks,
   installPacks as coreInstallPacks,
   installedPackIds as coreInstalledPackIds,
   loadPacks,
+  managedSkillNames as coreManagedSkillNames,
   planAdoptSkills,
   readDirectState,
   removeExternalSkills,
@@ -120,4 +122,14 @@ export function addDirect(scope: Scope, repo: string, skillNames: string[], cwd?
 
 export function removeDirect(scope: Scope, names: string[], cwd?: string, environment: Env = process.env): Promise<string[]> {
   return removeExternalSkills(context(scope, cwd, environment), names).then((r) => r.directRemoved);
+}
+
+// 启动/手动补齐共享链接：只处理 lock 记录的受管技能，插件侧不做任何 fs 判断。
+export async function repairLinks(scope: Scope, cwd?: string, environment: Env = process.env) {
+  const installContext = context(scope, cwd, environment);
+  const managed = await coreManagedSkillNames(installContext);
+  if (managed.size === 0) {
+    return { counts: { linked: 0, repaired: 0, migrated: 0, fallback: 0, conflict: 0, unchanged: 0, skipped: 0 }, conflicts: [], targets: {} };
+  }
+  return coreEnsureSkillLinks(installContext, managed, { silent: true });
 }

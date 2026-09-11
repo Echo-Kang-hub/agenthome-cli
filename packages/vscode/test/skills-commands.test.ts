@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { select } from "../src/services/catalog.ts";
-import { adopt, addDirect, adoptedOnlyNames, adoptPacked, detected, directSkills, installedPackIds, installPacks, planAdopt, removeDirect, status, uninstallPacks } from "../src/services/skills.ts";
+import { adopt, addDirect, adoptedOnlyNames, adoptPacked, detected, directSkills, installedPackIds, installPacks, planAdopt, removeDirect, repairLinks, status, uninstallPacks } from "../src/services/skills.ts";
 import { makeCatalogFixture, testEnv } from "./helpers.ts";
 
 test("pack install → status → uninstall round-trip in project scope", async () => {
@@ -84,11 +84,56 @@ test("global scope is env-state-isolated and read-only safe", async () => {
   }
 });
 
-test("manifest registers the nine skills command ids with skills-tree context menus", async () => {
+// 启动补齐/手动修复同一入口：只处理 lock 记录的受管技能。删除共享链接后一次 repair 重建，
+// 且不产生额外条目——若实现退化成枚举 .agents/skills 后连链，outsider 之类未受管目录会被带进来。
+test("repairLinks recreates a missing shared link from the managed set only", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-repair-"));
+  try {
+    const catalogDir = path.join(root, "catalog");
+    const cwd = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(cwd, { recursive: true });
+    await makeCatalogFixture(catalogDir);
+    await select(catalogDir, env);
+    await installPacks("project", ["common"], cwd, env);
+    const shared = path.join(cwd, ".claude", "skills", "alpha");
+    assert.equal(lstatSync(shared).isSymbolicLink(), true, "安装后共享目标是链接");
+    await rm(shared, { recursive: true, force: true });
+    assert.equal(existsSync(shared), false, "共享链接已删除");
+    assert.equal(existsSync(path.join(cwd, ".agents", "skills", "alpha", "SKILL.md")), true, "canonical 拷贝保留");
+
+    const result = await repairLinks("project", cwd, env);
+    assert.ok(result.counts.linked >= 1, `重建缺失共享链接（counts=${JSON.stringify(result.counts)}）`);
+    assert.equal(lstatSync(shared).isSymbolicLink(), true, "共享链接已重建");
+    assert.equal(existsSync(path.join(cwd, ".claude", "skills", "outsider")), false, "不产生新条目");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// 空受管集合：early return，零副作用。目录枚举式实现会在这里凭空建出 .claude/skills。
+test("repairLinks is a no-op with zero side effects when nothing is managed", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-repair-empty-"));
+  try {
+    const cwd = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(cwd, { recursive: true });
+    const result = await repairLinks("project", cwd, env);
+    assert.deepEqual(result.counts, { linked: 0, repaired: 0, migrated: 0, fallback: 0, conflict: 0, unchanged: 0, skipped: 0 });
+    assert.deepEqual(result.conflicts, []);
+    assert.deepEqual(result.targets, {});
+    assert.equal(existsSync(path.join(cwd, ".claude", "skills")), false, "不创建共享目标目录");
+    assert.equal(existsSync(path.join(cwd, ".agents", "skills")), false, "不创建 canonical 目录");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("manifest registers the ten skills command ids with skills-tree context menus", async () => {
   const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const manifest = JSON.parse(await readFile(path.join(pkgDir, "package.json"), "utf8"));
   const ids = manifest.contributes?.commands ?? [];
-  const ids9 = ["avenic.skills.installPacks", "avenic.skills.uninstallPacks", "avenic.skills.addDirect", "avenic.skills.removeDirect", "avenic.skills.directList", "avenic.skills.adopt", "avenic.skills.adoptPack", "avenic.skills.uninstallPack", "avenic.skills.reinstallPack"];
+  const ids9 = ["avenic.skills.installPacks", "avenic.skills.uninstallPacks", "avenic.skills.addDirect", "avenic.skills.removeDirect", "avenic.skills.directList", "avenic.skills.adopt", "avenic.skills.adoptPack", "avenic.skills.uninstallPack", "avenic.skills.reinstallPack", "avenic.skills.repairLinks"];
   for (const id of ids9) {
     assert.ok(ids.some((c: { command: string }) => c.command === id), id);
   }
@@ -113,9 +158,9 @@ test("manifest registers the nine skills command ids with skills-tree context me
   for (const id of ["avenic.skills.uninstallPack", "avenic.skills.reinstallPack"]) {
     assert.ok(contextMenus.some((m) => m.command === id && m.when === packBinding && m.group === undefined), `${id} pack 行右键菜单`);
   }
-  // Skills 标题栏键位：安装 Packs / 添加直装（作用域经交互选择）
+  // Skills 标题栏键位：安装 Packs / 添加直装 / 修复链接（作用域经交互选择）
   const titleMenus: Array<{ command: string; when: string }> = manifest.contributes?.menus?.["view/title"] ?? [];
-  for (const id of ["avenic.skills.installPacks", "avenic.skills.addDirect"]) {
+  for (const id of ["avenic.skills.installPacks", "avenic.skills.addDirect", "avenic.skills.repairLinks"]) {
     assert.ok(titleMenus.some((m) => m.command === id && m.when === "view == avenic.skills"), id);
   }
 });

@@ -137,6 +137,13 @@ export async function prepareAgentLaunch(projectRoot: string, agentId: string): 
     }
     throw error;
   }
+  // 启动补齐共享链接：尽力而为，绝不阻断启动。
+  try {
+    const { repairLinks } = await import("./skills.ts");
+    await repairLinks("project", projectRoot);
+  } catch {
+    // ignore
+  }
   let done = false;
   const finishRun = async (): Promise<void> => {
     if (done) return;

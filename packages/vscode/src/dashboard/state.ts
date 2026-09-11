@@ -18,14 +18,25 @@ const AGENT_LABELS: Record<string, string> = {
 
 // 每个安装目标含多个 agent（如 Codex / OpenCode / universal agents 共用一个目标、
 // 共用一套安装目录），拆成四条平等独立行：label 按 agent 名，ok/details 取自目标。
-function skillsHealthRows(skills: { targets: Array<{ agents: string[]; complete: boolean; present: number; total: number }> }): Array<{ label: string; ok: boolean; details: string }> {
-  return skills.targets.flatMap((target) =>
-    target.agents.map((agentId) => ({
+// details 按 target.state 文案：canonical 报 copies 数，share 目标报共享/降级/缺失/冲突
+// （"1/1" 对 share 目标没有意义——它数的是链接，不是拷贝）。
+function skillsHealthRows(skills: { targets: Array<{ agents: string[]; complete: boolean; present: number; total: number; state: string }> }): Array<{ label: string; ok: boolean; details: string }> {
+  return skills.targets.flatMap((target) => {
+    const details = target.state === "canonical"
+      ? `${target.present}/${target.total}`
+      : target.state === "linked"
+        ? "shared"
+        : target.state === "fallback"
+          ? "copies, not shared"
+          : target.state === "missing"
+            ? "links missing"
+            : "conflict";
+    return target.agents.map((agentId) => ({
       label: AGENT_LABELS[agentId] ?? agentId,
       ok: target.complete,
-      details: `${target.present}/${target.total}`,
-    })),
-  );
+      details,
+    }));
+  });
 }
 export async function buildDashboardData(projectRoot: string | null, environment: NodeJS.ProcessEnv = process.env): Promise<DashboardData> {
   if (projectRoot === null) {

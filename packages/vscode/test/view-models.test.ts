@@ -2,11 +2,31 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { agentsToViewModels, catalogPackSkillsToViewModels, catalogPacksToViewModels, catalogSourceGroupsToViewModels, catalogToViewModels, GLOBAL_EMPTY_HINT, PROJECT_EMPTY_HINT, skillsToViewModels } from "../src/views/view-models.ts";
 
-import type { EffectiveAgentConfig } from "@avenic/core";
+import type { EffectiveAgentConfig, InstallStatus, InstallTargetStatus } from "@avenic/core";
 
 const effective: EffectiveAgentConfig = { enabled: true, auth: "global", sessions: "project", configuredAuth: "global", localAuth: null };
 const agent = { id: "claude", displayName: "Claude Code", executable: "claude" };
 const cli = (installed: string | null, latest: string | null) => ({ installed, latest, updateAvailable: installed !== null && latest !== null && latest > installed });
+
+// core 1.1.0 起 InstallStatus 增加 state/operational/optimized/degraded/incomplete、target 增加
+// id/state/counts。这些用例只关心展示字段，用夹具补齐类型必需字段，不改断言语义。
+const statusFixture = (partial: Pick<InstallStatus, "names"> & Partial<InstallStatus>): InstallStatus => ({
+  groups: [],
+  packs: [],
+  targets: [],
+  state: "optimized",
+  operational: true,
+  optimized: true,
+  degraded: false,
+  incomplete: false,
+  ...partial,
+});
+const targetFixture = (partial: Pick<InstallTargetStatus, "agents" | "label" | "destination" | "present" | "total" | "complete"> & Partial<InstallTargetStatus>): InstallTargetStatus => ({
+  id: "agents",
+  state: "canonical",
+  counts: {},
+  ...partial,
+});
 
 test("uninitialized agent with CLI missing renders bootstrap row", () => {
   const items = agentsToViewModels([{ agent, executableAvailable: false, effective: null, cli: cli(null, "2.1.238") }]);
@@ -64,7 +84,7 @@ test("skills empty-state copy is scope-aware", () => {
 });
 
 test("skills status maps to grouped items", () => {
-  const items = skillsToViewModels({ groups: [], names: ["pack-a"], packs: [{ id: "pack-a", name: "Pack A" }], targets: [] });
+  const items = skillsToViewModels(statusFixture({ names: ["pack-a"], packs: [{ id: "pack-a", name: "Pack A" }] }));
   assert.ok(items.length >= 1); // 分组（Installed Packs / Catalog Packs）
   assert.equal(items[0].item.kind, "group");
   // Installed Packs 组可展开：无 source 分组兜底时，仅托管记录的行按 adopted 呈现（可识别为 Pack）
@@ -77,15 +97,14 @@ test("installed packs children fall back to merged source rows without layers", 
     const source = { id, name, repository: `https://github.com/${id}`, revision: "a".repeat(40) };
     return { source, skills: skills.map((skill) => ({ name: skill, directory: skill, source })) };
   };
-  const items = skillsToViewModels({
+  const items = skillsToViewModels(statusFixture({
     groups: [
       group("superpowers", "Superpowers", ["writing-plans", "debugging"]),
       group("anthropic", "Anthropic", ["docx"]),
     ],
     names: ["writing-plans", "debugging", "docx", "legacy-one"],
     packs: [{ id: "development", name: "Development" }],
-    targets: [],
-  });
+  }));
   const children = items[0].children!;
   // 两个 source 分组行 + 一个 adopted 兜底行（层次数据缺失时的锁文件合并视图）
   assert.deepEqual(children.map((c) => c.kind), ["source", "source", "adopted"]);
@@ -108,12 +127,12 @@ test("installed packs children layer as pack rows (Pack → source → skill)", 
       { sourceId: "anthropic", sourceName: "Anthropic", skills: ["docx"] },
     ],
   }];
-  const items = skillsToViewModels({
+  const items = skillsToViewModels(statusFixture({
     groups: [],
     names: ["writing-plans", "debugging", "docx", "legacy-one"],
     packs: [{ id: "development", name: "Development" }],
-    targets: [{ agents: ["claude-code"], label: "Claude Code", destination: "", present: 3, total: 3, complete: true }],
-  }, [], PROJECT_EMPTY_HINT, layers);
+    targets: [targetFixture({ id: "claude", agents: ["claude-code"], label: "Claude Code", destination: "", present: 3, total: 3, complete: true })],
+  }), [], PROJECT_EMPTY_HINT, layers);
   const children = items[0].children!;
   // 一个 Pack 行 + 一个 adopted 兜底行（legacy-one 不在任何 Pack 层内）
   assert.deepEqual(children.map((c) => c.kind), ["pack", "adopted"]);
@@ -135,12 +154,11 @@ test("pack layers show only skills actually installed (catalog may lead the lock
     packId: "development", packName: "Development",
     groups: [{ sourceId: "demo", sourceName: "Demo", skills: ["alpha", "future-skill"] }],
   }];
-  const items = skillsToViewModels({
+  const items = skillsToViewModels(statusFixture({
     groups: [],
     names: ["alpha"],
     packs: [{ id: "development", name: "Development" }],
-    targets: [],
-  }, [], PROJECT_EMPTY_HINT, layers);
+  }), [], PROJECT_EMPTY_HINT, layers);
   const pack = items[0].children![0];
   assert.equal(pack.label, "Development");
   assert.deepEqual(pack.children?.[0].children?.map((s) => s.label), ["alpha"]); // future-skill 被过滤
@@ -157,7 +175,7 @@ test("skills null with untracked on-disk skills shows only the detected group (n
 });
 
 test("skills status with stray files shows detected-untracked group first", () => {
-  const status = { groups: [], names: ["managed-one"], packs: [{ id: "pack-a", name: "Pack A" }], targets: [] };
+  const status = statusFixture({ names: ["managed-one"], packs: [{ id: "pack-a", name: "Pack A" }] });
   const groups = skillsToViewModels(status, ["managed-one", "stray"], PROJECT_EMPTY_HINT);
   assert.equal(groups.length, 3);
   assert.equal(groups[0].item.kind, "detected");
@@ -166,7 +184,7 @@ test("skills status with stray files shows detected-untracked group first", () =
 });
 
 test("fully managed status adds no detected group", () => {
-  const status = { groups: [], names: ["managed-one"], packs: [], targets: [] };
+  const status = statusFixture({ names: ["managed-one"] });
   const groups = skillsToViewModels(status, ["managed-one"], PROJECT_EMPTY_HINT);
   assert.equal(groups.length, 2);
   assert.ok(groups.every((g) => g.item.kind === "group"));
