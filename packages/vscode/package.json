@@ -411,7 +411,7 @@
     "package": "npm run build && vsce package --out dist/avenic-agent-manager.vsix"
   },
   "devDependencies": {
-    "@avenic/core": "^1.1.0",
+    "@avenic/core": "^1.2.0",
     "@types/node": "^18.19.0",
     "@types/vscode": "^1.90.0",
     "@vscode/codicons": "^0.0.46-24",

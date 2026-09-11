@@ -36,3 +36,25 @@ export function rememberedProjectRoot(folders: readonly WorkspaceFolderLike[], s
   if (last !== null && folders.some((f) => sameRootPath(f.uri.fsPath, last, platform))) return last;
   return null;
 }
+
+// 多根时优先用 active editor 所属的 workspace folder（用户当下正在编辑哪个项目，就用哪个）。
+// 绝不静默取 folders[0]；匹配不到返回 null，由调用方继续走"记忆根 → QuickPick"。
+export function projectRootForActiveEditor(
+  folders: readonly WorkspaceFolderLike[],
+  activeUri: string | undefined,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  if (activeUri === undefined || folders.length === 0) return null;
+  const separator = platform === "win32" ? /[\\/]/ : /\//;
+  const normalizedFile = platform === "win32" ? activeUri.toLowerCase() : activeUri;
+  let best: string | null = null;
+  for (const folder of folders) {
+    const root = folder.uri.fsPath;
+    const normalizedRoot = platform === "win32" ? root.toLowerCase() : root;
+    if (normalizedFile === normalizedRoot) return root;
+    if (!normalizedFile.startsWith(normalizedRoot)) continue;
+    const rest = normalizedFile.slice(normalizedRoot.length, normalizedRoot.length + 1);
+    if (separator.test(rest) && (best === null || root.length > best.length)) best = root;
+  }
+  return best;
+}

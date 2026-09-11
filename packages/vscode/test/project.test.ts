@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PROJECT_ROOT_STATE_KEY, lastProjectRoot, rememberProjectRoot, rememberedProjectRoot, resolveProjectRoot, sameRootPath } from "../src/project.ts";
+import { PROJECT_ROOT_STATE_KEY, lastProjectRoot, projectRootForActiveEditor, rememberProjectRoot, rememberedProjectRoot, resolveProjectRoot, sameRootPath } from "../src/project.ts";
 
 function fakeState() {
   const data = new Map<string, unknown>();
@@ -60,4 +60,21 @@ test("sameRootPath compares case-insensitively on win32", () => {
 test("sameRootPath compares exactly on non-win32 platforms", () => {
   assert.equal(sameRootPath("/alpha/proj", "/alpha/PROJ", "linux"), false);
   assert.equal(sameRootPath("/alpha/proj", "/alpha/proj", "darwin"), true);
+});
+
+test("projectRootForActiveEditor picks the folder that owns the active editor", () => {
+  const folders = [{ uri: { fsPath: "/work/a" } }, { uri: { fsPath: "/work/b" } }];
+  assert.equal(projectRootForActiveEditor(folders, "/work/b/src/index.ts"), "/work/b");
+  assert.equal(projectRootForActiveEditor(folders, "/elsewhere/file.ts"), null);
+  assert.equal(projectRootForActiveEditor(folders, undefined), null);
+  assert.equal(projectRootForActiveEditor([{ uri: { fsPath: "C:\\work\\A" } }], "c:\\work\\a\\src\\x.ts", "win32"), "C:\\work\\A");
+});
+
+test("projectRootForActiveEditor prefers the longest matching root and never guesses", () => {
+  const nested = [{ uri: { fsPath: "/work" } }, { uri: { fsPath: "/work/b" } }];
+  assert.equal(projectRootForActiveEditor(nested, "/work/b/src/x.ts"), "/work/b");
+  // 文件恰好等于根（无分隔符后缀）也算命中；仅前缀相同的兄弟目录不算
+  assert.equal(projectRootForActiveEditor([{ uri: { fsPath: "/work/b" } }], "/work/b"), "/work/b");
+  assert.equal(projectRootForActiveEditor([{ uri: { fsPath: "/work/b" } }], "/work/bc/x.ts"), null);
+  assert.equal(projectRootForActiveEditor([], "/work/b/x.ts"), null);
 });
