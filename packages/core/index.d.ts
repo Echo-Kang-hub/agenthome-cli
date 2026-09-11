@@ -461,10 +461,11 @@ export interface ModelLibrary { schemaVersion: number; revision: number; profile
 export interface TransactOptions<T> {
   read: () => Promise<{ revision: number; value: T }>;
   build: (current: { revision: number; value: T }) => T | null;
-  stage: (next: T, directory: string) => Promise<Array<{ relativePath: string; staged: string; target: string }>>;
+  stage: (next: T, directory: string) => Promise<Array<{ relativePath: string; staged?: string; target: string; remove?: boolean }>>;
   tempRoot: string;
   attempts?: number;
   rename?: (from: string, to: string) => Promise<unknown>;
+  commit?: (replacements: Array<{ relativePath: string; staged?: string; target: string; remove?: boolean }>, directory: string) => Promise<void>;
 }
 export function transact<T>(options: TransactOptions<T>): Promise<{ changed: boolean; value: T }>;
 export function readLibrary(environment?: ProcessEnvLike): Promise<ModelLibrary>;
@@ -481,3 +482,29 @@ export function writePath(object: Record<string, unknown>, path: string[], value
 export function deletePath(object: Record<string, unknown>, path: string[]): void;
 export function mergeClaudeSettings(existing: Record<string, unknown> | null, entries: Array<{ path: string[]; value: unknown }>): { content: Record<string, unknown>; ledger: LedgerEntry[]; created: boolean };
 export function rollbackClaudeSettings(existing: Record<string, unknown> | null, ledger: LedgerEntry[]): { content: Record<string, unknown>; conflicts: RollbackConflict[] };
+
+// ---- model: project binding ----
+
+export interface ProjectBinding {
+  schemaVersion: number;
+  revision: number;
+  activeProfileId: string | null;
+  overrides: Record<string, unknown>;
+  projection: {
+    claude?: { file: string; fingerprint: string; created: boolean; entries: LedgerEntry[] };
+  };
+}
+export interface ProjectModelStatus {
+  projectRoot: string;
+  binding: ProjectBinding;
+  profile: ModelProfile | null;
+  dangling: boolean;
+  projection: { file: string; keys: number; fingerprint: string | null; fingerprintMatches: boolean } | null;
+  message: string | null;
+}
+export function danglingMessage(profileId: string): string;
+export function readBinding(projectRoot: string): Promise<{ value: ProjectBinding; exists: boolean; file: string }>;
+export function bindProject(projectRoot: string, environment: ProcessEnvLike | undefined, profileId: string, io?: Io): Promise<{ changed: boolean; binding: ProjectBinding; projection: { file: string; fingerprint: string; keys: number } }>;
+export function clearProjectBinding(projectRoot: string, environment: ProcessEnvLike | undefined, io?: Io): Promise<{ changed: boolean; conflicts: RollbackConflict[]; binding: ProjectBinding }>;
+export function projectModelStatus(projectRoot: string, environment: ProcessEnvLike | undefined): Promise<ProjectModelStatus>;
+export function resolveProjectProfile(projectRoot: string, environment: ProcessEnvLike | undefined, io?: Io): Promise<{ profile: ModelProfile | null; binding: ProjectBinding; cleaned: boolean; conflicts: RollbackConflict[]; message: string | null }>;

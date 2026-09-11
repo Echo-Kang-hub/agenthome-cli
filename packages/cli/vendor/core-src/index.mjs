@@ -195,3 +195,11 @@ export {
   rollbackClaudeSettings,
   writePath,
 } from "./model/project-claude.mjs";
+export {
+  bindProject,
+  clearProjectBinding,
+  danglingMessage,
+  projectModelStatus,
+  readBinding,
+  resolveProjectProfile,
+} from "./model/binding.mjs";

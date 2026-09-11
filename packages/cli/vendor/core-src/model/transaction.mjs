@@ -12,7 +12,10 @@ import { fail } from "../util/fail.mjs";
 // 崩溃安全：最终是 rename 覆盖，磁盘上任何时刻要么旧内容要么新内容。
 // 两个根（库 / 项目）各自独立事务：不同卷的文件绝不放进同一次替换。
 export async function transact(options) {
-  const { read, build, stage, tempRoot, attempts = 3, rename } = options;
+  const { read, build, stage, tempRoot, attempts = 3, rename, commit } = options;
+  // commit 可注入项目侧替换器（支持删除）；默认仍是技能安装用的 replaceStagedFiles，
+  // 且必须保留 rename 注入（T2 的回滚测试整个建立在它之上）。
+  const replace = commit ?? ((replacements, directory) => replaceStagedFiles(replacements, directory, rename ? { rename } : undefined));
   await mkdir(tempRoot, { recursive: true });
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
     const current = await read();
@@ -29,7 +32,7 @@ export async function transact(options) {
         await rm(directory, { recursive: true, force: true });
         continue; // 有人先写了一步：重读重放
       }
-      await replaceStagedFiles(replacements, directory, rename ? { rename } : undefined);
+      await replace(replacements, directory);
       await rm(directory, { recursive: true, force: true });
       return { changed: true, value: next, revision: current.revision + 1 };
     } catch (error) {
