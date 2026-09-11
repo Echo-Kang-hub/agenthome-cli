@@ -6,15 +6,22 @@ import {
   validateModelId,
   validateProviderId,
 } from "@avenic/core";
-import type { ModelProfile } from "@avenic/core";
+import type { EndpointInput, ModelProfile, ModelProfileInput, ModelRole, ModelRow } from "@avenic/core";
 import type { DraftIssue, ProfileDraft } from "./protocol.ts";
 
 // vscode-free：草稿 → core 入参的翻译，以及**定位到具体输入**的校验（§5.5「由 core 判定并在
 // UI 定位显示」）。校验规则本身全部来自 core（validateBaseUrl/validateEnvKey/validateModelId/
 // validateProviderId/buildClaudeEntries），这里只负责把 core 的判定结果映射回草稿里的字段路径。
 
+/** 面板只改覆盖里的端点与 providerId；apiKey/authField 由 host 从库里带过来。 */
+type OverrideInput = EndpointInput & { providerId?: string };
+
 /** 面板只能改覆盖里的端点与 providerId：密钥与认证字段永远沿用库中值（它们不进 webview）。 */
-function overrideFrom(draft: ProfileDraft, existing: ModelProfile | null, agentId: "codex" | "opencode") {
+function overrideFrom(
+  draft: ProfileDraft,
+  existing: ModelProfile | null,
+  agentId: "codex" | "opencode",
+): OverrideInput | undefined {
   const draftOverride = draft.overrides[agentId];
   const existingOverride = existing?.overrides?.[agentId];
   if (!draftOverride && !existingOverride) return undefined;
@@ -31,20 +38,20 @@ function overrideFrom(draft: ProfileDraft, existing: ModelProfile | null, agentI
 /**
  * 草稿 → 交给 core.normalizeProfile 的入参。
  *
- * 末尾的断言是**边界适配**：草稿里的 api / reasoningEffort 等在协议层已被 isDraft 按 core
- * 导出的清单白名单化过，而 normalizeProfile 会在运行时再校验一遍——所以这里不会掩盖错误，
- * 只把「string 已经很窄」这件事告诉类型系统。
+ * 两个 `as` 都是**边界适配**，落在已经判定过的地方：角色名与 api 在协议层被 isDraft 按 core
+ * 导出的清单白名单化过，normalizeProfile 运行时还会再校验一遍——所以这里不掩盖错误，只把
+ * 「来自 webview 的 string 已经很窄」这件事告诉类型系统。
  */
-export function profileInputFromDraft(draft: ProfileDraft, existing: ModelProfile | null): Partial<ModelProfile> & { id: string } {
-  const models: Record<string, unknown> = {};
+export function profileInputFromDraft(draft: ProfileDraft, existing: ModelProfile | null): ModelProfileInput {
+  const models: Partial<Record<ModelRole, ModelRow>> = {};
   for (const [role, row] of Object.entries(draft.models)) {
     // 输入框被清空 = 删除该角色。空行留给 core 会撞 validateModelId，所以在这里剔除。
     if (row.id.trim() === "") continue;
-    const entry: Record<string, unknown> = { id: row.id.trim() };
+    const entry: ModelRow = { id: row.id.trim() };
     if (row.display !== undefined && row.display.trim() !== "") entry.display = row.display.trim();
     // longContext 原样带过：界面只为部分角色提供勾选框，其余角色上 CLI 写入的值不得被抹掉。
     if (row.longContext === true) entry.longContext = true;
-    models[role] = entry;
+    models[role as ModelRole] = entry;
   }
   const env: Record<string, string> = {};
   for (const row of draft.env) {
@@ -52,12 +59,12 @@ export function profileInputFromDraft(draft: ProfileDraft, existing: ModelProfil
     if (key === "") continue;
     env[key] = row.value;
   }
-  const overrides: Record<string, unknown> = {};
+  const overrides: NonNullable<ModelProfileInput["overrides"]> = {};
   for (const agentId of ["codex", "opencode"] as const) {
     const override = overrideFrom(draft, existing, agentId);
     if (override) overrides[agentId] = override;
   }
-  const input = {
+  const input: ModelProfileInput = {
     id: draft.id,
     name: draft.name,
     endpoint: {
@@ -69,13 +76,22 @@ export function profileInputFromDraft(draft: ProfileDraft, existing: ModelProfil
     },
     overrides,
     models,
-    toggles: Object.fromEntries(draft.toggles.filter((id) => id !== "").map((id) => [id, true])),
+    toggles: Object.fromEntries(draft.toggles.filter((id) => id !== "").map((id) => [id, true] as const)),
     env,
     claude: { settings: { ...(existing?.claude?.settings ?? {}), ...(draft.passthrough ?? {}) } },
-    codex: draft.codex,
-    opencode: draft.opencode,
+    // 留空的 providerId / envKey / npmAdapter 直接**不传**：core 的 ?? 只认 null/undefined，
+    // 传空串会撞 validateProviderId。不传 = 用 core 的默认值（新建配置走的就是这条）。
+    codex: {
+      ...(draft.codex.providerId.trim() !== "" ? { providerId: draft.codex.providerId } : {}),
+      ...(draft.codex.envKey.trim() !== "" ? { envKey: draft.codex.envKey } : {}),
+      reasoningEffort: draft.codex.reasoningEffort,
+    },
+    opencode: {
+      ...(draft.opencode.providerId.trim() !== "" ? { providerId: draft.opencode.providerId } : {}),
+      ...(draft.opencode.npmAdapter.trim() !== "" ? { npmAdapter: draft.opencode.npmAdapter } : {}),
+    },
   };
-  return input as unknown as Partial<ModelProfile> & { id: string };
+  return input;
 }
 
 function messageOf(error: unknown): string {
@@ -83,7 +99,7 @@ function messageOf(error: unknown): string {
 }
 
 /** core 认定的受管 env 键（端点/模型/开关写进去的那批），用来把「与受管 env 冲突」定位到行。 */
-function managedEnvKeys(input: Partial<ModelProfile> & { id: string }): Set<string> {
+function managedEnvKeys(input: ModelProfileInput): Set<string> {
   // 去掉自定义 env 与透传键再投影一次：此时不可能冲突，能拿到"不含用户 env"的受管键集合。
   const profile = normalizeProfile({ ...input, env: {}, claude: { settings: {} } });
   const keys = new Set<string>();
@@ -100,6 +116,8 @@ function managedEnvKeys(input: Partial<ModelProfile> & { id: string }): Set<stri
 export function draftIssues(draft: ProfileDraft, existing: ModelProfile | null): DraftIssue[] {
   const issues: DraftIssue[] = [];
 
+  // core 容忍空名称（它会退回 id），但卡片列表就是按名称认人的，所以空名字在这里拦下。
+  if (draft.name.trim() === "") issues.push({ field: "name", message: "名称必填" });
   try {
     validateBaseUrl(draft.baseUrl);
   } catch (error) {

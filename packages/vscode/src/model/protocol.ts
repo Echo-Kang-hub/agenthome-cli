@@ -1,4 +1,5 @@
 import { API_TYPES, AUTH_FIELDS, MODEL_ROLES, TOGGLE_KEYS } from "@avenic/core";
+import type { ApiType, ModelProfile } from "@avenic/core";
 
 // 面板消息白名单（仿 dashboard/protocol.ts）：webview 永远不能指定路径或命令，
 // 只能提交结构化的 profile 草稿与 id。apiKey === null 表示"不修改现有密钥"。
@@ -20,14 +21,14 @@ export interface EnvRowDraft {
 // host 从库中带过（密钥不进 webview），所以草稿里没有这两个字段的位置。
 export interface AgentOverrideDraft {
   baseUrl?: string;
-  api?: string;
+  api?: ApiType;
   providerId?: string;
 }
 
 export interface CodexDraft {
   providerId: string;
   envKey: string;
-  reasoningEffort: string;
+  reasoningEffort: ModelProfile["codex"]["reasoningEffort"];
 }
 
 export interface OpencodeDraft {
@@ -39,7 +40,7 @@ export interface ProfileDraft {
   id: string;
   name: string;
   baseUrl: string;
-  api: string;
+  api: ApiType;
   authField: string;
   // null = 保留库中现有密钥；"" = 明确清除；非空 = 替换。
   apiKey: string | null;
@@ -83,6 +84,8 @@ export interface ProjectionEntry {
 
 export interface DraftPreview {
   entries: ProjectionEntry[];
+  // 掩码后的嵌套对象（.claude/settings.local.json 的形状）：面板只做 JSON.stringify。
+  content: Record<string, unknown>;
   requestUrl: string | null;
   // 整份草稿层面的失败（如 core 的路径冲突），无法定位到单个输入时用这个。
   error: string | null;
@@ -113,6 +116,8 @@ export interface PanelOptions {
   longContextRoles: string[];
   agents: Array<{ id: string; label: string }>;
   codexEffort: string[];
+  // 「+ 新建」表单的起点，默认值由 core 生成（见 state.ts）。
+  newProfile: ProfileDraft;
 }
 
 export interface ModelPanelData {
@@ -153,6 +158,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// 来自 webview 的永远是 string，清单本身是窄类型 —— 按 string 比对（§5：可选项以 core schema 为准）。
+function isApiType(value: unknown): value is ApiType {
+  return typeof value === "string" && (API_TYPES as readonly string[]).includes(value);
+}
+
 function isModelRow(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
   // id 允许空串：把某个角色的输入框清空 = 删除该角色映射（core 的 normalizeModelRow
@@ -171,16 +181,20 @@ function isEnvRow(value: unknown): boolean {
 function isOverride(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
   if (value.baseUrl !== undefined && !isEmptyableText(value.baseUrl, 2000)) return false;
-  if (value.api !== undefined && (typeof value.api !== "string" || !API_TYPES.includes(value.api))) return false;
+  if (value.api !== undefined && !isApiType(value.api)) return false;
   if (value.providerId !== undefined && !isEmptyableText(value.providerId, 32)) return false;
   return true;
 }
 
 function isDraft(value: unknown): value is ProfileDraft {
   if (!isPlainObject(value)) return false;
-  if (!isText(value.id, 32) || !isText(value.name, 200)) return false;
-  if (!isText(value.baseUrl, 2000)) return false;
-  if (typeof value.api !== "string" || !API_TYPES.includes(value.api)) return false;
+  if (!isText(value.id, 32)) return false;
+  // name / baseUrl 允许空串：草稿是**编辑中的**表单，新建时它们本来就是空的。
+  // 空值不算"非法消息"，而是由 draftIssues 报成可定位的问题（保存会被面板拦下）。
+  if (!isEmptyableText(value.name, 200)) return false;
+  if (!isEmptyableText(value.baseUrl, 2000)) return false;
+  // api 必须是 core 认得的三种之一：未知取值会被 normalizeEndpoint 判失败（§5）。
+  if (!isApiType(value.api)) return false;
   // 认证字段必须是 core schema 认得的那几个（§5：具体可选项以当前 core schema 为准）。
   if (typeof value.authField !== "string" || !AUTH_FIELDS.includes(value.authField)) return false;
   // null = 不修改；"" = 清除；其余为替换值。

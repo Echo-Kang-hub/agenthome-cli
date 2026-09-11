@@ -419,7 +419,8 @@ export const CLAUDE_SETTINGS_FILE: string;
 export const LIBRARY_SCHEMA_VERSION: number;
 export const PROJECT_SCHEMA_VERSION: number;
 export const MODEL_ROLES: readonly ModelRole[];
-export const API_TYPES: readonly string[];
+// 这两个清单就是各自的合法取值集合（runtime 是数组，元素与下面的字面量类型一一对应）。
+export const API_TYPES: readonly ApiType[];
 export const AUTH_FIELDS: readonly string[];
 // Codex reasoningEffort 的合法取值（面板下拉框的唯一来源；不在表内 core 会静默落到 medium）。
 export const CODEX_EFFORTS: readonly string[];
@@ -428,6 +429,10 @@ export type ApiType = "anthropic" | "openai-chat" | "openai-responses";
 export type ModelRole = "main" | "opus" | "sonnet" | "haiku" | "fable" | "subagent";
 export interface ModelRow { id: string; display?: string; longContext?: boolean }
 export interface EndpointConfig { baseUrl: string; api: ApiType; authField: string; apiKey: string }
+// normalizeProfile 的入参形态：只有 baseUrl 是必填，其余由 normalizeEndpoint 补默认值
+// （api → "anthropic"、authField → "ANTHROPIC_AUTH_TOKEN"、apiKey → ""）。这里写成 Partial
+// 才和运行时一致 —— 旧的 `Partial<ModelProfile>` 是浅的，会逼调用方编一份假的完整 endpoint。
+export interface EndpointInput { baseUrl: string; api?: ApiType; authField?: string; apiKey?: string }
 export interface ProfileOverrides { codex?: EndpointConfig & { providerId?: string }; opencode?: EndpointConfig & { providerId?: string } }
 export interface ProfileToggles { teams?: boolean; toolSearch?: boolean; maxEffort?: boolean; noNonessentialTraffic?: boolean; noAutoUpdate?: boolean; hideAttribution?: boolean }
 export interface ModelProfile {
@@ -450,7 +455,18 @@ export function projectModelFile(projectRoot: string): string;
 export function projectTempRoot(projectRoot: string): string;
 export function claudeSettingsFile(projectRoot: string): string;
 export function emptyLibrary(): { schemaVersion: number; revision: number; profiles: Record<string, ModelProfile> };
-export function normalizeProfile(input: Partial<ModelProfile> & { id: string }, options?: { now?: string; existing?: ModelProfile | null }): ModelProfile;
+export type ModelProfileInput = Partial<Omit<ModelProfile, "id" | "endpoint" | "overrides" | "toggles" | "codex" | "opencode">> & {
+  id: string;
+  endpoint: EndpointInput;
+  // 覆盖只有 codex/opencode 两个，且 baseUrl 之外的字段都能省略（缺省继承主端点）。
+  overrides?: Partial<Record<"codex" | "opencode", EndpointInput & { providerId?: string }>>;
+  // 只有 TOGGLE_KEYS 里的开关会被读（`input.toggles?.[key] === true`），其余键被丢弃。
+  toggles?: ProfileToggles;
+  // codex / opencode 的字段全部可省：runtime 用 `??` 兜底（providerId → `avenic_<id>` 等）。
+  codex?: Partial<ModelProfile["codex"]>;
+  opencode?: Partial<ModelProfile["opencode"]>;
+};
+export function normalizeProfile(input: ModelProfileInput, options?: { now?: string; existing?: ModelProfile | null }): ModelProfile;
 export function validateBaseUrl(value: string): string;
 export function validateProviderId(value: string): string;
 export function validateEnvKey(value: string): string;

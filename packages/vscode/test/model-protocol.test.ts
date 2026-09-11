@@ -85,7 +85,13 @@ test("isModelViewMessage enforces the field caps", () => {
   assert.equal(save({ id: "x".repeat(32) }), true);
   assert.equal(save({ id: "x".repeat(33) }), false);
   assert.equal(save({ id: "" }), false);
-  assert.equal(save({ name: "" }), false);
+  // name / baseUrl 空串是**合法草稿**：新建表单本来就是空的。它们由 draftIssues 报成
+  // 可定位的问题（name → "名称必填"、baseUrl → core 的校验消息），而不是当成非法消息丢掉
+  // ——否则用户点「+ 新建」还没输入就会被判成协议违规。
+  assert.equal(save({ name: "" }), true);
+  assert.equal(save({ baseUrl: "" }), true);
+  assert.equal(save({ name: "x".repeat(200) }), true);
+  assert.equal(save({ name: "x".repeat(201) }), false);
   assert.equal(save({ baseUrl: "x".repeat(2000) }), true);
   assert.equal(save({ baseUrl: "x".repeat(2001) }), false);
   assert.equal(save({ models: { main: { id: "x".repeat(128) } } }), true);

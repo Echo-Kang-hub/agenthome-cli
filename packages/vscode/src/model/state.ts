@@ -9,6 +9,7 @@ import {
   agentCompatibility,
   buildClaudeEntries,
   maskSecret,
+  mergeClaudeSettings,
   modelsFile,
   normalizeProfile,
   probeUrl,
@@ -51,6 +52,24 @@ const AGENT_LABELS: Record<string, string> = { claude: "Claude", codex: "Codex",
 // 没显示勾选框的角色仍会原样透传库里已有的 longContext（见 profileToDraft）。
 const LONG_CONTEXT_ROLES = ["opus", "sonnet"];
 
+/**
+ * 「+ 新建」草稿的起点。默认值由 core 生成而不是面板自己编（§9.7）：core 改了 codex 的
+ * providerId 规则或 npm 适配器，新建表单跟着变。
+ *
+ * 名称 / Base URL / 三个 provider 标识留空：前两个本来就要用户填，后三个留空 = 用 core 的
+ * 默认值（见 draft.ts，空串会被省略而不是当成值传下去）。
+ */
+function newProfileDefaults(): ProfileDraft {
+  const seed = profileToDraft(normalizeProfile({ id: "new", endpoint: { baseUrl: "https://example.com", api: API_TYPES[0] } }));
+  return {
+    ...seed,
+    name: "",
+    baseUrl: "",
+    codex: { ...seed.codex, providerId: "", envKey: "" },
+    opencode: { ...seed.opencode, providerId: "", npmAdapter: "" },
+  };
+}
+
 export function panelOptions(): PanelOptions {
   return {
     apis: [...API_TYPES],
@@ -61,6 +80,7 @@ export function panelOptions(): PanelOptions {
     longContextRoles: [...LONG_CONTEXT_ROLES],
     agents: Object.keys(AGENT_LABELS).map((id) => ({ id, label: AGENT_LABELS[id] })),
     codexEffort: [...CODEX_EFFORTS],
+    newProfile: newProfileDefaults(),
   };
 }
 
@@ -106,23 +126,27 @@ export function profileToDraft(profile: ModelProfile): ProfileDraft {
  * 面板只负责把 path.join(".") 与值排成 JSON 文本。密钥在这里就被换成掩码——明文不出 host。
  */
 export function buildDraftPreview(draft: ProfileDraft, existing: ModelProfile | null): DraftPreview {
+  const empty = { entries: [], content: {}, requestUrl: null };
   const issues = draftIssues(draft, existing);
-  if (issues.length > 0) return { entries: [], requestUrl: null, error: null, issues };
+  if (issues.length > 0) return { ...empty, error: null, issues };
   let profile: ModelProfile;
   try {
     profile = normalizeProfile(profileInputFromDraft(draft, existing), { existing });
   } catch (error) {
-    return { entries: [], requestUrl: null, error: error instanceof Error ? error.message : String(error), issues: [] };
+    return { ...empty, error: error instanceof Error ? error.message : String(error), issues: [] };
   }
   let entries: DraftPreview["entries"];
+  let content: Record<string, unknown>;
   try {
     entries = buildClaudeEntries(profile).map((entry) => {
       // 认证字段那一行承载密钥：换成掩码后才是可以出 host 的形态。
       const carriesSecret = entry.path.length === 2 && entry.path[0] === "env" && entry.path[1] === profile.endpoint.authField;
       return carriesSecret ? { path: entry.path, value: maskSecret(profile.endpoint.apiKey), secret: true } : { path: entry.path, value: entry.value };
     });
+    // 折叠预览要的是完整 JSON 形状，嵌套交给 core 的 mergeClaudeSettings（面板不拼结构）。
+    content = mergeClaudeSettings(null, entries).content;
   } catch (error) {
-    return { entries: [], requestUrl: null, error: error instanceof Error ? error.message : String(error), issues: [] };
+    return { ...empty, error: error instanceof Error ? error.message : String(error), issues: [] };
   }
   let requestUrl: string | null = null;
   try {
@@ -130,7 +154,7 @@ export function buildDraftPreview(draft: ProfileDraft, existing: ModelProfile | 
   } catch {
     // 非法 Base URL 已经在 draftIssues 里报成 baseUrl 问题；这里保持"无地址"即可。
   }
-  return { entries, requestUrl, error: null, issues: [] };
+  return { entries, content, requestUrl, error: null, issues: [] };
 }
 
 export async function buildModelPanelData(input: { projectRoot: string | null; environment: NodeJS.ProcessEnv }): Promise<ModelPanelData> {

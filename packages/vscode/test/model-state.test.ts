@@ -327,6 +327,19 @@ test("buildDraftPreview masks the secret and predicts the request URL", async ()
     assert.equal(preview.entries.some((entry) => entry.path.join(".") === "env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"), true);
     assert.equal(JSON.stringify(preview).includes("sk-secret-abcdefgh"), false, "明文密钥绝不能出现在回包数据里");
 
+    // content 是同一份投影的**嵌套**形态（.claude/settings.local.json 的样子）：面板只做
+    // JSON.stringify 就能渲染折叠预览，不需要在 media/main.js 里再拼一遍结构。
+    const env = preview.content.env as Record<string, unknown>;
+    assert.equal(env.ANTHROPIC_BASE_URL, "https://a.example/anthropic");
+    assert.equal(env.ANTHROPIC_AUTH_TOKEN, maskSecret("sk-secret-abcdefgh"), "嵌套预览里的密钥同样是掩码");
+    assert.equal(env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS, "1");
+    // entries 与 content 必须描述同一份投影（路径都能在 content 里走到同值）。
+    for (const entry of preview.entries) {
+      let cursor: unknown = preview.content;
+      for (const key of entry.path) cursor = (cursor as Record<string, unknown>)[key];
+      assert.deepEqual(cursor, entry.value, `content 与 entries 不一致：${entry.path.join(".")}`);
+    }
+
     // 用户输入新密钥：预览显示的是**新密钥的掩码**，而不是旧掩码。
     draft.apiKey = "sk-typed-newkey-9999";
     const typed = buildDraftPreview(draft, existing);
