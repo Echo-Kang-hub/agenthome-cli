@@ -36,6 +36,9 @@ async function withTempDirectory(prefix, run) {
     await run(directory);
   } finally {
     await rm(directory, { recursive: true, force: true });
+    // Some tests git-clone the fixture into the sibling `<dir>-work` (git clone refuses an
+    // existing target). mkdtemp never created that one, so remove it here or every run leaks it.
+    await rm(`${directory}-work`, { recursive: true, force: true });
   }
 }
 
