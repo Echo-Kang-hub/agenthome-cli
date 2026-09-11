@@ -90,6 +90,10 @@ export function registerAgentsCommands(context: vscode.ExtensionContext, deps: A
     }
     const prepared = await runMutation(deps.queue, () => agents.prepareAgentLaunch(target.root, target.id), () => deps.refresh());
     const { definition, finishRun } = prepared;
+    if (definition.note !== null) {
+      // 模型配置没能生效（spec §13：不静默跳过）——启动照常进行，但必须让用户看见原因。
+      void vscode.window.showWarningMessage(definition.note);
+    }
     const terminal = vscode.window.createTerminal({ name: definition.name, cwd: definition.cwd, env: definition.environment });
     const closeListener = vscode.window.onDidCloseTerminal((closed) => {
       if (closed !== terminal) return;

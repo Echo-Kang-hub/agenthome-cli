@@ -32,3 +32,35 @@ test("active editor window has vscode engine", async () => {
   assert.equal(manifest.workspaces, undefined, "不得引入 workspaces 字段");
   assert.equal(manifest.private, true, "防止误发 npm");
 });
+
+// 面板内部命令同样要进 contributes.commands（registerCommand 与清单一致、不出现未声明项），
+// 再用 commandPalette 的 when:false 隐藏——"进数组"与"对用户不可见"是两件事，
+// 所以下面的可见性断言按 when 过滤，不能只看命令是否出现在数组里。
+const MODEL_INTERNAL_COMMANDS = [
+  "avenic.model.saveProfile",
+  "avenic.model.deleteProfile",
+  "avenic.model.bindProject",
+  "avenic.model.clearProject",
+  "avenic.model.testConnection",
+  "avenic.model.openLibraryFile",
+  "avenic.model.openSettingsFile",
+];
+
+test("model commands are declared in the manifest", async () => {
+  const manifest = JSON.parse(await readFile(path.join(pkgDir, "package.json"), "utf8"));
+  const ids = manifest.contributes.commands.map((entry: { command: string }) => entry.command);
+  assert.equal(ids.includes("avenic.model.open"), true);
+  assert.equal(ids.includes("avenic.model.switch"), true);
+  for (const id of MODEL_INTERNAL_COMMANDS) assert.equal(ids.includes(id), true, `未声明内部命令 ${id}`);
+
+  const palette: Array<{ command: string; when?: string }> = manifest.contributes.menus.commandPalette;
+  const visible = palette.filter((entry) => entry.when !== "false").map((entry) => entry.command);
+  assert.equal(visible.includes("avenic.model.open"), true);
+  assert.equal(visible.includes("avenic.model.openLibraryFile"), false, "internal plumbing stays out of the palette");
+  for (const id of MODEL_INTERNAL_COMMANDS) {
+    assert.equal(palette.find((entry) => entry.command === id)?.when, "false", `${id} 必须从命令面板隐藏`);
+  }
+
+  const titleMenus: Array<{ command: string; when: string; group?: string }> = manifest.contributes.menus["view/title"];
+  assert.ok(titleMenus.some((m) => m.command === "avenic.model.open" && m.when === "view == avenic.agents" && m.group === "navigation"), "Agents 标题栏入口");
+});
