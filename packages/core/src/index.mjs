@@ -203,6 +203,7 @@ export {
   readBinding,
   resolveProjectProfile,
 } from "./model/binding.mjs";
+export { MODEL_RULES, ensureModelGitignore } from "./model/gitignore.mjs";
 export {
   agentCompatibility,
   buildLaunchInjection,

@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+// 单向依赖：model/gitignore.mjs 不得反向导入本模块（否则成环）。
+import { MODEL_RULES } from "../model/gitignore.mjs";
 
 const REQUIRED_RULES = [
   ".claude/skills/",
@@ -54,8 +56,18 @@ export async function removeRuntimeGitignore(projectRoot, options = {}) {
   if (!content) return false;
   const removable = new Set([".agents/local/", ".agents/tmp/"]);
   if (options.sessions) removable.add(SESSIONS_RULE);
+  // 模型配置：只有对应文件真的不存在时才允许移除（否则密钥文件会变成可提交）；spec §12 第 4 条。
+  // 锁文件平时毫秒级存在、正常路径必被删除，所以它通常会被移除——这是正确的。
+  const modelCandidates = [
+    [".agents/model.json", path.join(projectRoot, ".agents", "model.json")],
+    [".claude/settings.local.json", path.join(projectRoot, ".claude", "settings.local.json")],
+    [".agents/model.lock", path.join(projectRoot, ".agents", "model.lock")],
+  ];
+  for (const [rule, target] of modelCandidates) {
+    if (!existsSync(target)) removable.add(rule);
+  }
   let lines = content.split(/\r?\n/).filter((line) => !removable.has(line.trim()));
-  const managedRules = new Set([...REQUIRED_RULES, SESSIONS_RULE]);
+  const managedRules = new Set([...REQUIRED_RULES, SESSIONS_RULE, ...MODEL_RULES]);
   if (!lines.some((line) => managedRules.has(line.trim()))) {
     lines = lines.filter((line) => line.trim() !== "# Agent Runtime");
   }

@@ -6,6 +6,7 @@ import { fail } from "../util/fail.mjs";
 import { transact } from "./transaction.mjs";
 import { getProfile } from "./library.mjs";
 import { LOCK_TIMEOUT_CODE, withProjectLock } from "./lock.mjs";
+import { ensureModelGitignore } from "./gitignore.mjs";
 import { restrictPermissions } from "./permissions.mjs";
 import { libraryFingerprint } from "./schema.mjs";
 import {
@@ -220,6 +221,12 @@ async function transactProject(projectRoot, build, io = console) {
 export async function bindProject(projectRoot, environment, profileId, io = console) {
   const profile = await getProfile(environment, profileId);
   if (!profile) fail(`Unknown profile: ${profileId}`);
+  // spec §12 第 3 条：绑定会写出 .agents/model.json（含用户原值/密钥指纹）与
+  // .claude/settings.local.json（明文 API key），落盘前必须先保证项目 .gitignore 覆盖它们。
+  // 失败必须响亮：写不进 .gitignore 就整个绑定失败，绝不把密钥写进一个未被 ignore 的路径。
+  // 幂等由 ensureModelGitignore 保证（规则已在时零写入，不污染 mtime）。
+  // 这里不能吞错（无 try/catch）；clearProjectBinding 也不得撤销这些规则——移除是 deinit 的职责（spec §12 第 4 条）。
+  await ensureModelGitignore(projectRoot);
   const fingerprint = libraryFingerprint(profile);
   const entries = buildClaudeEntries(profile);
   let changed = false;

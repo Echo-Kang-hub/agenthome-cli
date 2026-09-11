@@ -509,6 +509,10 @@ export function clearProjectBinding(projectRoot: string, environment: ProcessEnv
 export function projectModelStatus(projectRoot: string, environment: ProcessEnvLike | undefined): Promise<ProjectModelStatus>;
 export function resolveProjectProfile(projectRoot: string, environment: ProcessEnvLike | undefined, io?: Io): Promise<{ profile: ModelProfile | null; binding: ProjectBinding; cleaned: boolean; conflicts: RollbackConflict[]; message: string | null }>;
 
+// ---- model: gitignore ----
+export const MODEL_RULES: readonly string[];
+export function ensureModelGitignore(projectRoot: string): Promise<boolean>;
+
 // ---- model: launch injection ----
 export interface AgentCompatibility { claude: { ok: boolean; reason?: string }; codex: { ok: boolean; reason?: string }; opencode: { ok: boolean; reason?: string } }
 export function agentCompatibility(profile: ModelProfile): AgentCompatibility;
