@@ -38,6 +38,8 @@ test("active editor window has vscode engine", async () => {
 // 所以下面的可见性断言按 when 过滤，不能只看命令是否出现在数组里。
 const MODEL_INTERNAL_COMMANDS = [
   "avenic.model.saveProfile",
+  "avenic.model.duplicateProfile",
+  "avenic.model.preview",
   "avenic.model.deleteProfile",
   "avenic.model.bindProject",
   "avenic.model.clearProject",
@@ -63,4 +65,19 @@ test("model commands are declared in the manifest", async () => {
 
   const titleMenus: Array<{ command: string; when: string; group?: string }> = manifest.contributes.menus["view/title"];
   assert.ok(titleMenus.some((m) => m.command === "avenic.model.open" && m.when === "view == avenic.agents" && m.group === "navigation"), "Agents 标题栏入口");
+});
+
+// 上面那条只钉住了已知清单：新加一个 register("…") 而忘了写清单，它照样是绿的
+// （duplicateProfile / preview 就是这么漏掉的）。这条从源码里的 register 调用反推，
+// 两个方向都查：注册了的必须声明，声明了的必须真有人注册。
+test("registered model commands and the manifest declare the same set", async () => {
+  const manifest = JSON.parse(await readFile(path.join(pkgDir, "package.json"), "utf8"));
+  const declared = manifest.contributes.commands.map((entry: { command: string }) => entry.command);
+  const source = await readFile(path.join(pkgDir, "src", "commands", "model-commands.ts"), "utf8");
+  const registered = [...source.matchAll(/\bregister\("([A-Za-z]+)"/g)].map((m) => `avenic.model.${m[1]}`);
+  assert.ok(registered.length > 0, "没解析到 register 调用——正则过期了");
+  for (const id of registered) assert.ok(declared.includes(id), `registerCommand 了未声明的命令 ${id}`);
+  for (const id of declared.filter((entry: string) => entry.startsWith("avenic.model."))) {
+    assert.ok(registered.includes(id), `清单声明了 ${id}，但没有任何 register 实现它`);
+  }
 });

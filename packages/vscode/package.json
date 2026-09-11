@@ -200,6 +200,16 @@
         "category": "Avenic"
       },
       {
+        "command": "avenic.model.duplicateProfile",
+        "title": "Avenic: 复制模型配置",
+        "category": "Avenic"
+      },
+      {
+        "command": "avenic.model.preview",
+        "title": "Avenic: 预览模型配置投影",
+        "category": "Avenic"
+      },
+      {
         "command": "avenic.model.deleteProfile",
         "title": "Avenic: 删除模型配置",
         "category": "Avenic"
@@ -454,6 +464,14 @@
         },
         {
           "command": "avenic.model.saveProfile",
+          "when": "false"
+        },
+        {
+          "command": "avenic.model.duplicateProfile",
+          "when": "false"
+        },
+        {
+          "command": "avenic.model.preview",
           "when": "false"
         },
         {
