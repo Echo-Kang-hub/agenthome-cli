@@ -642,6 +642,8 @@ function renderPreview() {
     hint.textContent = "将请求：（正在计算…）";
     pre.textContent = "";
     issues.replaceChildren();
+    status.className = "status";
+    status.textContent = "";
     return;
   }
   hint.textContent =
@@ -661,6 +663,7 @@ function renderPreview() {
   }
   if (preview.error !== null && preview.error !== undefined) lines.push(el("li", preview.error));
   issues.replaceChildren(...lines);
+  status.className = lines.length > 0 ? "status error" : "status";
   status.textContent =
     lines.length > 0 ? `有 ${lines.length} 个问题需要先修正，保存不会写入任何文件。` : "没有问题，可以保存。";
 }
