@@ -71,7 +71,7 @@
 ### 3.3 实测项（原 3 条，已结清 2 条）
 
 1. ~~Codex `-c` 值在 Windows 的传递形态~~ → **已结清**（§3.1）：不加引号即可（raw-string 回退），但含 `& ^ |` 的值在 `.cmd` 链路上必须被引号包裹，`%` 无论如何都会展开。设计结论写进 §5.2 与 §12.6：值一律不加引号 + 通过白名单拒绝 `%`、引号、反引号与 cmd 元字符；同时**加固 `process.mjs` 的 cmd 行拼接**（把 `&|^<>()` 纳入"需要引号包裹"的触发条件），使带查询串的 URL（`?api-version=…&x=y`）在 `.cmd` 路径上安全。
-2. **project 认证模式（`CLAUDE_CONFIG_DIR` 重定向，`config.mjs:108`）下 Claude Code 是否仍读取项目 `.claude/settings.local.json`** —— 仍需实现期实测（这是本机隔离探针，无法从文档判定）。**降级**：§13。
+2. **project 认证模式（`CLAUDE_CONFIG_DIR` 重定向，`config.mjs:108`）下 Claude Code 是否仍读取项目 `.claude/settings.local.json`** —— 仍需实现期实测（这是本机隔离探针，无法从文档判定）。**降级**：§13。2026-09-11 探针尝试：隔离临时目录 + `CLAUDE_CONFIG_DIR` 重定向 + 占位 token，`claude -p "hi" --output-format json` 在 90s 硬超时内 stdout/stderr 全空（ETIMEDOUT/SIGTERM），未取得可判定证据，该条仍未结清（列入残留风险）。
 3. ~~OpenCode 覆盖内置 anthropic provider 是否生效~~ → **已结清**（§3.1）：官方支持，内置 anthropic 的 `options.baseURL`/`options.apiKey` 直接生效，因此 §5.3 首选"覆盖内置 provider"，"自定义 provider + `@ai-sdk/anthropic`"只作为兜底（社区报告该组合有丢 apiKey 的已知问题）。
 
 ## 4. 数据模型：两层

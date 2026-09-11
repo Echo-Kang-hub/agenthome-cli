@@ -508,3 +508,11 @@ export function bindProject(projectRoot: string, environment: ProcessEnvLike | u
 export function clearProjectBinding(projectRoot: string, environment: ProcessEnvLike | undefined, io?: Io): Promise<{ changed: boolean; conflicts: RollbackConflict[]; binding: ProjectBinding }>;
 export function projectModelStatus(projectRoot: string, environment: ProcessEnvLike | undefined): Promise<ProjectModelStatus>;
 export function resolveProjectProfile(projectRoot: string, environment: ProcessEnvLike | undefined, io?: Io): Promise<{ profile: ModelProfile | null; binding: ProjectBinding; cleaned: boolean; conflicts: RollbackConflict[]; message: string | null }>;
+
+// ---- model: launch injection ----
+export interface AgentCompatibility { claude: { ok: boolean; reason?: string }; codex: { ok: boolean; reason?: string }; opencode: { ok: boolean; reason?: string } }
+export function agentCompatibility(profile: ModelProfile): AgentCompatibility;
+export function codexInjection(profile: ModelProfile, options: { argumentsList?: string[]; environment?: Record<string, string> }): { argumentsList: string[]; environment: Record<string, string>; skipped: string[] };
+export function opencodeInjection(profile: ModelProfile, environment?: Record<string, string>): { environment: Record<string, string>; providerId: string; mode: "builtin-override" | "custom-provider" };
+export function claudeEnvironment(profile: ModelProfile): Record<string, string>;
+export function buildLaunchInjection(input: { agentId: string; profile: ModelProfile | null; argumentsList?: string[]; environment?: Record<string, string> }): { argumentsList: string[]; environment: Record<string, string>; note: string | null };

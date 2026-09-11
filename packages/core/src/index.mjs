@@ -203,3 +203,10 @@ export {
   readBinding,
   resolveProjectProfile,
 } from "./model/binding.mjs";
+export {
+  agentCompatibility,
+  buildLaunchInjection,
+  claudeEnvironment,
+  codexInjection,
+  opencodeInjection,
+} from "./model/inject.mjs";
