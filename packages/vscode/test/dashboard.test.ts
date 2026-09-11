@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -133,6 +133,67 @@ test("skillsHealth reports missing shared links per state, not a fixed string", 
     assert.deepEqual(data.skillsHealth.map((r) => r.ok), [false, true, true, true], "share 目标缺失 → 该行不 ok");
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+// share 目标四种状态各一条文案 + ok 透传：只改 .claude/skills/alpha 一个位置制造状态，
+// 其余三行恒 canonical "1/1"。fallback 是「可用但未共享」（real directory）——core 判 complete=true。
+test("skillsHealth renders every share state with its own copy and ok flag", async () => {
+  const cases: Array<{
+    state: string;
+    details: string;
+    ok: boolean[];
+    arrange: (project: string, shared: string) => Promise<void>;
+  }> = [
+    { state: "linked", details: "shared", ok: [true, true, true, true], arrange: async () => {} },
+    {
+      state: "missing",
+      details: "links missing",
+      ok: [false, true, true, true],
+      arrange: (project, shared) => rm(shared, { recursive: true, force: true }),
+    },
+    {
+      state: "fallback",
+      details: "copies, not shared",
+      ok: [true, true, true, true],
+      arrange: async (project, shared) => {
+        await rm(shared, { recursive: true, force: true });
+        await mkdir(shared, { recursive: true });
+        await writeFile(path.join(shared, "SKILL.md"), "---\nname: alpha\n---\n# real copy, not shared\n");
+      },
+    },
+    {
+      state: "conflict",
+      details: "conflict",
+      ok: [false, true, true, true],
+      arrange: async (project, shared) => {
+        const elsewhere = path.join(project, "..", "elsewhere", "alpha");
+        await rm(shared, { recursive: true, force: true });
+        await mkdir(elsewhere, { recursive: true });
+        await writeFile(path.join(elsewhere, "SKILL.md"), "---\nname: alpha\n---\n# foreign\n");
+        // 指向项目外目录的链接（Windows 用 junction；POSIX 用相对 dir 链接，同 core 测试写法）
+        if (process.platform === "win32") await symlink(path.resolve(elsewhere), shared, "junction");
+        else await symlink(path.relative(path.dirname(shared), elsewhere), shared, "dir");
+      },
+    },
+  ];
+  for (const c of cases) {
+    const root = await mkdtemp(path.join(os.tmpdir(), `avenic-share-${c.state}-`));
+    try {
+      const catalogDir = path.join(root, "catalog");
+      const project = path.join(root, "project");
+      const env = testEnv(path.join(root, "state"));
+      await mkdir(project, { recursive: true });
+      await makeCatalogFixture(catalogDir);
+      await select(catalogDir, env);
+      await installPacks("project", ["common"], project, env);
+      await c.arrange(project, path.join(project, ".claude", "skills", "alpha"));
+      const data = await buildDashboardData(project, env);
+      assert.deepEqual(data.skillsHealth.map((r) => r.details), [c.details, "1/1", "1/1", "1/1"], `${c.state} 行文案`);
+      assert.deepEqual(data.skillsHealth.map((r) => r.ok), c.ok, `${c.state} 行 ok`);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   }
 });
 

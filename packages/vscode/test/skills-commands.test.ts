@@ -101,11 +101,47 @@ test("repairLinks recreates a missing shared link from the managed set only", as
     await rm(shared, { recursive: true, force: true });
     assert.equal(existsSync(shared), false, "共享链接已删除");
     assert.equal(existsSync(path.join(cwd, ".agents", "skills", "alpha", "SKILL.md")), true, "canonical 拷贝保留");
+    // 未受管技能：只在磁盘上、不在 lock 里（其它工具/手工放入）——任何目录枚举式实现都会把它连进来
+    const outsiderSkill = path.join(cwd, ".agents", "skills", "outsider", "SKILL.md");
+    const outsiderBody = "---\nname: outsider\n---\n# not managed by avenic\n";
+    await mkdir(path.dirname(outsiderSkill), { recursive: true });
+    await writeFile(outsiderSkill, outsiderBody);
 
     const result = await repairLinks("project", cwd, env);
     assert.ok(result.counts.linked >= 1, `重建缺失共享链接（counts=${JSON.stringify(result.counts)}）`);
     assert.equal(lstatSync(shared).isSymbolicLink(), true, "共享链接已重建");
-    assert.equal(existsSync(path.join(cwd, ".claude", "skills", "outsider")), false, "不产生新条目");
+    // 受管集合只来自 lock：未受管技能绝不建链、绝不被删/被改写
+    assert.equal(existsSync(path.join(cwd, ".claude", "skills", "outsider")), false, "未受管技能不得被链接");
+    assert.equal(existsSync(outsiderSkill), true, "未受管技能不得被删除");
+    assert.equal(await readFile(outsiderSkill, "utf8"), outsiderBody, "未受管技能内容不得被改写");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// silent：core 的失败/冲突日志绝不冒泡到扩展输出。构造：.claude/skills 被占位成普通文件，
+// 建链与拷贝都放不下 → core 记 unplaceable conflict（非 silent 时会打印 ⚠ Cannot place）。
+test("repairLinks stays silent when core reports conflicts", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "avenic-repair-silent-"));
+  try {
+    const catalogDir = path.join(root, "catalog");
+    const cwd = path.join(root, "project");
+    const env = testEnv(path.join(root, "state"));
+    await mkdir(cwd, { recursive: true });
+    await makeCatalogFixture(catalogDir);
+    await select(catalogDir, env);
+    await installPacks("project", ["common"], cwd, env);
+    const canonicalSkill = path.join(cwd, ".agents", "skills", "alpha", "SKILL.md");
+    const claudeSkills = path.join(cwd, ".claude", "skills");
+    assert.equal(existsSync(canonicalSkill), true, "canonical 在");
+    await rm(claudeSkills, { recursive: true, force: true });
+    assert.equal(existsSync(canonicalSkill), true, "删共享目录不伤 canonical");
+    await writeFile(claudeSkills, "not a directory"); // 链接与拷贝都无法放置
+
+    const { value, output } = await captureWrites(() => repairLinks("project", cwd, env));
+    assert.ok(value.conflicts.length >= 1, "构造必须真的走到 core 的冲突汇报路径");
+    assert.equal(value.conflicts[0].reason, "unplaceable");
+    assert.doesNotMatch(output, /Cannot place|neither a link nor a copy could be placed|Cannot create shared link/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -255,6 +291,23 @@ test("adoptedOnlyNames lists packless managed skills after plain adopt", async (
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// 临时接管 stdout/stderr（core 的 io.log 走 console → process.stdout.write），
+// 用于断言 repairLinks 的 silent 契约；finally 还原，避免污染测试运行器输出。
+async function captureWrites<T>(fn: () => Promise<T>): Promise<{ value: T; output: string }> {
+  const stdoutWrite = process.stdout.write;
+  const stderrWrite = process.stderr.write;
+  let output = "";
+  const sink = (chunk: unknown): boolean => { output += String(chunk); return true; };
+  process.stdout.write = sink as unknown as typeof process.stdout.write;
+  process.stderr.write = sink as unknown as typeof process.stderr.write;
+  try {
+    return { value: await fn(), output };
+  } finally {
+    process.stdout.write = stdoutWrite;
+    process.stderr.write = stderrWrite;
+  }
+}
 
 // 目标目录断言辅助：项目作用域目标两处（.claude/skills + .agents/skills）
 function expectSkillDirs(cwd: string, skills: string[], present: boolean, phase: string): void {
