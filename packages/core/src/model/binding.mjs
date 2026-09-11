@@ -15,6 +15,8 @@ import {
 } from "./paths.mjs";
 import {
   buildClaudeEntries,
+  isPlainObject,
+  jsonTypeName,
   mergeClaudeSettings,
   rollbackClaudeSettings,
 } from "./project-claude.mjs";
@@ -57,8 +59,14 @@ export async function readBinding(projectRoot) {
 
 async function readClaudeSettings(projectRoot) {
   const file = claudeSettingsFile(projectRoot);
-  if (!existsSync(file)) return null;
-  return readJson(file); // 解析失败 → fail（不自动修复、不覆盖：spec §13）
+  if (!existsSync(file)) return null; // 文件不存在 → 「无既有设置」（created === true），不是错误
+  const parsed = await readJson(file); // 解析失败 → fail（不自动修复、不覆盖：spec §13）
+  // 根节点不是普通对象（数组/标量/null）同样属于配置损坏：读的时候就失败，
+  // 且必须早于任何写盘，否则投影会被挂到数组上并在落盘时静默消失。
+  if (!isPlainObject(parsed)) {
+    fail(`Claude settings are malformed (expected a JSON object, got ${jsonTypeName(parsed)}): ${file}`);
+  }
+  return parsed;
 }
 
 // spec §6 收尾：只有本功能创建的文件才允许删除；"无残留"= 除了我们自己写空的壳以外没有任何内容。

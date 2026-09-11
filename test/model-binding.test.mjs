@@ -274,3 +274,87 @@ test("a corrupt project binding fails loudly and is never rewritten", async () =
     assert.equal(existsSync(path.join(projectRoot, ".claude", "settings.local.json")), false);
   });
 });
+
+// ---- 修复轮：路径冲突必须于任何写盘之前响亮失败（WARN-1） ----
+
+const COLLIDING_PROFILES = [
+  // A: profile.env.ANTHROPIC_MODEL 撞 models.main 投出的同一个路径。
+  {
+    id: "p1",
+    name: "P1",
+    endpoint: { baseUrl: "https://conflict.example/anthropic", api: "anthropic", apiKey: "sk-test-collision-0001" },
+    models: { main: { id: "managed-model" } },
+    env: { ANTHROPIC_MODEL: "user-model" },
+  },
+  // B: profile.env.ANTHROPIC_AUTH_TOKEN 撞 endpoint.authField 投出的投影密钥。
+  {
+    id: "p2",
+    name: "P2",
+    endpoint: { baseUrl: "https://conflict.example/anthropic", api: "anthropic", apiKey: "sk-test-collision-0002" },
+    env: { ANTHROPIC_AUTH_TOKEN: "sk-test-user-value" },
+  },
+  // C: claude.settings 透传的顶层 env 键包含整棵 env 投影。
+  {
+    id: "p3",
+    name: "P3",
+    endpoint: { baseUrl: "https://conflict.example/anthropic", api: "anthropic", apiKey: "sk-test-collision-0003" },
+    claude: { settings: { env: { ANTHROPIC_MODEL: "nested-model" } } },
+  },
+];
+
+test("a conflicting profile fails before anything is written to disk", async () => {
+  for (const input of COLLIDING_PROFILES) {
+    await withProject(async ({ projectRoot, environment }) => {
+      await upsertProfile(environment, input);
+      const settings = path.join(projectRoot, ".claude", "settings.local.json");
+      await mkdir(path.dirname(settings), { recursive: true });
+      const original = `${JSON.stringify({ env: { ANTHROPIC_MODEL: "ORIGINAL", KEEP: "1" }, permissions: { allow: ["Bash(ls)"] } }, null, 2)}\n`;
+      await writeFile(settings, original);
+
+      await assert.rejects(() => bindProject(projectRoot, environment, input.id), /sets conflicting Claude settings/);
+
+      assert.equal(await readFile(settings, "utf8"), original, `${input.id}: 用户设置必须逐字节未变`);
+      assert.equal(existsSync(projectModelFile(projectRoot)), false, `${input.id}: 绑定文件不得创建`);
+      assert.equal(existsSync(projectTempRoot(projectRoot)), false, `${input.id}: 事务目录不得创建`);
+    });
+  }
+});
+
+// ---- 修复轮：非对象/数组形状守卫（WARN-2） ----
+
+test("bindProject replaces a non-object nested value instead of silently dropping the projection", async () => {
+  await withProject(async ({ projectRoot, environment }) => {
+    await upsertProfile(environment, PROFILE_INPUT);
+    const settings = path.join(projectRoot, ".claude", "settings.local.json");
+    await mkdir(path.dirname(settings), { recursive: true });
+    await writeFile(settings, `${JSON.stringify({ permissions: { allow: ["Bash(ls)"] }, env: [] }, null, 2)}\n`);
+
+    const bound = await bindProject(projectRoot, environment, "mimo");
+    assert.equal(bound.changed, true);
+    const written = JSON.parse(await readFile(settings, "utf8"));
+    assert.equal(Array.isArray(written.env), false, "数组中间层必须被替换成对象");
+    assert.equal(written.env.ANTHROPIC_MODEL, "mimo-v2.5-pro");
+    assert.deepEqual(written.permissions, { allow: ["Bash(ls)"] }, "用户其余键必须保留");
+    // 重新 parse 后投影仍在：这正是修复前的静默失效路径。
+    assert.equal(JSON.parse(JSON.stringify(written)).env.ANTHROPIC_MODEL, "mimo-v2.5-pro");
+  });
+});
+
+test("a settings file whose root is not an object fails loudly and is never rewritten", async () => {
+  for (const raw of ["[]", '"hello"', "42", "true", "null"]) {
+    await withProject(async ({ projectRoot, environment }) => {
+      await upsertProfile(environment, PROFILE_INPUT);
+      const settings = path.join(projectRoot, ".claude", "settings.local.json");
+      await mkdir(path.dirname(settings), { recursive: true });
+      await writeFile(settings, `${raw}\n`);
+
+      await assert.rejects(
+        () => bindProject(projectRoot, environment, "mimo"),
+        (error) => error.message.includes(settings) && error.message.includes("JSON object"),
+        `根节点 ${raw} 必须带文件路径响亮失败`,
+      );
+      assert.equal(await readFile(settings, "utf8"), `${raw}\n`, `${raw}: 损坏文件逐字不变`);
+      assert.equal(existsSync(projectModelFile(projectRoot)), false, `${raw}: 绑定文件不得创建`);
+    });
+  }
+});
